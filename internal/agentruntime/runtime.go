@@ -317,6 +317,7 @@ func defaultConnect(config Config) ConnectFunc {
 		connector, err := producttransport.NewAgentConnector(producttransport.AgentConfig{
 			Address: config.ServerAddress, TLSConfig: config.TLSConfig,
 			Credential: credential, Incarnation: incarnation,
+			PeerSilenceTimeout: config.PeerSilenceTimeout,
 		})
 		if err != nil {
 			return nil, err

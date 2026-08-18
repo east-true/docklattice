@@ -56,7 +56,12 @@ type Config struct {
 
 	ServerAddress string
 	TLSConfig     *tls.Config
-	Connect       ConnectFunc
+	// PeerSilenceTimeout is the window after which a Server that has stopped
+	// calling is treated as gone and the session is closed so the reconnect
+	// loop runs. It mirrors the Server's own offline threshold; zero selects
+	// producttransport.DefaultPeerSilenceTimeout.
+	PeerSilenceTimeout time.Duration
+	Connect            ConnectFunc
 
 	WALOptions      auditwal.Options
 	ReconnectPolicy producttransport.ReconnectPolicy

@@ -94,6 +94,7 @@ func newAgentProcess(cfg app.Config) (app.Runtime, error) {
 		ProjectRoots:          append([]string(nil), cfg.Agent.ProjectRoots...),
 		BundledComposeVersion: "5.3.1",
 		DiscoveryInterval:     cfg.Defaults.DiscoveryInterval,
+		PeerSilenceTimeout:    cfg.Defaults.OfflineAfter,
 	}}, nil
 }
 

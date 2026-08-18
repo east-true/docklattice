@@ -53,6 +53,13 @@ type AgentConfig struct {
 	MaxCredentialBytes int
 	MaxMessageBytes    int
 	HandshakeTimeout   time.Duration
+	TickerFactory      TickerFactory
+	// PeerSilenceTimeout closes a session whose Server has stopped calling.
+	// The Server heartbeats on P0 and declares an Agent offline after a fixed
+	// window; this is the same judgement from the Agent's side, and without it
+	// a Server that disappears without closing the connection leaves the
+	// session readable forever and the Agent never reconnects.
+	PeerSilenceTimeout time.Duration
 }
 
 type AgentConnector struct{ config AgentConfig }
@@ -124,9 +131,12 @@ func (c *AgentConnector) Connect(ctx context.Context, handler AgentHandler) (Ses
 		return nil, fmt.Errorf("authenticate Agent session: %w", err)
 	}
 	one := newSingleConnListener(conn)
+	watchdog := newPeerWatchdog(c.config.Clock, c.config.PeerSilenceTimeout)
 	server := grpc.NewServer(
 		grpc.MaxRecvMsgSize(c.config.MaxMessageBytes),
 		grpc.MaxSendMsgSize(c.config.MaxMessageBytes),
+		grpc.UnaryInterceptor(watchdog.unaryInterceptor),
+		grpc.StreamInterceptor(watchdog.streamInterceptor),
 	)
 	service := &agentService{handler: handler, info: info, clock: c.config.Clock, maxMessageBytes: c.config.MaxMessageBytes}
 	server.RegisterService(&agentControlServiceDesc, service)
@@ -139,6 +149,7 @@ func (c *AgentConnector) Connect(ctx context.Context, handler AgentHandler) (Ses
 			session.finish(nil)
 		}
 	}()
+	go watchdog.run(session, c.config.TickerFactory)
 	return session, nil
 }
 

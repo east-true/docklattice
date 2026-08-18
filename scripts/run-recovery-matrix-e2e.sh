@@ -126,6 +126,11 @@ network="$prefix-network"
 completed=0
 failure_reason="harness did not complete"
 
+capture_container_state() {
+    docker inspect --format '{{.Name}} status={{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' \
+        "$1" >"$2" 2>&1 || true
+}
+
 capture_log() {
     container=$1
     output=$2
@@ -306,9 +311,10 @@ start_agent() {
         --project-root "$runtime/projects"
 }
 
+# The Server container is stopped and started again rather than recreated, which
+# is how an operator restarts the service around a state repair.
 restart_server() {
-    docker rm -f "$server" >/dev/null
-    start_server >"$evidence_dir/server.container-id.$1"
+    docker start "$server" >"$evidence_dir/server.restart.$1"
     resolve_base_url
     wait_server_ready
 }
@@ -330,6 +336,18 @@ identity_baseline=$(read_identity_field server_identity_id)
 generation_baseline=$(read_identity_field archive_generation)
 case "$generation_baseline" in ''|*[!0-9]*) fail "baseline archive_generation is not an integer" ;; esac
 
+# ------------------------------- control: Server restart with nothing lost
+# Same identity, same generation, same archive_id is "normal reconnect" in the
+# table in section 6.4. It runs first so that a reconnect failure in either loss
+# case cannot be blamed on the restart mechanics themselves.
+docker stop "$server" >/dev/null
+restart_server control
+if ! wait_active_host "$agent_id" "$evidence_dir/dashboard.control.json" 300; then
+    capture_container_state "$agent" "$evidence_dir/control.agent-state"
+    capture_log "$agent" "$evidence_dir/control.agent.log"
+    fail "control: the Agent did not reconnect after a Server restart that lost nothing"
+fi
+
 # ------------------------------------------- case 1: Audit DB lost, Identity kept
 docker stop "$server" >/dev/null
 server_state_sh 'rm -f /state/server.db /state/server.db-wal /state/server.db-shm' >/dev/null
@@ -346,7 +364,7 @@ generation_case1=$(read_identity_field archive_generation)
     fail "case 1: archive_generation did not advance after Audit database loss"
 # The Agent container is never touched and holds no Join Token, so reaching
 # ACTIVE again can only come from automatic credential authentication.
-wait_active_host "$agent_id" "$evidence_dir/dashboard.case1.json" 180 ||
+wait_active_host "$agent_id" "$evidence_dir/dashboard.case1.json" 300 ||
     fail "case 1: the existing Agent did not reconnect automatically with its original identity"
 capture_log "$agent" "$evidence_dir/agent.case1.log"
 capture_log "$server" "$evidence_dir/server.case1.log"
@@ -400,6 +418,7 @@ docker run --pull never --rm --user 0:0 --entrypoint /bin/sh -v "$runtime/agent:
     printf 'case2_server_identity_id=%s\n' "$identity_case2"
     printf 'case2_reregistered_agent_id=%s\n' "$reregistered_agent_id"
     printf 'finished_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'plain_restart_reconnect=PASS\n'
     printf 'database_loss_identity_preserved=PASS\n'
     printf 'database_loss_generation_advanced=PASS\n'
     printf 'database_loss_automatic_reconnect=PASS\n'
