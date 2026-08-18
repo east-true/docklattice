@@ -8,8 +8,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"database/sql"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"os"
@@ -93,28 +95,32 @@ func (s fakeLastSeenStore) TouchAgentLastSeen(_ context.Context, agentID string,
 	return nil
 }
 
-func (s fakeLastSeenStore) RestoreAuthenticatedAgent(context.Context, string, time.Time) error {
-	return nil
-}
-
-// missingAgentStore reports the first observation as an unknown Agent, which is
-// what a Server sees after losing its database while keeping its Identity State.
+// missingAgentStore reports an unknown Agent, which is what a Server sees after
+// losing its database while keeping its Identity State.
 type missingAgentStore struct {
 	mu         sync.Mutex
-	touches    []string
+	loads      []string
 	restores   []string
 	restored   bool
 	restoreErr error
+	swaps      int
 }
 
-func (s *missingAgentStore) TouchAgentLastSeen(_ context.Context, agentID string, _ time.Time) error {
+func (s *missingAgentStore) LoadIncarnation(_ context.Context, agentID string) (uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.touches = append(s.touches, agentID)
+	s.loads = append(s.loads, agentID)
 	if s.restored {
-		return nil
+		return 7, nil
 	}
-	return serverstore.ErrAgentNotFound
+	return 0, fmt.Errorf("serverstore: load Agent incarnation: %w", sql.ErrNoRows)
+}
+
+func (s *missingAgentStore) CompareAndSwapIncarnation(context.Context, string, uint64, uint64) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.swaps++
+	return true, nil
 }
 
 func (s *missingAgentStore) RestoreAuthenticatedAgent(_ context.Context, agentID string, _ time.Time) error {
@@ -131,30 +137,38 @@ func (s *missingAgentStore) RestoreAuthenticatedAgent(_ context.Context, agentID
 func (s *missingAgentStore) snapshot() ([]string, []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]string(nil), s.touches...), append([]string(nil), s.restores...)
+	return append([]string(nil), s.loads...), append([]string(nil), s.restores...)
 }
 
-func TestLivenessWriterRestoresAgentLostWithTheDatabase(t *testing.T) {
+func TestAdmissionRestoresAgentLostWithTheDatabase(t *testing.T) {
 	store := &missingAgentStore{}
-	writeLivenessObservation(context.Background(), store, livenessObservation{agentID: "agent-a", at: time.Unix(1, 0).UTC()})
-	touches, restores := store.snapshot()
+	watermark, err := restoringWatermarkStore{store: store, now: func() time.Time { return time.Unix(1, 0).UTC() }}.
+		LoadIncarnation(context.Background(), "agent-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if watermark != 7 {
+		t.Fatalf("watermark after restore = %d", watermark)
+	}
+	loads, restores := store.snapshot()
 	if len(restores) != 1 || restores[0] != "agent-a" {
 		t.Fatalf("expected exactly one restore of agent-a, got %v", restores)
 	}
-	if len(touches) != 2 {
-		t.Fatalf("expected the observation to be retried after the restore, got %v", touches)
+	if len(loads) != 2 {
+		t.Fatalf("expected the watermark to be reloaded after the restore, got %v", loads)
 	}
 }
 
-func TestLivenessWriterDoesNotRetryWhenRestoreIsRefused(t *testing.T) {
+func TestAdmissionFailsWhenTheAgentIsRetired(t *testing.T) {
 	store := &missingAgentStore{restoreErr: serverstore.ErrAgentRetired}
-	writeLivenessObservation(context.Background(), store, livenessObservation{agentID: "agent-a", at: time.Unix(1, 0).UTC()})
-	touches, restores := store.snapshot()
-	if len(restores) != 1 {
-		t.Fatalf("expected exactly one restore attempt, got %v", restores)
+	_, err := restoringWatermarkStore{store: store, now: func() time.Time { return time.Unix(1, 0).UTC() }}.
+		LoadIncarnation(context.Background(), "agent-a")
+	if !errors.Is(err, serverstore.ErrAgentRetired) {
+		t.Fatalf("retired admission error = %v", err)
 	}
-	if len(touches) != 1 {
-		t.Fatalf("a refused restore must not be followed by another observation write, got %v", touches)
+	loads, restores := store.snapshot()
+	if len(restores) != 1 || len(loads) != 1 {
+		t.Fatalf("a refused restore must not be retried: loads=%v restores=%v", loads, restores)
 	}
 }
 

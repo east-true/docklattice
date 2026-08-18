@@ -5,6 +5,7 @@ package serverruntime
 import (
 	"context"
 	"crypto/tls"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net"
@@ -19,7 +20,6 @@ import (
 	"github.com/east-true/dockpilot/internal/registrationhttp"
 	"github.com/east-true/dockpilot/internal/serverapi"
 	"github.com/east-true/dockpilot/internal/serverbootstrap"
-	"github.com/east-true/dockpilot/internal/serverstore"
 	"github.com/east-true/dockpilot/internal/webui"
 )
 
@@ -123,7 +123,9 @@ func (r *Runtime) Ready(ctx context.Context) (err error) {
 		}
 	}()
 
-	registry := producttransport.NewSessionRegistryWithStore(components.Store)
+	registry := producttransport.NewSessionRegistryWithStore(restoringWatermarkStore{
+		store: components.Store, now: func() time.Time { return time.Now().UTC() },
+	})
 	auditStore := auditstore.New(components.Store.DB())
 	backend, err := serverapi.New(components.Store, registry,
 		serverapi.WithAuditReadModel(components.Archive.AuditArchiveID, auditStore))
@@ -352,7 +354,6 @@ func runAuditRetentionOnce(ctx context.Context, store auditRetentionStore, archi
 
 type agentLastSeenStore interface {
 	TouchAgentLastSeen(context.Context, string, time.Time) error
-	RestoreAuthenticatedAgent(context.Context, string, time.Time) error
 }
 
 func runLivenessWriter(ctx context.Context, store agentLastSeenStore, observations <-chan livenessObservation) {
@@ -362,26 +363,46 @@ func runLivenessWriter(ctx context.Context, store agentLastSeenStore, observatio
 			return
 		case observation := <-observations:
 			writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			writeLivenessObservation(writeCtx, store, observation)
+			_ = store.TouchAgentLastSeen(writeCtx, observation.agentID, observation.at)
 			cancel()
 		}
 	}
 }
 
-// writeLivenessObservation records the observation, and restores the Agent's
-// operational record when it is missing. The transport has already verified the
-// credential, so a missing row means the Server database was lost while the
-// Identity State survived; section 6.1 of the architecture requires the
-// existing Agent to authenticate automatically in exactly that case.
-func writeLivenessObservation(ctx context.Context, store agentLastSeenStore, observation livenessObservation) {
-	err := store.TouchAgentLastSeen(ctx, observation.agentID, observation.at)
-	if !errors.Is(err, serverstore.ErrAgentNotFound) {
-		return
+// admissionStore supplies the session registry's incarnation watermark and
+// restores the operational record of an Agent the transport has already
+// authenticated but the Server no longer knows.
+type admissionStore interface {
+	producttransport.IncarnationWatermarkStore
+	RestoreAuthenticatedAgent(context.Context, string, time.Time) error
+}
+
+// restoringWatermarkStore implements the outcome section 6.1 of the
+// architecture assigns to losing the Audit database while the Identity State
+// survives: existing Agents authenticate automatically. Signing keys and the
+// revocation ledger live in the Identity State, so after a database loss the
+// credential still verifies, but the agents row that carries the incarnation
+// watermark is gone and admission would fail on the missing row. Restoring the
+// record at that moment is what makes the automatic reconnection real, and a
+// retired Agent is still refused because it is never revived.
+type restoringWatermarkStore struct {
+	store admissionStore
+	now   func() time.Time
+}
+
+func (s restoringWatermarkStore) LoadIncarnation(ctx context.Context, agentID string) (uint64, error) {
+	watermark, err := s.store.LoadIncarnation(ctx, agentID)
+	if !errors.Is(err, sql.ErrNoRows) {
+		return watermark, err
 	}
-	if err := store.RestoreAuthenticatedAgent(ctx, observation.agentID, observation.at); err != nil {
-		return
+	if restoreErr := s.store.RestoreAuthenticatedAgent(ctx, agentID, s.now()); restoreErr != nil {
+		return 0, restoreErr
 	}
-	_ = store.TouchAgentLastSeen(ctx, observation.agentID, observation.at)
+	return s.store.LoadIncarnation(ctx, agentID)
+}
+
+func (s restoringWatermarkStore) CompareAndSwapIncarnation(ctx context.Context, agentID string, old, next uint64) (bool, error) {
+	return s.store.CompareAndSwapIncarnation(ctx, agentID, old, next)
 }
 
 func (r *Runtime) HTTPAddress() string {
