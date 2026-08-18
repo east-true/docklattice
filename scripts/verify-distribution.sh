@@ -45,6 +45,10 @@ require_literal "--checksum=sha256:${COMPOSE_NOTICE_SHA256}" "$dockerfile"
 if ! awk '
     $1 == "FROM" {
         image = $2
+        # Skip any leading FROM flags such as --platform=$BUILDPLATFORM.
+        for (i = 2; i <= NF && image ~ /^--/; i++) {
+            image = $(i + 1)
+        }
         if (image == "scratch" || image ~ /^compose-/ || image ~ /@sha256:[0-9a-f]{64}$/) {
             next
         }
@@ -55,7 +59,25 @@ if ! awk '
     exit 1
 fi
 
+# The release images must stay byte-reproducible and cross-buildable without
+# target-architecture emulation. EXPOSE makes the config digest vary between
+# identical builds, because BuildKit renders its history entry from a parser
+# node that embeds a heap address; a RUN in a runtime stage would force the
+# multi-platform build to execute target binaries.
+if grep -qE '^[[:space:]]*EXPOSE' "$dockerfile"; then
+    printf 'distribution verification failed: EXPOSE makes the image config digest non-reproducible\n' >&2
+    exit 1
+fi
+if ! awk '
+    $1 == "FROM" { stage = ""; for (i = 1; i < NF; i++) if ($i == "AS") stage = $(i + 1) }
+    $1 == "RUN" && (stage == "server" || stage == "agent") { exit 1 }
+' "$dockerfile"; then
+    printf 'distribution verification failed: a runtime stage runs a command and would need target emulation\n' >&2
+    exit 1
+fi
+
 require_literal 'USER 65532:65532' "$dockerfile"
+require_literal 'COPY --from=rootfs /etc/passwd /etc/group /etc/' "$dockerfile"
 require_literal 'COPY --from=licenses /licenses /licenses' "$dockerfile"
 require_literal "io.dockpilot.docker-cli.version=\"${DOCKER_CLI_VERSION}\"" "$dockerfile"
 require_literal "io.dockpilot.compose.version=\"${COMPOSE_VERSION}\"" "$dockerfile"

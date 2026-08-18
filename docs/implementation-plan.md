@@ -219,12 +219,15 @@ release images built from revision `bbf6baa` and labelled 1.0.0; clean-host
 install E2E passed on 2026-08-18 against those exact image IDs
 ([`docs/clean-host-install-e2e.md`](clean-host-install-e2e.md)).
 
-Outstanding: the release build is `linux/amd64` only. The reference host
-provides no `linux/arm64` emulation (`docker buildx` advertises only
-`linux/amd64` and its microarchitecture variants, and `binfmt_misc` carries no
-`qemu-aarch64` handler), so the multi-platform reproducible build cannot be
-executed or claimed here. The identity-loss and database-loss cases of the
-real-container recovery matrix also remain package-level only.
+Reproducible multi-platform release build recorded: two independent runs of
+`scripts/build-release-images.sh` produced byte-identical `linux/amd64` +
+`linux/arm64` OCI archives for both targets
+([`docs/distribution.md`](distribution.md)). The build executes no
+target-architecture binary, so it needs no QEMU or `binfmt_misc` handler on the
+build host.
+
+Outstanding: the identity-loss and database-loss cases of the real-container
+recovery matrix remain package-level only.
 
 Clean-host container harness and current execution status:
 [`docs/clean-host-install-e2e.md`](clean-host-install-e2e.md).

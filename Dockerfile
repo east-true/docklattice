@@ -8,7 +8,10 @@ ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 ARG SOURCE_DATE_EPOCH=0
 
-FROM golang:1.26.5-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc AS build
+# Pinned to the build host's platform: the toolchain cross-compiles to
+# TARGETARCH with CGO disabled, so no target-architecture emulation is needed to
+# produce the release binary.
+FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc AS build
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
@@ -36,7 +39,18 @@ ADD --checksum=sha256:aa611e811d0ea25897839c404bfb5bf93ce706dc51c500a4457890f5d0
 ARG TARGETARCH
 FROM compose-${TARGETARCH} AS compose
 
-FROM alpine:3.24.0@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4 AS licenses
+# The unprivileged account and the state directory skeleton are architecture
+# independent: Alpine's /etc/passwd and /etc/group are identical across the
+# architectures of one pinned image digest. Building them here and copying the
+# result keeps the runtime stages free of any RUN, so a cross-architecture
+# release build needs no target emulation at all.
+FROM --platform=$BUILDPLATFORM alpine:3.24.0@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4 AS rootfs
+RUN addgroup -S -g 65532 dockpilot && \
+    adduser -S -D -H -u 65532 -G dockpilot dockpilot && \
+    mkdir -p /skel/state
+
+# License text is architecture-independent, so this stage also runs natively.
+FROM --platform=$BUILDPLATFORM alpine:3.24.0@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4 AS licenses
 RUN mkdir -p /licenses/docker-cli /licenses/docker-compose
 ADD --checksum=sha256:2d81ea060825006fc8f3fe28aa5dc0ffeb80faf325b612c955229157b8c10dc0 \
     https://raw.githubusercontent.com/docker/cli/v29.6.2/LICENSE /licenses/docker-cli/LICENSE
@@ -55,18 +69,20 @@ LABEL org.opencontainers.image.title="Dockpilot Server" \
       org.opencontainers.image.source="https://github.com/east-true/dockpilot" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \
-      org.opencontainers.image.licenses="Apache-2.0"
-RUN addgroup -S -g 65532 dockpilot && \
-    adduser -S -D -H -u 65532 -G dockpilot dockpilot && \
-    mkdir -p /var/lib/dockpilot && \
-    chmod 0700 /var/lib/dockpilot && \
-    chown 65532:65532 /var/lib/dockpilot
+      org.opencontainers.image.licenses="Apache-2.0" \
+      io.dockpilot.role="server" \
+      io.dockpilot.ports="8080/tcp,8443/tcp"
+# The listening ports are recorded as a label rather than with EXPOSE. BuildKit
+# renders the EXPOSE history entry from a parser node that embeds a heap
+# address, so an image carrying EXPOSE gets a different config digest on every
+# build and cannot satisfy the reproducible-build gate.
+COPY --from=rootfs /etc/passwd /etc/group /etc/
+COPY --from=rootfs --chown=65532:65532 --chmod=0700 /skel/state /var/lib/dockpilot
 COPY --from=build --chmod=0555 /out/dockpilot /usr/local/bin/dockpilot
 COPY LICENSE NOTICE /licenses/Dockpilot/
 COPY distribution/IMAGE-LICENSES.md /licenses/README.md
 USER 65532:65532
 VOLUME ["/var/lib/dockpilot"]
-EXPOSE 8080 8443
 ENTRYPOINT ["/usr/local/bin/dockpilot"]
 CMD ["server", "--listen", "0.0.0.0:8080", "--agent-listen", "0.0.0.0:8443", "--allow-public-bind"]
 
@@ -82,11 +98,9 @@ LABEL org.opencontainers.image.title="Dockpilot Agent" \
       io.dockpilot.role="agent" \
       io.dockpilot.docker-cli.version="29.6.2" \
       io.dockpilot.compose.version="5.3.1"
-RUN addgroup -S -g 65532 dockpilot && \
-    adduser -S -D -H -u 65532 -G dockpilot dockpilot && \
-    mkdir -p /var/lib/dockpilot/docker-config /usr/local/libexec/docker/cli-plugins && \
-    chmod 0700 /var/lib/dockpilot /var/lib/dockpilot/docker-config && \
-    chown -R 65532:65532 /var/lib/dockpilot
+COPY --from=rootfs /etc/passwd /etc/group /etc/
+COPY --from=rootfs --chown=65532:65532 --chmod=0700 /skel/state /var/lib/dockpilot
+COPY --from=rootfs --chown=65532:65532 --chmod=0700 /skel/state /var/lib/dockpilot/docker-config
 COPY --from=build --chmod=0555 /out/dockpilot /usr/local/bin/dockpilot
 COPY --from=docker-cli --chmod=0555 /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
