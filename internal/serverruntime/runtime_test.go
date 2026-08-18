@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/east-true/dockpilot/internal/identity"
 	"github.com/east-true/dockpilot/internal/producttransport"
 	"github.com/east-true/dockpilot/internal/registration"
+	"github.com/east-true/dockpilot/internal/serverstore"
 )
 
 func TestRuntimeServesEmbeddedUIAndStopsWithContext(t *testing.T) {
@@ -89,6 +91,71 @@ type fakeLastSeenStore struct{ calls chan lastSeenCall }
 func (s fakeLastSeenStore) TouchAgentLastSeen(_ context.Context, agentID string, at time.Time) error {
 	s.calls <- lastSeenCall{agentID: agentID, at: at}
 	return nil
+}
+
+func (s fakeLastSeenStore) RestoreAuthenticatedAgent(context.Context, string, time.Time) error {
+	return nil
+}
+
+// missingAgentStore reports the first observation as an unknown Agent, which is
+// what a Server sees after losing its database while keeping its Identity State.
+type missingAgentStore struct {
+	mu         sync.Mutex
+	touches    []string
+	restores   []string
+	restored   bool
+	restoreErr error
+}
+
+func (s *missingAgentStore) TouchAgentLastSeen(_ context.Context, agentID string, _ time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.touches = append(s.touches, agentID)
+	if s.restored {
+		return nil
+	}
+	return serverstore.ErrAgentNotFound
+}
+
+func (s *missingAgentStore) RestoreAuthenticatedAgent(_ context.Context, agentID string, _ time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.restores = append(s.restores, agentID)
+	if s.restoreErr != nil {
+		return s.restoreErr
+	}
+	s.restored = true
+	return nil
+}
+
+func (s *missingAgentStore) snapshot() ([]string, []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.touches...), append([]string(nil), s.restores...)
+}
+
+func TestLivenessWriterRestoresAgentLostWithTheDatabase(t *testing.T) {
+	store := &missingAgentStore{}
+	writeLivenessObservation(context.Background(), store, livenessObservation{agentID: "agent-a", at: time.Unix(1, 0).UTC()})
+	touches, restores := store.snapshot()
+	if len(restores) != 1 || restores[0] != "agent-a" {
+		t.Fatalf("expected exactly one restore of agent-a, got %v", restores)
+	}
+	if len(touches) != 2 {
+		t.Fatalf("expected the observation to be retried after the restore, got %v", touches)
+	}
+}
+
+func TestLivenessWriterDoesNotRetryWhenRestoreIsRefused(t *testing.T) {
+	store := &missingAgentStore{restoreErr: serverstore.ErrAgentRetired}
+	writeLivenessObservation(context.Background(), store, livenessObservation{agentID: "agent-a", at: time.Unix(1, 0).UTC()})
+	touches, restores := store.snapshot()
+	if len(restores) != 1 {
+		t.Fatalf("expected exactly one restore attempt, got %v", restores)
+	}
+	if len(touches) != 1 {
+		t.Fatalf("a refused restore must not be followed by another observation write, got %v", touches)
+	}
 }
 
 func TestLivenessWriterPersistsBoundedObservation(t *testing.T) {

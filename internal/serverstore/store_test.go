@@ -628,3 +628,62 @@ func TestTouchAgentLastSeenIsMonotonicAndDoesNotReviveRetiredAgent(t *testing.T)
 		t.Fatalf("missing touch error = %v", err)
 	}
 }
+
+func TestRestoreAuthenticatedAgentRecreatesTheRowButNeverRevivesRetirement(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, filepath.Join(t.TempDir(), "server.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	observed := time.Date(2026, 8, 15, 1, 2, 3, 4, time.UTC)
+
+	// A verified credential whose row is gone is exactly the Audit database
+	// loss case, and the observation must land after the restore.
+	if err := store.TouchAgentLastSeen(ctx, "agent-restore", observed); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("precondition touch error = %v", err)
+	}
+	if err := store.RestoreAuthenticatedAgent(ctx, "agent-restore", observed); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.TouchAgentLastSeen(ctx, "agent-restore", observed); err != nil {
+		t.Fatalf("touch after restore = %v", err)
+	}
+	var displayName, firstSeen string
+	if err := store.DB().QueryRowContext(ctx,
+		`SELECT display_name, first_seen_at FROM agents WHERE id='agent-restore'`).Scan(&displayName, &firstSeen); err != nil {
+		t.Fatal(err)
+	}
+	if displayName != "agent-restore" {
+		t.Fatalf("restored display_name = %q", displayName)
+	}
+	if firstSeen != observed.Format(serverDatabaseTimeFormat) {
+		t.Fatalf("restored first_seen_at = %q", firstSeen)
+	}
+
+	// Restoring again must not disturb the existing row.
+	if _, err := store.DB().ExecContext(ctx, `UPDATE agents SET display_name='named' WHERE id='agent-restore'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RestoreAuthenticatedAgent(ctx, "agent-restore", observed.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DB().QueryRowContext(ctx,
+		`SELECT display_name FROM agents WHERE id='agent-restore'`).Scan(&displayName); err != nil {
+		t.Fatal(err)
+	}
+	if displayName != "named" {
+		t.Fatalf("idempotent restore overwrote display_name: %q", displayName)
+	}
+
+	if _, err := store.DB().ExecContext(ctx, `UPDATE agents SET retired_at=? WHERE id='agent-restore'`,
+		observed.Format(serverDatabaseTimeFormat)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RestoreAuthenticatedAgent(ctx, "agent-restore", observed); !errors.Is(err, ErrAgentRetired) {
+		t.Fatalf("retired restore error = %v", err)
+	}
+	if err := store.RestoreAuthenticatedAgent(ctx, "", observed); err == nil {
+		t.Fatal("an empty Agent ID must be rejected")
+	}
+}

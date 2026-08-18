@@ -19,6 +19,7 @@ import (
 	"github.com/east-true/dockpilot/internal/registrationhttp"
 	"github.com/east-true/dockpilot/internal/serverapi"
 	"github.com/east-true/dockpilot/internal/serverbootstrap"
+	"github.com/east-true/dockpilot/internal/serverstore"
 	"github.com/east-true/dockpilot/internal/webui"
 )
 
@@ -351,6 +352,7 @@ func runAuditRetentionOnce(ctx context.Context, store auditRetentionStore, archi
 
 type agentLastSeenStore interface {
 	TouchAgentLastSeen(context.Context, string, time.Time) error
+	RestoreAuthenticatedAgent(context.Context, string, time.Time) error
 }
 
 func runLivenessWriter(ctx context.Context, store agentLastSeenStore, observations <-chan livenessObservation) {
@@ -360,10 +362,26 @@ func runLivenessWriter(ctx context.Context, store agentLastSeenStore, observatio
 			return
 		case observation := <-observations:
 			writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			_ = store.TouchAgentLastSeen(writeCtx, observation.agentID, observation.at)
+			writeLivenessObservation(writeCtx, store, observation)
 			cancel()
 		}
 	}
+}
+
+// writeLivenessObservation records the observation, and restores the Agent's
+// operational record when it is missing. The transport has already verified the
+// credential, so a missing row means the Server database was lost while the
+// Identity State survived; section 6.1 of the architecture requires the
+// existing Agent to authenticate automatically in exactly that case.
+func writeLivenessObservation(ctx context.Context, store agentLastSeenStore, observation livenessObservation) {
+	err := store.TouchAgentLastSeen(ctx, observation.agentID, observation.at)
+	if !errors.Is(err, serverstore.ErrAgentNotFound) {
+		return
+	}
+	if err := store.RestoreAuthenticatedAgent(ctx, observation.agentID, observation.at); err != nil {
+		return
+	}
+	_ = store.TouchAgentLastSeen(ctx, observation.agentID, observation.at)
 }
 
 func (r *Runtime) HTTPAddress() string {

@@ -66,7 +66,7 @@ Operator documentation:
 - `docs/resource-gate.md` - the production resource gate and its evidence
   contract;
 - `docs/clean-host-install-e2e.md` - the clean-host installation gate, passed
-  on 2026-08-18.
+  on 2026-08-18 against the reproducible release images.
 
 Release-scope and harness contracts are checked statically:
 
