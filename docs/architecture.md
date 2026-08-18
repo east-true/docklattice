@@ -2,7 +2,7 @@
 
 **상태**: 동결 (Frozen)
 **동결일**: 2026-08-13
-**다음 단계**: Transport Prototype (부록 A)
+**다음 단계**: 운영 기본값 실제 튜닝과 구현 계획 수립 (부록 B)
 
 ---
 
@@ -230,7 +230,11 @@ Agent에서 판단 로직이 있는 곳은 **Project Lock**(실행 주체이므�
 
 연결은 Agent가 시작하고, Agent는 inbound port를 열지 않는다. NAT/방화벽 뒤 호스트 지원, IP 변동 무관, 공격면 축소가 근거다.
 
-전송 기술은 프로토타입으로 결정하되, **전송이 만족해야 할 계약은 확정되어 있다.**
+전송 기술은 2026-08-15 Transport Prototype 결과에 따라 **단일 Agent-initiated Reverse gRPC**로 확정했다. Candidate A는 13/13 acceptance group을 통과했고, Candidate B(WebSocket)는 Scenario 3 scale workload group이 1/3 통과에 그쳐 탈락했다. 적어도 한 단일 연결 후보가 합격했으므로 §5.3의 두 연결 후퇴점은 활성화하지 않는다. 공식 원시 결과와 판정 리포트는 `artifacts/transport-prototype/official`에 보존한다.
+
+WSL 업데이트로 공식 행렬의 마지막 WebSocket 3개 trial 전에 커널이 `6.6.87.2`에서 `6.18.33.2`로 변경됐다. 이는 A.7의 동일 커널 통제조건 예외다. 결과를 폐기하고 전체 행렬을 재실행하는 대신 이 예외를 명시적으로 수용했으며, 최종 선택을 결정한 WebSocket scale 실패 2회와 gRPC 합격 증거는 업데이트 전에 수집됐다.
+
+**전송이 만족해야 할 계약은 다음과 같이 확정되어 있다.**
 
 ```
 C1. Agent-initiated 단일 지속 연결, Agent에 inbound port 없음
@@ -249,7 +253,7 @@ C9. 연결 시 프로토콜 버전 협상, Server N ↔ Agent N-1 호환
 
 ### 5.2 트래픽 클래스
 
-전송 기술과 무관하게 우선순위 정책은 **애플리케이션 계층이 소유**한다. HTTP/2를 쓰더라도 스트림 우선순위는 얻지 못하므로, 두 후보 모두 같은 스케줄링 코드를 공유해야 비교가 공정하다.
+전송 기술과 무관하게 우선순위 정책은 **애플리케이션 계층이 소유**한다. Reverse gRPC가 HTTP/2를 사용하더라도 스트림 우선순위는 얻지 못하므로, 선택된 adapter도 프로토타입에서 검증한 공통 P0~P4 스케줄링 정책을 사용한다.
 
 ```
 P0 — Control            : cancel, heartbeat, operation phase/final result, protocol error
@@ -271,6 +275,8 @@ Compose 프로세스의 stdout 파이프가 UI 소비 속도 때문에 막히면
 ### 5.3 후퇴점: 두 연결 구조
 
 단일 연결이 프로토타입 수용 기준을 통과하지 못하면 **버퍼를 늘려 실패를 숨기지 않고** 두 연결로 후퇴한다.
+
+Transport Prototype에서는 Reverse gRPC 단일 연결이 합격했으므로 이 후퇴점은 **비활성**이다. 아래 계약은 후퇴 조건이 실제로 충족될 때만 적용한다.
 
 ```
 Connection A — Control / Durable
@@ -521,7 +527,30 @@ budget이 depth보다 우월한 이유는 **문제를 조용히 누락시키지 
 
 ### 7.3 Nested Compose Project
 
-둘 다 발견한다. 부모의 `docker compose config`에 `include:`로 자식이 참조되면 `included_by: <parent_uid>`로 마킹하고 UI 목록에서 기본 접힘 처리하되 독립 조작은 허용한다. `include` 여부는 이미 계산하는 config 결과에서 나오므로 추가 비용이 없다.
+둘 다 발견한다. 부모가 `include:`로 자식을 참조하면 자식에
+`included_by: <parent_uid>`를 마킹하고 UI 목록에서 기본 접힘 처리하되 독립
+조작은 허용한다. `extends.file`은 서비스 조각 참조일 뿐 별도 Compose project의
+부모-자식 관계를 만들지 않는다.
+
+`docker compose config --format json`은 name/services의 권위 있는 결과이지만
+Compose CLI v5.3.1에서 `include`/`extends`의 **원본 출처를 보존하지 않고
+평탄화한다.** 따라서 Agent는 아래처럼 의도적으로 좁은 source-provenance
+parser를 별도로 둔다.
+
+- YAML AST에서 최상위 `include`와 `services.*.extends.file`의 **literal path만**
+  추출한다. project name, interpolation, merge, service 선택, 최종 config는
+  계산하지 않는다. 이들은 계속 Docker Compose CLI만 담당한다.
+- alias/anchor/merge key, 보간 경로, 불명확 타입, 다중 document는 source graph를
+  incomplete로 만든다. lifecycle의 의미를 이 parser로 거부하거나 재해석하지
+  않되, graph가 incomplete인 동안에는 Compose evaluation cache를 재사용하지
+  않는다.
+- 재귀 탐색은 최대 64 file, 256 edge, 깊이 16으로 제한하고 cycle을 탐지해
+  incomplete로 끝낸다. 그래프와 파일 내용은 Server로 보내지 않고 경로·종류·
+  접근 가능 여부만 보낸다.
+
+`include` 대상의 directory가 독립 discovery project이면 Server의 기존
+filesystem merge가 `included_by`를 계산한다. 따라서 source graph는 identity를
+결정하지 않고, Agent의 raw filesystem fact에 include 관계만 추가한다.
 
 discovery boundary 마커는 **FUTURE** — 실제 요구가 확인되기 전에 만들지 않는다.
 
@@ -907,6 +936,19 @@ API 계약: Server → Agent 는 (project_uid, relative_path) 만 전달. 절대
 - symlink가 아님
 
 **working_dir 밖의 참조 파일**: 내용 편집 금지. 경로와 접근 가능 여부만 표시한다.
+
+source-provenance parser의 추가 경계:
+
+- 참조는 literal path를 현재 source file directory 기준으로 canonicalize한 뒤
+  discovery root와 검증된 identical-path mount 안인지 확인한다. root 밖 경로는
+  표시·읽기 모두 하지 않는다.
+- `working_dir` 안의 include/extends source file은 모든 parent component와 target을
+  `O_NOFOLLOW`로 다시 확인한 regular file일 때만 읽고, fingerprint에 넣으며,
+  project의 temporary `ReadOnly` allowlist에 추가한다.
+- `working_dir` 밖이지만 discovery root 안인 참조는 fd-relative no-follow stat으로
+  접근 가능 여부만 확인한다. 부모 project가 내용을 읽거나 allowlist에 추가하지
+  않는다. 해당 directory가 별도 discovery project라면 그 project 화면에서만
+  정상 파일 접근을 판단한다.
 
 근거: compose 파일은 **사용자가 편집 가능한 콘텐츠**다. 참조 경로를 그대로 신뢰하면 `include: /etc/...` 같은 경로로 Agent를 임의 파일 리더로 만들 수 있다. 또한 `include`는 `../commons/compose.yaml`처럼 부모 프로젝트 밖을 참조할 수 있고 포함된 파일마다 자체 프로젝트 디렉터리 기준으로 상대경로를 해석하므로, 부모 화면에서 이런 파일까지 쓰게 하면 다른 프로젝트와 공유된 설정을 예상치 못하게 변경할 수 있다.
 
@@ -1473,6 +1515,8 @@ free-space 위험 : 신규 backup 등 비필수 쓰기 차단,
 
 Retention으로 삭제한 범위는 `SERVER_RETENTION_APPLIED`로 남기되, **일반 Audit Event가 아니라 Coverage Ledger에** 기록한다(일반 event는 이후 retention으로 다시 삭제될 수 있다).
 
+운영 Server는 현재 Canonical Archive ID만 대상으로 별도 retention worker를 하나 실행한다. 시작 직후와 이후 15분마다 실행하며, 한 번의 실행은 1분 context로 제한된다. 실행 실패·timeout은 다음 주기에 재시도할 뿐 Agent ingest/ACK 요청 경로로 전파하지 않는다. worker 내부의 삭제 transaction은 최대 512 record batch이며, 각 transaction 직전에 현재 Archive identity를 재검증한다.
+
 ---
 
 ## 12. Metrics
@@ -1665,6 +1709,8 @@ storage_degraded_reason: FILESYSTEM_FREE_LOW | AGENT_STATE_BUDGET_EXCEEDED | BOT
 
 두 원인은 사용자의 조치가 다르므로 반드시 구분한다. Dockpilot과 무관한 파일 때문에 Host filesystem이 가득 찬 경우 Agent가 자기 데이터를 정리해도 DEGRADED_STORAGE가 유지될 수 있으며 **이는 의도된 동작**이다. 해결은 Host filesystem 정리이며 Dockpilot이 임의의 Host 파일을 삭제해서는 안 된다.
 
+`DEGRADED_STORAGE`는 Compose 같은 허용 capability를 false로 만들지 않는다. 대신 Agent heartbeat의 capability reason으로 보고하며, Server API와 Web UI는 capability가 enabled여도 그 reason을 보존해 경고로 표시한다. 사용자는 작업 버튼을 계속 사용할 수 있고, 어떤 저장소 압박이 남아 있는지도 확인할 수 있어야 한다.
+
 ### 14.4 Memory 관측
 
 **Process RSS와 Container cgroup Memory Limit을 같은 값으로 두지 않는다.** Agent 컨테이너 안에서는 Agent process, docker CLI, compose plugin, compose 자식 프로세스, TLS/stream buffer, page cache가 함께 cgroup에 계산된다. 256MB를 그대로 hard limit으로 강제하면 정상 compose 작업 중 OOM Kill이 발생한다.
@@ -1797,6 +1843,7 @@ Compose Project → Overview / Services / Logs / Metrics / Environment
 ```
 
 - capability가 false인 기능은 **숨기지 말고 비활성 + 이유 툴팁**. 숨기면 사용자가 버그로 오해한다.
+- enabled capability의 reason은 비활성 사유가 아니라 **운영 경고**다. UI는 기능을 막지 않고, reason을 호스트 capability 목록과 관련 동작의 툴팁에 표시한다.
 - `compose down`은 v1 UI에서 `--volumes`를 노출하지 않는다. 일반 `down` 화면에 **"볼륨은 삭제되지 않습니다"** 를 명시한다(반대 방향 오해보다 이쪽이 흔하다).
 - `--remove-orphans`는 기본 비활성 OPTIONAL 플래그.
 - `.env` 편집 화면은 값을 기본 마스킹하고 명시적 토글로 표시한다.
@@ -2231,9 +2278,26 @@ Agent/Server: §14.4의 RSS, Go Heap, goroutines, cgroup memory 지표 전체
   계측 지점 정의, 클래스 기반 송신 정책 (P0~P4)
 ```
 
+Git/GitHub 보관은 제품 코드 이관 여부와 별개로 다음처럼 고정한다. 프로토타입
+소스, 실행·리포트 생성 스크립트, 완료 표식, 판정 리포트, 결정 메모, 환경 예외
+기록과 release asset checksum은 일반 Git에 보존한다. trial별 JSONL·로그·설정,
+계측 원본과 보존 실행 파일을 포함한 공식 원시 산출물 전체는 하나의 immutable
+GitHub Release asset으로 묶고 일반 Git history에는 넣지 않는다. Release asset은
+버전, SHA-256과 원본 경로를 저장소 문서에 기록하며, checksum 검증 전에는 판정
+근거로 사용하지 않는다. 비밀키와 자격 증명은 어느 보관 채널에도 포함하지 않는다.
+
 계측 지점은 프로토타입 전용이 아니라 운영에서도 동일한 이름으로 유지한다. **프로토타입에서 실패를 관측한 지표가 운영에서 사라지면 같은 문제를 다시 진단할 수 없다.**
 
-### A.14 Prototype과 Integration Test 분리
+### A.14 실행 결과 (2026-08-15)
+
+- 공식 행렬 78/78 trial과 26개 3회 반복 group의 집계를 완료했다.
+- Candidate A(Reverse gRPC)는 13/13 group을 통과했다.
+- Candidate B(WebSocket)는 12/13 group을 통과했으며 Scenario 3 scale의 `workload and logical-contract integrity`가 1/3 통과로 실패했다. 실패한 두 trial에서는 Echo 처리율이 0이었다.
+- 최종 권고는 `REVERSE_GRPC`이며 두 연결 후퇴점 trigger는 `false`다.
+- 실제 `docker compose up` smoke는 120초 동안 200-byte Operation output 6,000/6,000 lines와 완료 marker를 확인했다. 이 결과는 `acceptance_input=false`로 전송 판정에는 사용하지 않았다.
+- 환경 예외: WSL 업데이트로 마지막 WebSocket 3개 trial 전에 커널이 `6.6.87.2`에서 `6.18.33.2`로 변경됐다. 전체 재실행 대신 이 예외를 수용했으며 상세 기록은 공식 artifact root의 `ENVIRONMENT-EXCEPTION.md`에 둔다.
+
+### A.15 Prototype과 Integration Test 분리
 
 Transport Prototype은 Audit WAL을 in-memory로 스텁하므로 운영 대비 page cache 발생량이 작다. **프로토타입이 512MB에서 통과했다는 사실이 운영에서도 512MB로 충분하다는 근거가 되지 않는다.**
 
@@ -2254,14 +2318,23 @@ Integration Resource Test (별도 단계):
 
 ### B.1 남은 작업
 
+Transport Prototype, 동시성/Memory/Audit non-starvation 검증, 조건부 후퇴점 판정, 전송 기술 확정은 2026-08-15 완료했다. Reverse gRPC 단일 연결이 합격했으므로 두 연결 후퇴점 검증은 실행 대상이 아니었다.
+
 ```
-1. 단일 연결 Transport Prototype
-2. 동시성 / Memory / Audit Non-starvation 검증
-3. 필요 시 두 연결 후퇴점 검증
-4. Transport 기술 확정
-5. 운영 기본값 실제 튜닝
-6. 구현 계획 수립
+완료:
+  구현 계획 수립 → docs/implementation-plan.md
+  §19 및 B.2 값을 provisional v1 defaults로 코드화
+
+남음:
+  구현 계획 Phase 1~7 제품 구현
+  A.15 Integration Resource Gate에서 운영 기본값 실제 튜닝·확정
+  구현 계획 Phase 9 v1 release gate
 ```
+
+기본값의 수치와 상호관계 검증은 `internal/config`가 담당하고, 검증 상태와
+실제 자원 행렬은 `docs/defaults-validation.md`에 기록한다. 단위 테스트에서
+숫자가 일치한다는 사실만으로 `validated`라 부르지 않으며, 실제 WAL·Backup·
+Compose·Discovery를 함께 실행하는 A.15를 통과해야 최종 운영 기본값으로 승격한다.
 
 프로토타입 이후 변경 가능한 것은 전송 기술, Memory Limit 수치, Timeout, Retention, Disk Budget, Scan Budget, Sampling Interval뿐이다.
 
@@ -2271,9 +2344,9 @@ Integration Resource Test (별도 단계):
 
 권고: lifetime 90일 이상, 잔여 수명 50% 지점부터 갱신 시도. 만료된 채 복귀하면 join token 재등록이라는 규칙은 그대로 유지.
 
-### B.3 코드 작성 범위
+### B.3 프로토타입 단계 코드 작성 범위 (완료)
 
-현재 단계에서 코드 작성이 허용되는 범위는 **Transport Prototype뿐**이다.
+Transport Prototype 단계에서 코드 작성 범위는 다음으로 제한했고, 이 단계는 2026-08-15 완료했다.
 
 ```
 허용:
@@ -2290,4 +2363,4 @@ Integration Resource Test (별도 단계):
   Dockpilot production server/agent
 ```
 
-전체 Dockpilot 구현은 Transport 선택과 프로토타입 검증 이후에 시작한다.
+전체 Dockpilot 구현은 다음 단계의 구현 계획을 수립한 뒤 시작한다. 프로토타입 전용 workload, driver, stub queue/store와 탈락한 WebSocket adapter는 제품 코드로 이관하지 않는다.

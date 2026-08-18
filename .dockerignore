@@ -1,0 +1,32 @@
+.git
+.github
+.agents
+.codex
+.orchestrator
+
+# Prototype evidence and local release output are not product build inputs.
+artifacts
+prototype
+dist
+
+# Product documentation and developer scripts are not needed by the Go build.
+docs
+scripts
+README.md
+
+# Common local build/editor debris.
+*.log
+*.tmp
+*.swp
+.env
+.env.*
+*.crt
+*.key
+*.pem
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.wal
+.DS_Store
+dockpilot

@@ -1,0 +1,253 @@
+syntax = "proto3";
+
+// dockpilot.prototype.v1은 Transport Prototype(부록 A)의 논리 페이로드
+// 정의다. 두 후보는 동일한 직렬화 형식을 쓴다(부록 A.7 통제 변수).
+//
+// 이 파일에는 전송 기술에 종속된 것이 들어가지 않는다. gRPC service 정의는
+// 후보 A adapter 안에만 존재한다.
+package dockpilot.prototype.v1;
+
+option go_package = "github.com/east-true/dockpilot/internal/contract/pb;pb";
+
+// ---------------------------------------------------------------------------
+// P0 Control
+// ---------------------------------------------------------------------------
+
+message RegisterRequest {
+  string agent_id = 1;
+  uint32 protocol_version = 2;
+}
+
+message RegisterResponse {
+  string session_id = 1;
+  uint32 protocol_version = 2;
+  Capability capability = 3;
+}
+
+message HeartbeatRequest {
+  int64 sent_at_unix_nano = 1;
+}
+
+message HeartbeatResponse {
+  int64 sent_at_unix_nano = 1;
+  Capability capability = 2;
+}
+
+// Capability는 연결·Docker·Compose 능력을 분리해 보고한다(ADR §18).
+// 프로토타입에서는 값을 고정 보고한다. Docker를 호출하지 않는다(A.5).
+message Capability {
+  bool fs_write = 1;
+  bool compose_exec = 2;
+  string bundled_compose_version = 3;
+  string docker_api_version = 4;
+}
+
+enum CancelReason {
+  CANCEL_REASON_UNSPECIFIED = 0;
+  CANCEL_REASON_USER = 1;
+  CANCEL_REASON_TIMEOUT = 2;
+  CANCEL_REASON_AGENT_SHUTDOWN = 3;
+}
+
+message CancelOperationRequest {
+  string operation_id = 1;
+  CancelReason reason = 2;
+}
+
+// ADR §9.4의 응답 집합이다.
+enum CancelResult {
+  CANCEL_RESULT_UNSPECIFIED = 0;
+  CANCEL_RESULT_ACCEPTED = 1;
+  CANCEL_RESULT_TOO_LATE = 2;
+  CANCEL_RESULT_NOT_CANCELABLE = 3;
+  CANCEL_RESULT_ALREADY_TERMINAL = 4;
+  CANCEL_RESULT_NOT_FOUND = 5;
+}
+
+message CancelOperationResponse {
+  CancelResult result = 1;
+  int64 requested_at_unix_nano = 2;
+}
+
+// ADR §8.6의 phase다.
+enum OperationPhase {
+  OPERATION_PHASE_UNSPECIFIED = 0;
+  OPERATION_PHASE_PREPARING = 1;
+  OPERATION_PHASE_EXECUTING = 2;
+  OPERATION_PHASE_COMMITTING = 3;
+  OPERATION_PHASE_FINALIZING = 4;
+  OPERATION_PHASE_TERMINAL = 5;
+}
+
+// ADR §9.2의 cancel mode다.
+enum CancelMode {
+  CANCEL_MODE_UNSPECIFIED = 0;
+  CANCEL_MODE_SAFE = 1;
+  CANCEL_MODE_BEST_EFFORT_PARTIAL = 2;
+  CANCEL_MODE_BEFORE_COMMIT = 3;
+}
+
+message OperationProgressRequest {}
+
+// ADR §8.6: Server는 가장 높은 operation_revision만 반영한다.
+message OperationProgressEvent {
+  string operation_id = 1;
+  uint64 operation_revision = 2;
+  OperationPhase phase = 3;
+  CancelMode cancel_mode = 4;
+  int64 occurred_at_unix_nano = 5;
+  string detail = 6;
+  bool terminal = 7;
+  string terminal_status = 8;
+}
+
+// ---------------------------------------------------------------------------
+// P1 Durable Sync
+// ---------------------------------------------------------------------------
+
+// Cursor는 (incarnation, seq) 복합값이다. -1 연산을 정의하지 않는다
+// (ADR §11.4). 범위는 half-open [from, until)으로 표현한다.
+message Cursor {
+  uint64 incarnation = 1;
+  uint64 seq = 2;
+}
+
+message AuditRecord {
+  string agent_id = 1;
+  uint64 incarnation = 2;
+  uint64 seq = 3;
+  int64 occurred_at_unix_nano = 4;
+  // kind는 managed / observed / continuity_uncertain 등 in-band record 종류다.
+  string kind = 5;
+  bytes payload = 6;
+}
+
+// SyncAuditMessage는 Agent -> Server 방향 메시지다.
+message SyncAuditMessage {
+  oneof body {
+    AuditRecord record = 1;
+    CoverageChanged coverage_changed = 2;
+    AckResult ack_result = 3;
+  }
+}
+
+// CoverageChanged는 Coverage 변경 알림이다. Server는 이를 받으면 전체
+// snapshot을 다시 받는다. Delta Coverage API는 만들지 않는다(ADR §11.7).
+message CoverageChanged {
+  uint64 coverage_revision = 1;
+}
+
+// SyncAuditAck는 Server -> Agent 방향 메시지다(ADR §11.8).
+message SyncAuditAck {
+  string audit_archive_id = 1;
+  Cursor cursor = 2;
+  uint64 coverage_revision_seen = 3;
+}
+
+message AckResult {
+  bool accepted = 1;
+  // stale_coverage일 때 Agent는 현재 snapshot을 동봉한다(ADR §11.8).
+  AuditCoverageSnapshot snapshot = 2;
+  repeated CoverageRange blocking_ranges = 3;
+  Cursor current_server_acked_through = 4;
+}
+
+enum GapReason {
+  GAP_REASON_UNSPECIFIED = 0;
+  GAP_REASON_RETENTION = 1;
+  GAP_REASON_DISK_PRESSURE = 2;
+}
+
+enum Precision {
+  PRECISION_UNSPECIFIED = 0;
+  PRECISION_EXACT = 1;
+  PRECISION_COALESCED = 2;
+}
+
+message CoverageRange {
+  uint64 incarnation = 1;
+  uint64 from_seq = 2;
+  uint64 to_seq = 3;
+  GapReason reason = 4;
+  Precision precision = 5;
+}
+
+message GetAuditCoverageRequest {}
+
+message AuditCoverageSnapshot {
+  string agent_id = 1;
+  uint64 coverage_revision = 2;
+  int64 generated_at_unix_nano = 3;
+  repeated CoverageRange gaps = 4;
+  repeated uint64 coverage_unknown_incarnations = 5;
+}
+
+// ---------------------------------------------------------------------------
+// P2 Interactive Query
+// ---------------------------------------------------------------------------
+
+// Echo는 Docker query를 대체하는 지연 측정용 요청이다(부록 A.4).
+message EchoRequest {
+  uint32 payload_size = 1;
+  int64 sent_at_unix_nano = 2;
+}
+
+message EchoResponse {
+  bytes payload = 1;
+  int64 sent_at_unix_nano = 2;
+}
+
+// ---------------------------------------------------------------------------
+// P3 Bulk Interactive
+// ---------------------------------------------------------------------------
+
+message StreamLogsRequest {
+  string stream_id = 1;
+  // byte_rate는 합성 부하 생성률이다(bytes/sec).
+  uint32 byte_rate = 2;
+  uint32 line_size = 3;
+}
+
+message LogChunk {
+  string stream_id = 1;
+  uint64 seq = 2;
+  int64 emitted_at_unix_nano = 3;
+  bytes data = 4;
+  // dropped_bytes는 느린 소비자 때문에 생략한 바이트다. 조용히 버리지
+  // 않고 명시한다(ADR §5.2).
+  uint64 dropped_bytes = 5;
+}
+
+message OperationOutputRequest {
+  string operation_id = 1;
+}
+
+message OperationOutputChunk {
+  string operation_id = 1;
+  uint64 seq = 2;
+  int64 emitted_at_unix_nano = 3;
+  bytes data = 4;
+  bool truncated = 5;
+}
+
+// ---------------------------------------------------------------------------
+// P4 Disposable Live
+// ---------------------------------------------------------------------------
+
+message StreamStatsRequest {
+  repeated string targets = 1;
+  uint32 interval_ms = 2;
+}
+
+message StatsSample {
+  string target = 1;
+  int64 sampled_at_unix_nano = 2;
+  double cpu_percent = 3;
+  uint64 memory_bytes = 4;
+  uint64 memory_limit_bytes = 5;
+  uint64 net_rx_bytes = 6;
+  uint64 net_tx_bytes = 7;
+  uint64 block_read_bytes = 8;
+  uint64 block_write_bytes = 9;
+  bytes padding = 10;
+}

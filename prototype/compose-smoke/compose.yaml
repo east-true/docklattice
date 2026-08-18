@@ -1,0 +1,9 @@
+services:
+  operation-output:
+    image: ${COMPOSE_SMOKE_IMAGE}
+    environment:
+      COMPOSE_SMOKE_DURATION: ${COMPOSE_SMOKE_DURATION:-120s}
+    init: true
+    network_mode: none
+    read_only: true
+    restart: "no"

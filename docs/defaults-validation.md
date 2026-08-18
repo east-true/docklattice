@@ -1,0 +1,148 @@
+# v1 operational defaults validation
+
+Status: memory defaults validated; remaining categories provisional  
+Source: architecture section 19 and Appendix B.2  
+Promotion gate: implementation-plan Phase 8 (passed 2026-08-18, see
+`docs/resource-gate.md`)
+
+The values below are product defaults now, so implementation can proceed
+without reopening frozen architecture decisions. A default is not called
+validated merely because a unit test confirms its numeric value. Values tied
+to real I/O, host filesystems, Docker, Compose, or cgroups remain provisional
+until the production resource matrix passes.
+
+Binary storage units in product configuration use IEC bytes (`KiB`, `MiB`,
+`GiB`). UI text may render user-friendly units but must not change enforcement.
+
+## Fixed policy semantics
+
+These rules are implementation contracts and are not workload-tuning results:
+
+- WAL retention is 256 MiB or 14 days, whichever is reached first.
+- WAL durability triggers fsync after 1 second or 64 KiB, whichever comes first.
+- Active operations are never evicted from the 24-hour/500-result ring.
+- The free-space floor is `max(1 GiB, 5%)`.
+- Managed Audit is never rate-limited; Observed Audit is coalesced for 5 seconds
+  and capped at 20 events/second with a storm summary.
+- Cancellation uses the same operation path as timeout and gives eligible
+  process groups 10 seconds between SIGTERM and SIGKILL.
+- Offline is declared after 90 seconds with a 30-second heartbeat interval.
+- Server Audit pressure warns at 80%, becomes aggressive at 95%, and continues
+  ingest while evicting the oldest eligible canonical data.
+- Credentials live for 90 days and renewal starts when 50% of lifetime remains.
+  An Agent whose credential expires offline must register with a join token.
+- Discovery visits at most 1,000 directories/second by default. This provisional
+  I/O safety value is part of the scan-budget tuning category and must be
+  validated on both local and slow filesystems before release.
+
+`internal/config.V1Defaults` is the executable source for these values and
+validates cross-field invariants.
+
+## Validation ownership
+
+| Defaults | Pre-integration evidence | Final evidence |
+|---|---|---|
+| Exact values and relationships | config unit tests | config dump in release E2E |
+| Credential lifetime/renewal | fake-clock issue, activation, expiry, revocation tests | reconnect/offline E2E |
+| Operation result/tail limits | deterministic ring/truncation tests | crash/reconnect E2E |
+| WAL size/age/fsync | fake-clock and fault-injected WAL tests | production disk-WAL matrix |
+| Operation timeouts | fake-clock state-machine tests | real normal/slow/hung Docker and Compose fixtures |
+| Retention/disk/reserve | isolated quota fault tests | full storage-pressure matrix |
+| Discovery budget/interval | synthetic tree boundary tests | real 200,001-directory and slow-filesystem fixtures |
+| Stats interval/ring | fake viewer clock and bounded-ring tests | real Docker viewer 0/1/N soak |
+| Agent/Server memory | component allocation tests | production cgroup matrix, three repetitions |
+
+## Integration resource matrix
+
+The runner will execute a production Server plus production Agents with the
+real WAL, snapshots/backups, Compose child processes, discovery, and the
+Appendix A workload mix. The baseline limits are Agent 512 MiB and Server
+1 GiB. If the baseline fails, compare adjacent limits without changing
+protocol or queue semantics.
+
+Required observations:
+
+- process RSS, Go heap after GC, goroutines, and file descriptors;
+- cgroup `memory.current`, `memory.peak`, `memory.max`, `memory.events.local`,
+  `memory.stat`, and `memory.pressure`;
+- bounded transport/application queue occupancy;
+- P0/P1 latency and Audit cursor progress;
+- WAL, backup, restore-journal, and discovery I/O volume.
+
+Each case runs three times. Any OOM/OOM-kill, persistent RSS/heap/anon/buffer
+growth, broken P0/P1 guarantee, unexplained Audit range, or contract violation
+fails. File cache and `memory.events.local.max` are diagnostic and do not fail a
+case by themselves.
+
+## Focused fault matrices
+
+Storage tests use an isolated quota or disposable filesystem; they never fill
+the developer host filesystem. They verify the architecture's eviction order,
+manual-backup protection, one newest automatic snapshot, 64 MiB emergency
+reserve allowlist, admission rejection, degraded reason, and recovery
+hysteresis.
+
+Timeout tests give every real operation normal, slow, and hung fixtures. A
+timeout must travel through the normal cancellation state machine. Normal p99
+must retain operational headroom beneath the configured deadline.
+
+Discovery tests include a 200,001-directory fixture and a deliberately slow
+filesystem. Reaching either 200,000 directories or 60 seconds first must return
+a partial result with `truncated=true` and the last scanned path.
+
+The long soak runs for at least one hour and combines reconnects, process
+crashes, stream churn, disk pressure, and active logs/stats. An overnight soak
+is required before the v1 release candidate is signed.
+
+## Promotion record
+
+Phase 8 passed on 2026-08-18. It promotes the one row whose final evidence it
+was defined to produce - Agent/Server memory - and nothing else. The other
+rows in "Validation ownership" name final evidence this matrix does not
+generate, so they stay provisional and are listed below with what each still
+needs. A blanket `Status: validated` would claim evidence that does not exist.
+
+**Environment and identity**
+
+```text
+source_revision   412912baecb1096714854e73dcc843557e14d101
+server_image      sha256:906cab21aca5887bf5aaf88da561ed0f57bf6c1e67104e5307a8a08a013f6a47
+agent_image       sha256:722fbf9e91839f016d3c774b9514b1b52978025d5f84ba197c2ff53644ca958e
+fixture_image     sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
+kernel            Linux 6.18.33.2-microsoft-standard-WSL2 x86_64
+docker_engine     29.7.2
+cgroup            v2, systemd driver
+compose           5.3.1, pinned in the Agent image
+started/completed 2026-08-18T12:54:04Z / 2026-08-18T13:05:51Z
+```
+
+Artifact tree carries a 215-entry `SHA256SUMS` manifest and per-trial
+`workload-evidence.sha256`. The matrix command is the one in
+`docs/resource-gate.md` with `RESOURCE_CASE_SECONDS=600`.
+
+**Per-case result**: trial 1, 2, 3 all `status=PASS`;
+`prototype_acceptance_reused=false`. Three-run resource summaries, the
+Appendix A A.9 bounds actually measured, and the items deliberately not
+measured are recorded in `docs/resource-gate.md`.
+
+**Changed defaults**: none. The baseline limits held with large headroom -
+peak Agent RSS 27.4-30.5 MiB against 256 MiB and peak Server RSS 30.7-32.0 MiB
+against 512 MiB - so no architecture-authorized tuning value was adjusted and
+no adjacent-limit comparison was needed.
+
+**Promotion status by ownership row**
+
+| Defaults | Status | Outstanding final evidence |
+|---|---|---|
+| Agent/Server memory | validated | none; production cgroup matrix, three repetitions |
+| Retention/disk/reserve | partial | Phase 6 quota fault matrix passed on a disposable size-limited tmpfs; full storage-pressure matrix outstanding |
+| Exact values and relationships | provisional | config dump in release E2E (Phase 9) |
+| Credential lifetime/renewal | provisional | reconnect/offline E2E |
+| Operation result/tail limits | provisional | crash/reconnect E2E |
+| WAL size/age/fsync | provisional | production disk-WAL matrix |
+| Operation timeouts | provisional | real normal/slow/hung Docker and Compose fixtures |
+| Discovery budget/interval | provisional | real 200,001-directory and slow-filesystem fixtures |
+| Stats interval/ring | provisional | real Docker viewer 0/1/N soak |
+
+The one-hour combined soak and the overnight soak required before the v1
+release candidate is signed have not been run.

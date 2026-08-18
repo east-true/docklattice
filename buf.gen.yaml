@@ -1,0 +1,9 @@
+version: v2
+inputs:
+  - directory: proto
+managed:
+  enabled: false
+plugins:
+  - local: protoc-gen-go
+    out: .
+    opt: module=github.com/east-true/dockpilot

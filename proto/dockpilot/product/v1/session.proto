@@ -1,0 +1,199 @@
+syntax = "proto3";
+
+// Product control-plane messages. Transport-specific HTTP/2 window, ALPN,
+// metadata, and framing details are intentionally absent from this namespace.
+package dockpilot.product.v1;
+
+option go_package = "github.com/east-true/dockpilot/internal/producttransport/pb;pb";
+
+message HeartbeatRequest {
+  int64 sent_at_unix_nano = 1;
+}
+
+message Capability {
+  bool connection_ready = 1;
+  bool docker_ready = 2;
+  bool compose_ready = 3;
+  string docker_api_version = 4;
+  string bundled_compose_version = 5;
+  string reason = 6;
+  // Filesystem capability is reported by the Agent, which owns the per-root
+  // identical-path self-check (architecture 3.1 and 3.2). An Agent one protocol
+  // version behind omits these fields; the Server then keeps its existing
+  // "capability not reported" state rather than assuming access.
+  bool fs_read = 7;
+  bool fs_write = 8;
+  string fs_read_reason = 9;
+  string fs_write_reason = 10;
+}
+
+message HeartbeatResponse {
+  int64 observed_at_unix_nano = 1;
+  Capability capability = 2;
+}
+
+message QueryRequest {
+  string kind = 1;
+  string target = 2;
+  bytes payload = 3;
+}
+
+message QueryResponse {
+  bytes payload = 1;
+}
+
+message OperationRequest {
+  string operation_id = 1;
+  string type = 2;
+  string project_key = 3;
+  string target = 4;
+  bytes payload = 5;
+}
+
+message OperationResponse {
+  string status = 1;
+  string phase = 2;
+  uint64 revision = 3;
+  bool partial_effects_possible = 4;
+  string error = 5;
+  bytes output_tail = 6;
+  bool output_truncated = 7;
+}
+
+message GetOperationRequest {
+  string operation_id = 1;
+}
+
+message GetOperationResponse {
+  bool found = 1;
+  OperationResponse operation = 2;
+}
+
+message CancelOperationRequest {
+  string operation_id = 1;
+  string reason = 2;
+}
+
+message CancelOperationResponse {
+  string outcome = 1;
+  OperationResponse operation = 2;
+}
+
+message ListActiveOperationsRequest {}
+
+message ActiveOperation {
+  string operation_id = 1;
+  string type = 2;
+  string project_key = 3;
+  string target = 4;
+  OperationResponse operation = 5;
+}
+
+message ListActiveOperationsResponse {
+  repeated ActiveOperation operations = 1;
+}
+
+message LogStreamRequest {
+  string container_id = 1;
+  bool follow = 2;
+  uint64 tail_lines = 3;
+  bool show_stdout = 4;
+  bool show_stderr = 5;
+  bool timestamps = 6;
+  string project_uid = 7;
+  repeated string services = 8;
+}
+
+message LogEvent {
+  bytes data = 1;
+  string stream = 2;
+  uint64 line_count = 3;
+  int64 timestamp_unix_nano = 4;
+  uint64 dropped_bytes = 5;
+  uint64 dropped_lines = 6;
+  bool terminal = 7;
+  string error = 8;
+}
+
+message StatsStreamRequest {
+  string container_id = 1;
+}
+
+message StatsSample {
+  string container_id = 1;
+  int64 observed_at_unix_nano = 2;
+  double cpu_percent = 3;
+  uint64 memory_usage = 4;
+  uint64 memory_limit = 5;
+  uint64 network_rx = 6;
+  uint64 network_tx = 7;
+  uint64 block_read = 8;
+  uint64 block_write = 9;
+  uint64 restart_count = 10;
+  string health = 11;
+  int64 uptime_nano = 12;
+}
+
+message AuditCursor {
+  uint64 incarnation = 1;
+  uint64 sequence = 2;
+}
+
+message AuditRecord {
+  AuditCursor cursor = 1;
+  int64 appended_at_unix_nano = 2;
+  bytes payload = 3;
+}
+
+message AuditGap {
+  uint64 incarnation = 1;
+  uint64 from_sequence = 2;
+  uint64 until_sequence = 3;
+  string reason = 4;
+  string precision = 5;
+  uint64 last_loss_revision = 6;
+}
+
+message AuditCoverageSnapshot {
+  uint64 revision = 1;
+  int64 generated_at_unix_nano = 2;
+  repeated AuditGap gaps = 3;
+  repeated uint64 coverage_unknown_incarnations = 4;
+}
+
+message AuditBounds {
+  AuditCursor wal_floor = 1;
+  AuditCursor wal_ceiling = 2;
+  AuditCursor next_cursor = 3;
+  AuditCursor server_acked_through = 4;
+  string acknowledged_archive_id = 5;
+  uint64 coverage_revision = 6;
+}
+
+message AuditCursorBehindFloor {
+  AuditCursor requested = 1;
+  AuditBounds bounds = 2;
+  AuditCoverageSnapshot coverage = 3;
+}
+
+message AuditUpstream {
+  oneof message {
+    AuditRecord record = 1;
+    AuditCoverageSnapshot coverage = 2;
+    AuditCursorBehindFloor cursor_behind_floor = 3;
+    AuditAckResult ack_result = 4;
+  }
+}
+
+message AuditAck {
+  string audit_archive_id = 1;
+  AuditCursor cursor = 2;
+  uint64 coverage_revision_seen = 3;
+}
+
+message AuditAckResult {
+  AuditCursor proposed = 1;
+  bool accepted = 2;
+  AuditCoverageSnapshot stale_coverage = 3;
+  string error = 4;
+}

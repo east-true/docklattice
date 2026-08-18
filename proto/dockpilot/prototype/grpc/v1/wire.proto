@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+// This schema is private to Candidate A. None of these HTTP/2/gRPC adapter
+// details are exposed by the transport-neutral package.
+package dockpilot.prototype.grpc.v1;
+
+option go_package = "github.com/east-true/dockpilot/internal/candidate/grpcadapter/pb;pb";
+
+message OpenRequest {
+  uint64 exchange_id = 1;
+  string method = 2;
+  uint32 kind = 3;
+  uint32 traffic_class = 4;
+  bytes payload = 5;
+}
+
+message UnaryResponse {
+  bytes payload = 1;
+}
+
+message StreamFrame {
+  oneof body {
+    OpenRequest open = 1;
+    bytes payload = 2;
+  }
+}

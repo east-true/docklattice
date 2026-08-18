@@ -1,0 +1,83 @@
+# Clean-host container installation E2E
+
+Status: NOT RUN
+
+This is the Phase 9 fail-closed installation gate for a fresh Linux Docker
+host. The checked-in harness is ready, but this document must remain `NOT RUN`
+until a release operator attaches a successful evidence directory produced on
+the intended clean-host platform. A source review or a successful image build
+does not change this status.
+
+## Inputs and safety boundary
+
+Run `scripts/run-clean-host-install-e2e.sh` with four arguments:
+
+```sh
+./scripts/run-clean-host-install-e2e.sh \
+  /absolute/new/evidence-directory \
+  sha256:<exact-local-server-image-id> \
+  sha256:<exact-local-agent-image-id> \
+  sha256:<exact-local-fixture-image-id>
+```
+
+All three images must already exist in the local Engine. Server and Agent must
+be matching non-development production targets with the same release version
+and full source revision. The fixture must contain `/bin/sh`. No image is built, pulled, pushed, or downloaded
+by this gate; every run uses
+`--pull never`, and mutable tags are rejected.
+
+The host must provide a local Linux Docker Engine, cgroup v2 visible through
+the host `/proc` and `/sys/fs/cgroup`, and a readable/writable
+`/var/run/docker.sock`. `DOCKER_HOST`, remote daemons, Docker Desktop, rootless
+nonstandard sockets, and socket proxies are outside this gate. The preflight
+runs a small local cgroup probe. Docker absence or an invalid platform fails
+before either runtime state or the evidence directory is created.
+
+The evidence path must be absolute, must not exist, and is never overwritten.
+Runtime and secrets live under a separate fresh absolute `mktemp` root. Server
+and Agent state use UID/GID 65532 and mode 0700; the generated one-day test TLS
+key and certificate use mode 0600. The one-time Join Token is emitted by the
+production Server CLI into this runtime root, is never copied into evidence,
+and is deleted immediately after registration.
+
+## Exact assertions
+
+The harness starts the exact Server and Agent image IDs on an isolated Docker
+network and requires all of the following before reporting PASS:
+
+1. HTTPS readiness with the generated CA, exactly one registered ACTIVE Agent,
+   live connection/Docker/Compose/discovery capabilities, and exactly one
+   writable discovered fixture project at the identical absolute bind path.
+2. A `compose.up` operation accepted through the production HTTP API, polled
+   through the authoritative operation endpoint to exact `success`, creating
+   exactly one running Compose fixture from the requested immutable image ID.
+3. `backup.create` for `compose.yaml`, successful operation polling, and an
+   exact one-record manual backup list with a valid manifest digest.
+4. Removal and recreation of the Agent container without a Join Token, using
+   the same state root, followed by an ACTIVE reconnect with the identical
+   Agent ID, project UID, and backup metadata.
+
+Any missing capability, extra host/project/fixture, terminal operation failure,
+timeout, malformed response, wrong image ID, or cleanup failure produces FAIL.
+There are no warning-only success paths.
+
+## Evidence and cleanup
+
+API responses are capped at 1 MiB. Docker uses its bounded local log driver;
+captured logs are tail-limited and byte-limited. The complete evidence tree is
+capped at 16 MiB by default (configurable only within the harness's narrow
+4–64 MiB range). `assertions.env`, JSON responses, bounded logs, checksums, and
+the final `STATUS` are retained. The directory is made read-only after completion
+or failure so a subsequent run cannot silently amend it.
+
+On every exit the harness removes the Agent, Server, fixture containers,
+Compose-created network, isolated control network, Agent credential/state,
+Server database/identity/TLS state, project fixture, and any remaining Join
+Token. `status=PASS` is written only after every exact assertion succeeds and
+the separate runtime root is fully removed.
+
+Validate the checked-in static contract without Docker:
+
+```sh
+./scripts/verify-clean-host-install-harness.sh
+```

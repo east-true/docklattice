@@ -1,0 +1,20 @@
+# Transport prototype official evidence is published as one immutable release
+# asset instead of being stored in normal Git history. Keep only the compact
+# decision records and the release checksum in the repository.
+artifacts/transport-prototype/official/**
+!artifacts/transport-prototype/official/README.md
+!artifacts/transport-prototype/official/COMPLETION.md
+!artifacts/transport-prototype/official/ENVIRONMENT-EXCEPTION.md
+!artifacts/transport-prototype/official/decision-memo.md
+!artifacts/transport-prototype/official/final-report.json
+!artifacts/transport-prototype/official/final-report.md
+!artifacts/transport-prototype/official/RELEASE-ASSET.sha256
+
+# Locally generated release bundles are uploaded separately.
+artifacts/transport-prototype/release/
+
+# Locally generated OCI release archives and checksum sidecars.
+/dist/
+
+# Local-only notes; never published.
+/docs/local/
