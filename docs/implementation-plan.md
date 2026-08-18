@@ -53,8 +53,11 @@ services.
 ## Phase 2 — Identity and connection lifecycle
 
 Status: package recovery matrix complete
-(`internal/serverbootstrap/recovery_matrix_test.go`); real-container recovery
-matrix pending
+(`internal/serverbootstrap/recovery_matrix_test.go`); the Agent-replacement
+case of the real-container matrix is covered by the clean-host install E2E
+(Agent container removed and recreated with no Join Token, reconnecting with an
+identical Agent ID, project UID, and backup metadata); the identity-loss and
+database-loss cases remain package-level only
 
 - Implement Server identity, signing keys, archive generation, join tokens,
   Agent credentials, and the durable revocation ledger.
@@ -211,10 +214,17 @@ races); Server persistence schema and filesystem audits
 the release binary's dependency graph (`scripts/verify-release-scope.sh`, 29
 checks, 40 packages); Go dependency license material
 (`scripts/generate-license-inventory.sh`, 33 modules); operator documentation
-(`docs/supported-environments.md`, `docs/degraded-storage-recovery.md`).
-Blocked: reproducible release build and clean-host install E2E both require a
-committed source revision, because the images must carry a full 40-character
-Git object ID that actually contains their own source.
+(`docs/supported-environments.md`, `docs/degraded-storage-recovery.md`);
+release images built from revision `bbf6baa` and labelled 1.0.0; clean-host
+install E2E passed on 2026-08-18 against those exact image IDs
+([`docs/clean-host-install-e2e.md`](clean-host-install-e2e.md)).
+
+Outstanding: the release build is `linux/amd64` only. The reference host
+provides no `linux/arm64` emulation (`docker buildx` advertises only
+`linux/amd64` and its microarchitecture variants, and `binfmt_misc` carries no
+`qemu-aarch64` handler), so the multi-platform reproducible build cannot be
+executed or claimed here. The identity-loss and database-loss cases of the
+real-container recovery matrix also remain package-level only.
 
 Clean-host container harness and current execution status:
 [`docs/clean-host-install-e2e.md`](clean-host-install-e2e.md).

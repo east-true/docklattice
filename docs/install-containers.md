@@ -91,4 +91,4 @@ during an image upgrade.
 The release-gate version of this procedure, including exact image-ID and
 identity-reconnect assertions, is documented in
 [`clean-host-install-e2e.md`](clean-host-install-e2e.md). Its checked-in status
-remains `NOT RUN` until evidence is collected on the intended clean Linux host.
+is `PASS`, backed by the recorded execution documented there.

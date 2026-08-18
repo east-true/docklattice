@@ -1,12 +1,43 @@
 # Clean-host container installation E2E
 
-Status: NOT RUN
+Status: PASS
 
 This is the Phase 9 fail-closed installation gate for a fresh Linux Docker
-host. The checked-in harness is ready, but this document must remain `NOT RUN`
-until a release operator attaches a successful evidence directory produced on
-the intended clean-host platform. A source review or a successful image build
-does not change this status.
+host. The status is `PASS` only while a successful evidence directory produced
+by the harness on the intended clean-host platform is attached. A source review
+or a successful image build does not change this status; re-running the release
+images on a different platform requires a new evidence directory.
+
+## Recorded execution
+
+    started_at              2026-08-18T21:50:47Z
+    finished_at             2026-08-18T21:51:07Z
+    kernel                  Linux 6.18.33.2-microsoft-standard-WSL2 x86_64
+    docker_server_version   29.7.2
+    cgroup                  v2, systemd driver
+    release_version         1.0.0
+    release_revision        bbf6baa0295d1125ebd5a066a6a086ead6589a66
+    compose_version         5.3.1
+    server_image_id         sha256:b057404b17551530da18c129b70d5935e9492e593c111ea464c7948220d29107
+    agent_image_id          sha256:693e7a7f430567a67cf9f5924e5ac88d57cc0399dc9e498daa211a53b7a27c59
+    fixture_image_id        sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
+
+Recorded assertion results:
+
+| Assertion | Result |
+| --- | --- |
+| `registration` | PASS |
+| `project_discovery` | PASS |
+| `live_dashboard` | PASS |
+| `compose_operation` | PASS |
+| `backup_create_list` | PASS |
+| `identity_reconnect` | PASS |
+| `network_downloads` | FORBIDDEN |
+| `image_builds` | FORBIDDEN |
+| `image_pushes` | FORBIDDEN |
+
+`STATUS` recorded `status=PASS`, and the run left no container, network,
+runtime root, or Join Token behind.
 
 ## Inputs and safety boundary
 

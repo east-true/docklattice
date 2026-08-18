@@ -65,8 +65,8 @@ Operator documentation:
   procedure;
 - `docs/resource-gate.md` - the production resource gate and its evidence
   contract;
-- `docs/clean-host-install-e2e.md` - the clean-host installation gate, still
-  `NOT RUN`.
+- `docs/clean-host-install-e2e.md` - the clean-host installation gate, passed
+  on 2026-08-18.
 
 Release-scope and harness contracts are checked statically:
 

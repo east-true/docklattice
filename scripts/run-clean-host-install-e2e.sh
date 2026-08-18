@@ -141,7 +141,9 @@ runtime=
 server=
 agent=
 network=
-compose_project="$prefix-fixture"
+# Compose normalizes project names to lower case, so the label filters used to
+# assert and to clean up must be built from the normalized form.
+compose_project=$(printf '%s' "$prefix-fixture" | tr '[:upper:]' '[:lower:]')
 completed=0
 failure_reason="harness did not complete"
 
@@ -258,9 +260,15 @@ docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
     -v "$runtime:/clean-host" "$server_image" -c \
     'chown -R 65532:65532 /clean-host/server /clean-host/agent; chmod 0700 /clean-host/server /clean-host/agent; chmod 0700 /clean-host/server/tls; chmod 0600 /clean-host/server/tls/server.crt /clean-host/server/tls/server.key; chmod 0755 /clean-host/projects; chmod 0644 /clean-host/projects/compose.yaml' \
     >/dev/null
-[ "$(stat -c '%u:%g:%a' "$runtime/server")" = 65532:65532:700 ] || fail "Server state ownership or mode is incorrect"
-[ "$(stat -c '%u:%g:%a' "$runtime/agent")" = 65532:65532:700 ] || fail "Agent state ownership or mode is incorrect"
-[ "$(stat -c '%u:%g:%a' "$runtime/server/tls/server.key")" = 65532:65532:600 ] || fail "TLS key ownership or mode is incorrect"
+# The state roots are 0700 and owned by 65532, so an unprivileged operator on
+# the host cannot traverse them. Read the ownership and mode back through the
+# same root helper that set them instead of stat(1) on the host.
+state_modes=$(docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
+    -v "$runtime:/clean-host" "$server_image" -c \
+    'stat -c "%u:%g:%a" /clean-host/server /clean-host/agent /clean-host/server/tls/server.key')
+[ "$(printf '%s\n' "$state_modes" | sed -n 1p)" = 65532:65532:700 ] || fail "Server state ownership or mode is incorrect"
+[ "$(printf '%s\n' "$state_modes" | sed -n 2p)" = 65532:65532:700 ] || fail "Agent state ownership or mode is incorrect"
+[ "$(printf '%s\n' "$state_modes" | sed -n 3p)" = 65532:65532:600 ] || fail "TLS key ownership or mode is incorrect"
 
 network="$prefix-network"
 docker network create "$network" >"$evidence_dir/network.id"
@@ -293,11 +301,12 @@ docker run --pull never --rm --user 65532:65532 \
 [ "$(wc -l <"$runtime/bootstrap/join-token" | awk '{ print $1 }')" -eq 1 ] || fail "Join Token CLI did not emit exactly one line"
 token_size=$(wc -c <"$runtime/bootstrap/join-token" | awk '{ print $1 }')
 [ "$token_size" -gt 1 ] && [ "$token_size" -le 4096 ] || fail "Join Token CLI output size is invalid"
-cp "$runtime/bootstrap/server-ca.crt" "$runtime/agent/server-ca.crt"
-cp "$runtime/bootstrap/join-token" "$runtime/agent/join-token"
+# /agent is already 0700 and owned by 65532, so the bootstrap material has to
+# be placed and tightened by the same root helper rather than copied in from an
+# unprivileged host shell.
 docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
-    -v "$runtime/agent:/agent" "$server_image" -c \
-    'chown -R 65532:65532 /agent; chmod 0700 /agent; chmod 0600 /agent/server-ca.crt /agent/join-token' >/dev/null
+    -v "$runtime/agent:/agent" -v "$runtime/bootstrap:/bootstrap:ro" "$server_image" -c \
+    'cp /bootstrap/server-ca.crt /agent/server-ca.crt; cp /bootstrap/join-token /agent/join-token; chown -R 65532:65532 /agent; chmod 0700 /agent; chmod 0600 /agent/server-ca.crt /agent/join-token' >/dev/null
 
 socket_gid=$(stat -c '%g' /var/run/docker.sock)
 agent="$prefix-agent"
@@ -363,7 +372,9 @@ project_uid=$(jq -r '.projects[0].uid' "$evidence_dir/dashboard.initial.json")
 docker run --pull never --rm --user 0:0 --entrypoint /bin/sh -v "$runtime/agent:/agent" "$server_image" \
     -c 'rm -f /agent/join-token' >/dev/null
 rm -f "$runtime/bootstrap/join-token"
-[ ! -e "$runtime/agent/join-token" ] && [ ! -e "$runtime/bootstrap/join-token" ] || fail "Join Token cleanup failed"
+agent_token_left=$(docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
+    -v "$runtime/agent:/agent" "$server_image" -c '[ -e /agent/join-token ] && echo present || echo absent')
+[ "$agent_token_left" = absent ] && [ ! -e "$runtime/bootstrap/join-token" ] || fail "Join Token cleanup failed"
 
 api_json() {
     method=$1
@@ -407,6 +418,9 @@ api_json POST "$base_url/api/v1/operations" "$compose_body" "$evidence_dir/compo
 jq -e --arg id "$compose_operation" '.operation_id == $id and (.status == "requested" or .status == "dispatched" or .status == "running" or .status == "success") and .revision > 0' \
     "$evidence_dir/compose.accepted.json" >/dev/null || fail "Compose operation acceptance response is not exact"
 poll_operation_success "$compose_operation" "$evidence_dir/compose.final.json"
+docker ps -a --no-trunc --filter "label=com.docker.compose.project=$compose_project" \
+    --format '{{.ID}}\t{{.Image}}\t{{.State}}\t{{.Status}}\t{{.Names}}\t{{.Labels}}' \
+    >"$evidence_dir/compose.containers.tsv"
 fixture_ids=$(docker ps -q --filter "label=com.docker.compose.project=$compose_project" --filter 'label=com.docker.compose.service=clean-host-fixture')
 [ "$(printf '%s\n' "$fixture_ids" | awk 'NF { count++ } END { print count+0 }')" -eq 1 ] || fail "Compose operation did not create exactly one running fixture"
 [ "$(docker inspect --format '{{.Image}}' "$fixture_ids")" = "$fixture_image" ] || fail "Compose used an image other than the exact fixture image"

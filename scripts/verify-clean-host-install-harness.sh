@@ -79,7 +79,8 @@ fi
 }
 rmdir "$probe_parent"
 
-require_literal 'Status: NOT RUN' "$documentation"
+require_literal 'Status: PASS' "$documentation"
+require_literal 'Recorded assertion results' "$documentation"
 require_literal 'No image is built, pulled, pushed, or downloaded' "$documentation"
 require_literal 'read-only after completion' "$documentation"
 
