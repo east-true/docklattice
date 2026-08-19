@@ -36,7 +36,11 @@ trials (`docs/resource-gate.md`), the clean-host container installation E2E
 (`docs/clean-host-install-e2e.md`), the real-container recovery matrix covering
 all three Server-side loss outcomes (`docs/recovery-matrix-e2e.md`), and a
 reproducible `linux/amd64` + `linux/arm64` release build whose two independent
-runs produced byte-identical archives (`docs/distribution.md`).
+runs produced byte-identical archives (`docs/distribution.md`). A separate
+adversarial gate injects Agent and Server kills, a network partition, an
+interrupted operation, a cancelled Compose run, racing writes, a rolled-back
+Server database, and a filesystem too small to hold the WAL
+(`docs/hardening-matrix-e2e.md`).
 
 The Appendix A transport prototype and its synthetic workloads remain isolated
 from product code.
@@ -69,6 +73,7 @@ Operator documentation:
   contract;
 - `docs/clean-host-install-e2e.md` - the clean-host installation gate.
 - `docs/recovery-matrix-e2e.md` - the real-container recovery matrix gate.
+- `docs/hardening-matrix-e2e.md` - the adversarial failure-injection gate.
 
 Release-scope and harness contracts are checked statically:
 
@@ -79,6 +84,7 @@ Release-scope and harness contracts are checked statically:
 ./scripts/verify-product-resource-workload.sh
 ./scripts/verify-clean-host-install-harness.sh
 ./scripts/verify-recovery-matrix-harness.sh
+./scripts/verify-hardening-matrix-harness.sh
 ```
 
 ## Scope

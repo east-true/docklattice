@@ -228,6 +228,11 @@ complete.
   ([`docs/clean-host-install-e2e.md`](clean-host-install-e2e.md)).
 - Real-container recovery matrix for all three Server-side loss outcomes
   ([`docs/recovery-matrix-e2e.md`](recovery-matrix-e2e.md)).
+- Adversarial hardening matrix: Agent and Server `SIGKILL`, an operation killed
+  mid-flight, a network partition, a cancelled Compose run, concurrent and
+  racing project writes, a rolled-back Server database, and an Agent filesystem
+  too small to hold its WAL
+  ([`docs/hardening-matrix-e2e.md`](hardening-matrix-e2e.md)).
 - Operator documentation: install, backup/restore, identity-state recovery,
   Agent upgrade, degraded-storage recovery
   ([`docs/degraded-storage-recovery.md`](degraded-storage-recovery.md)), and
