@@ -48,6 +48,12 @@ for literal in \
     'DENY_PROTECTED_PROJECT' \
     'refused a Compose mutation outside the protected project' \
     'com.docker.compose.project=' \
+    'the replaying Agent exited successfully' \
+    'a replayed token registered a second Agent' \
+    'an Agent trusting a foreign CA registered' \
+    'a restore from a modified archive succeeded' \
+    'the refused restore still replaced the project file' \
+    'filesystem write capability stayed enabled' \
     'status=PASS' \
     'seal_evidence'; do
     require_literal "$literal" "$runner"
@@ -64,7 +70,11 @@ for literal in \
     'name_collision_mutation_refused' \
     'operation_bounds_project_busy' \
     'operation_bounds_ring_evicts_oldest' \
-    'protected_compose_project_denied'; do
+    'protected_compose_project_denied' \
+    'token_single_use_replay_refused' \
+    'wrong_server_ca_never_registers' \
+    'backup_tamper_restore_refused' \
+    'non_identical_bind_fs_write_disabled'; do
     require_literal "$literal" "$documentation"
 done
 

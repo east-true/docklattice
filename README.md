@@ -42,8 +42,9 @@ interrupted operation, a cancelled Compose run, racing writes, a rolled-back
 Server database, and a filesystem too small to hold the WAL
 (`docs/hardening-matrix-e2e.md`). A second adversarial gate feeds the API what
 it must refuse - path escapes, secret exposure, operation ID rebinding, a
-request flood, self-directed container operations, malformed and oversized
-requests, and a Compose project name collision
+replayed Join Token, a foreign CA, a tampered backup archive, a discovery root
+at a non-identical path, self-directed container and Compose operations,
+malformed and oversized requests, and a Compose project name collision
 (`docs/abuse-matrix-e2e.md`).
 
 The Appendix A transport prototype and its synthetic workloads remain isolated

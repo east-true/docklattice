@@ -33,14 +33,18 @@ a separate `mktemp` runtime root scrubbed on every exit. Select a subset with
 | `operation-flood` | a burst of 40 operations | every request gets a decision, the Agent stays ACTIVE, and the Server keeps answering |
 | `self-protection` | `container.stop`, `container.restart`, and `container.remove` aimed at the Agent's own container ID | each is refused and the Agent is still running and ACTIVE afterwards |
 | `request-abuse` | malformed JSON, an unknown field, a wrong method, `limit=0`, a malformed cursor, an unknown query parameter, and a 2 MB body | each is refused with a client status, none with a server error, and the Server is healthy afterwards |
+| `token-single-use` | one Join Token presented by a second Agent after the first consumed it | the replay is refused and the registered host count does not change |
+| `wrong-server-ca` | an Agent handed a CA that did not sign this Server | it never reaches registration and no host appears |
+| `backup-tamper` | bytes flipped inside a stored backup archive, then a restore | the restore is refused on the entry digest and the live project file is untouched |
+| `non-identical-bind` | a discovery root whose container path differs from its host path | 3.1/3.2: filesystem write capability is disabled with a reason and a write is refused |
 | `operation-bounds` | a second mutation while a health-gated `compose.up` holds the project, then 525 operations against a 500-entry result ring | the contender is refused with `PROJECT_BUSY` and the holder still completes; the evicted oldest record answers 404 rather than being served from the Server cache |
 | `name-collision` | a second project directory claiming the same Compose project name | 7.6: both projects are marked as colliding and a mutation on one is refused with 409 |
 | `protected-compose-project` | a `compose.down` aimed at the Compose project the Agent itself belongs to | the mutation is refused with `DENY_PROTECTED_PROJECT`, the Agent survives, and an unrelated project still works |
 
 ## Recorded execution
 
-    started_at              2026-08-19T13:57:41Z
-    finished_at             2026-08-19T14:00:56Z
+    started_at              2026-08-19T15:43:54Z
+    finished_at             2026-08-19T15:48:26Z
     docker_server_version   29.7.2
     release_version         1.0.0
     release_revision        3ac48ce
@@ -62,6 +66,13 @@ Recorded assertion results:
 | `self_protection_agent_survives` | PASS |
 | `request_abuse_all_refused_with_client_status` | PASS |
 | `request_abuse_server_healthy` | PASS |
+| `token_single_use_replay_refused` | PASS |
+| `token_single_use_no_extra_host` | PASS |
+| `wrong_server_ca_never_registers` | PASS |
+| `backup_tamper_restore_refused` | PASS |
+| `backup_tamper_project_untouched` | PASS |
+| `non_identical_bind_fs_write_disabled` | PASS |
+| `non_identical_bind_write_refused` | PASS |
 | `operation_bounds_project_busy` | PASS |
 | `operation_bounds_ring_evicts_oldest` | PASS (525 requested, oldest answered 404) |
 | `operation_bounds_newest_still_readable` | PASS |
@@ -86,6 +97,18 @@ Observed detail worth keeping:
   `PROJECT_BUSY: project "<uid>" is locked by operation "<holder>"`, so the
   project lock is demonstrably what refused it, and the holder still finished
   `success` afterwards.
+- The replayed Join Token failed at registration with
+  `agentruntime: register: agent credential request rejected: HTTP 401`, and the
+  Agent exited 1 rather than retrying a dead secret forever.
+- The Agent given a foreign CA exited 1 with
+  `tls: failed to verify certificate: x509: certificate signed by unknown
+  authority`, so it refused the Server before presenting its Join Token.
+- The modified backup archive was refused with
+  `invalid backup archive: digest mismatch for "compose.yaml"`, and the live
+  file's digest was identical before and after.
+- The non-identical bind produced `fs_write` disabled with reason
+  `PATH_IDENTITY_MISMATCH` and `compose` disabled with `no verified Compose
+  discovery root`, and a write answered 409.
 - The `compose.down` aimed at the Agent's own Compose project failed with
   `agentruntime: Compose denied: DENY_PROTECTED_PROJECT: target Compose project
   contains a protected Agent`, and a `compose.up` on an unrelated project

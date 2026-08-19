@@ -13,9 +13,16 @@ set -eu
 #   operation-id-reuse       one operation ID cannot be rebound to another spec
 #   operation-flood          a burst of operations stays bounded and the Server
 #                            keeps answering
+#   token-single-use         a Join Token that already registered an Agent cannot
+#                            register a second one
+#   wrong-server-ca          an Agent trusting a foreign CA never registers
 #   operation-bounds         the project lock refuses a second mutation with
 #                            PROJECT_BUSY, and an overrun result ring reports its
 #                            forgotten records as gone rather than from cache
+#   backup-tamper            a modified backup archive is refused before it can
+#                            replace a live project file
+#   non-identical-bind 3.1   a discovery root whose container path differs from
+#                            its host path disables filesystem write capability
 #   name-collision     7.6   two projects claiming one Compose name become
 #                            read-only instead of racing each other
 #   self-protection          a container operation aimed at the Agent itself is
@@ -50,7 +57,7 @@ agent_image=$3
 fixture_image=$4
 evidence_max_bytes=${ABUSE_EVIDENCE_MAX_BYTES:-16777216}
 log_max_bytes=${ABUSE_LOG_MAX_BYTES:-1048576}
-selected_cases=${ABUSE_CASES:-path-abuse secret-exposure operation-id-reuse operation-flood operation-bounds name-collision self-protection protected-compose-project request-abuse}
+selected_cases=${ABUSE_CASES:-path-abuse secret-exposure token-single-use wrong-server-ca operation-id-reuse operation-flood operation-bounds backup-tamper non-identical-bind name-collision self-protection protected-compose-project request-abuse}
 
 case "$evidence_dir" in
     /*) ;;
@@ -136,6 +143,7 @@ agent="$prefix-agent"
 network="$prefix-network"
 compose_project=$(printf '%s' "$prefix-fixture" | tr '[:upper:]' '[:lower:]')
 completed=0
+extra_containers=
 failure_reason="harness did not complete"
 
 capture_log() {
@@ -157,7 +165,7 @@ scrub_runtime() {
     case "$runtime" in "$runtime_base"/dockpilot-abuse.*) ;; *) return 1 ;; esac
     docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
         -v "$runtime:/abuse-runtime" "$server_image" \
-        -c 'rm -rf /abuse-runtime/server /abuse-runtime/agent /abuse-runtime/bootstrap /abuse-runtime/projects /abuse-runtime/projects-second /abuse-runtime/projects-protected' \
+        -c 'rm -rf /abuse-runtime/server /abuse-runtime/agent /abuse-runtime/bootstrap /abuse-runtime/projects /abuse-runtime/projects-second /abuse-runtime/projects-protected /abuse-runtime/replay /abuse-runtime/first-use /abuse-runtime/stranger' \
         >/dev/null 2>&1 || return 1
     rmdir "$runtime"
 }
@@ -179,6 +187,9 @@ cleanup() {
             failure_reason="evidence size cap exceeded during final log capture"
         fi
     fi
+    for extra in ${extra_containers:-}; do
+        docker rm -f "$extra" >/dev/null 2>&1 || true
+    done
     docker rm -f "$agent" >/dev/null 2>&1 || true
     remove_compose_objects
     docker rm -f "$server" >/dev/null 2>&1 || true
@@ -311,8 +322,11 @@ wait_active_host() {
         if curl --fail --silent --show-error --max-time 5 --cacert "$runtime/bootstrap/server-ca.crt" \
             "$base_url/api/v1/dashboard" >"$output.tmp" 2>/dev/null &&
             jq -e --arg expected "$expected" '
-              (.hosts | length) == 1 and .hosts[0].state == "ACTIVE" and
-              ($expected == "" or .hosts[0].id == $expected)
+              if $expected == "" then
+                (.hosts | length) == 1 and .hosts[0].state == "ACTIVE"
+              else
+                ([.hosts[] | select(.id == $expected and .state == "ACTIVE")] | length) == 1
+              end
             ' "$output.tmp" >/dev/null 2>&1; then
             mv "$output.tmp" "$output"
             return 0
@@ -581,7 +595,8 @@ if selected operation-flood; then
     dashboard_status=$(api_status GET "$base_url/api/v1/dashboard" '' "$evidence_dir/operation-flood.dashboard.json")
     [ "$dashboard_status" = 200 ] ||
         fail "operation-flood: the dashboard answered HTTP $dashboard_status after the burst"
-    jq -e '.hosts[0].state == "ACTIVE"' "$evidence_dir/operation-flood.dashboard.json" >/dev/null ||
+    jq -e --arg id "$agent_id" '[.hosts[] | select(.id == $id and .state == "ACTIVE")] | length == 1' \
+        "$evidence_dir/operation-flood.dashboard.json" >/dev/null ||
         fail "operation-flood: the Agent left ACTIVE during the burst"
     # The bounded active list must not have grown past its documented cap.
     api GET "$base_url/api/v1/hosts/$agent_id/operations" '' "$evidence_dir/operation-flood.active.json" 2>/dev/null || true
@@ -684,6 +699,131 @@ if selected request-abuse; then
     [ "$dashboard_status" = 200 ] || fail "request-abuse: the Server is unhealthy after the abusive requests"
     record request_abuse_all_refused_with_client_status PASS
     record request_abuse_server_healthy PASS
+fi
+
+# ------------------------------------------------- case: Join Token is single use
+# A Join Token is one-time. The first Agent to present it consumes it; a second
+# Agent presenting the same secret must be refused, or the token is a reusable
+# credential rather than a one-time one.
+if selected token-single-use; then
+    issue_token
+    mkdir "$runtime/first-use" "$runtime/replay"
+    # Both throwaway Agents get their own empty state, so each one genuinely
+    # registers rather than reusing a credential it already holds.
+    for target in first-use replay; do
+        docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
+            -v "$runtime/agent:/source:ro" -v "$runtime/$target:/target" "$server_image" -c \
+            'cp /source/server-ca.crt /target/server-ca.crt && cp /source/join-token /target/join-token && chown -R 65532:65532 /target && chmod 0700 /target && chmod 0600 /target/server-ca.crt /target/join-token' >/dev/null
+    done
+    agent_state_sh 'rm -f /state/join-token' >/dev/null
+
+    start_throwaway_agent() {
+        name=$1
+        state=$2
+        docker run --pull never -d --name "$name" --network "$network" \
+            --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
+            --group-add "$socket_gid" --label io.dockpilot.role=agent \
+            -v /var/run/docker.sock:/var/run/docker.sock:rw \
+            -v "$runtime/$state:/var/lib/dockpilot:rw" "$agent_image" agent \
+            --server server:8443 --registration-url https://server:8080 \
+            --server-ca /var/lib/dockpilot/server-ca.crt \
+            --join-token-file /var/lib/dockpilot/join-token \
+            --display-name "abuse-$state" --self-container-name "$name"
+    }
+
+    first_agent="$prefix-agent-first-use"
+    replay_agent="$prefix-agent-replay"
+    extra_containers="$extra_containers $first_agent $replay_agent"
+    start_throwaway_agent "$first_agent" first-use >"$evidence_dir/token-single-use.first.container-id"
+    joined=0
+    deadline=$(( $(date +%s) + 240 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        api GET "$base_url/api/v1/dashboard" '' "$evidence_dir/token-single-use.after-first.json"
+        if jq -e '(.hosts | length) == 2' "$evidence_dir/token-single-use.after-first.json" >/dev/null 2>&1; then
+            joined=1
+            break
+        fi
+        sleep 3
+    done
+    capture_log "$first_agent" "$evidence_dir/token-single-use.first.log"
+    [ "$joined" -eq 1 ] ||
+        fail "token-single-use: the first Agent did not consume the token and register"
+
+    start_throwaway_agent "$replay_agent" replay >"$evidence_dir/token-single-use.replay.container-id"
+    refused=0
+    replay_state=
+    deadline=$(( $(date +%s) + 180 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        replay_state=$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$replay_agent")
+        case "$replay_state" in
+            "exited "*)
+                [ "$replay_state" = "exited 0" ] && fail "token-single-use: the replaying Agent exited successfully"
+                refused=1
+                break
+                ;;
+        esac
+        api GET "$base_url/api/v1/dashboard" '' "$evidence_dir/token-single-use.after-replay.json"
+        jq -e '(.hosts | length) > 2' "$evidence_dir/token-single-use.after-replay.json" >/dev/null 2>&1 &&
+            fail "token-single-use: a replayed token registered a second Agent"
+        sleep 3
+    done
+    capture_log "$replay_agent" "$evidence_dir/token-single-use.replay.log"
+    printf 'replay_state=%s\n' "$replay_state" >"$evidence_dir/token-single-use.env"
+    [ "$refused" -eq 1 ] ||
+        fail "token-single-use: the replaying Agent neither exited nor was rejected on an already consumed token"
+    api GET "$base_url/api/v1/dashboard" '' "$evidence_dir/token-single-use.final.json"
+    jq -e '(.hosts | length) == 2' "$evidence_dir/token-single-use.final.json" >/dev/null ||
+        fail "token-single-use: the replay changed the registered host count"
+    docker rm -f "$first_agent" "$replay_agent" >/dev/null
+    record token_single_use_replay_refused PASS
+    record token_single_use_no_extra_host PASS
+fi
+
+# ------------------------------------------------- case: wrong Server CA
+# The Agent authenticates the Server before presenting anything. An Agent handed
+# a CA that did not sign this Server must never reach registration.
+if selected wrong-server-ca; then
+    stranger="$prefix-agent-stranger"
+    extra_containers="$extra_containers $stranger"
+    mkdir "$runtime/stranger"
+    openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
+        -subj '/CN=server' -addext 'subjectAltName=DNS:server,IP:127.0.0.1' \
+        -keyout "$runtime/stranger/foreign.key" -out "$runtime/stranger/server-ca.crt" \
+        >"$evidence_dir/wrong-server-ca.openssl.stdout" 2>"$evidence_dir/wrong-server-ca.openssl.stderr"
+    issue_token
+    docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
+        -v "$runtime/agent:/source:ro" -v "$runtime/stranger:/stranger" "$server_image" -c \
+        'cp /source/join-token /stranger/join-token && rm -f /stranger/foreign.key && chown -R 65532:65532 /stranger && chmod 0700 /stranger && chmod 0600 /stranger/server-ca.crt /stranger/join-token' >/dev/null
+    agent_state_sh 'rm -f /state/join-token' >/dev/null
+    api GET "$base_url/api/v1/dashboard" '' "$evidence_dir/wrong-server-ca.before.json"
+    hosts_before=$(jq -r '.hosts | length' "$evidence_dir/wrong-server-ca.before.json")
+    docker run --pull never -d --name "$stranger" --network "$network" \
+        --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
+        --group-add "$socket_gid" --label io.dockpilot.role=agent \
+        -v /var/run/docker.sock:/var/run/docker.sock:rw \
+        -v "$runtime/stranger:/var/lib/dockpilot:rw" "$agent_image" agent \
+        --server server:8443 --registration-url https://server:8080 \
+        --server-ca /var/lib/dockpilot/server-ca.crt \
+        --join-token-file /var/lib/dockpilot/join-token \
+        --display-name abuse-stranger --self-container-name "$stranger" \
+        >"$evidence_dir/wrong-server-ca.container-id"
+    # Give it a generous window to prove it cannot get in, then confirm the
+    # Server never saw a second host.
+    settle=$(( $(date +%s) + 60 ))
+    while [ "$(date +%s)" -lt "$settle" ]; do
+        api GET "$base_url/api/v1/dashboard" '' "$evidence_dir/wrong-server-ca.dashboard.json"
+        jq -e --argjson before "$hosts_before" '(.hosts | length) > $before' \
+            "$evidence_dir/wrong-server-ca.dashboard.json" >/dev/null 2>&1 &&
+            fail "wrong-server-ca: an Agent trusting a foreign CA registered"
+        sleep 5
+    done
+    capture_log "$stranger" "$evidence_dir/wrong-server-ca.log"
+    {
+        printf 'hosts_before=%s\n' "$hosts_before"
+        printf 'stranger_state=%s\n' "$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$stranger")"
+    } >"$evidence_dir/wrong-server-ca.env"
+    docker rm -f "$stranger" >/dev/null
+    record wrong_server_ca_never_registers PASS
 fi
 
 # ------------------------------------------------- case: operation bounds
@@ -801,6 +941,117 @@ EOF
     record operation_bounds_newest_still_readable PASS
 fi
 
+# ------------------------------------------------- case: tampered backup archive
+# A restore replaces live project files, so the archive it reads is trusted
+# input. Every entry carries a digest, and a modified archive must be refused
+# before anything is replaced.
+if selected backup-tamper; then
+    backup_operation="abuse-backup-create-$$"
+    api POST "$base_url/api/v1/projects/$project_uid/backups" \
+        "$(jq -cn --arg id "$backup_operation" '{operation_id:$id,relative_paths:["compose.yaml"]}')" \
+        "$evidence_dir/backup-tamper.create.accepted.json"
+    poll_operation "$backup_operation" "$evidence_dir/backup-tamper.create.final.json" 180 ||
+        fail "backup-tamper: the backup never reached a terminal state"
+    jq -e '.status == "success"' "$evidence_dir/backup-tamper.create.final.json" >/dev/null ||
+        fail "backup-tamper: the backup did not succeed"
+    api GET "$base_url/api/v1/projects/$project_uid/backups" '' "$evidence_dir/backup-tamper.list.json"
+    backup_id=$(jq -r '.[0].backup_id // .backups[0].backup_id // ""' "$evidence_dir/backup-tamper.list.json")
+    [ -n "$backup_id" ] && [ "$backup_id" != null ] || fail "backup-tamper: the backup listing had no backup_id"
+    before_sha=$(sha256sum "$runtime/projects/compose.yaml" | awk '{ print $1 }')
+    # Flip bytes inside the stored archive without changing its length, so the
+    # only thing that can catch it is the per-entry digest.
+    agent_state_sh "find /state/backups -type f -name '*.tar*' -print" >"$evidence_dir/backup-tamper.files.txt"
+    archive=$(head -n 1 "$evidence_dir/backup-tamper.files.txt")
+    [ -n "$archive" ] || fail "backup-tamper: no stored backup archive was found"
+    agent_state_sh "dd if=/dev/urandom of='$archive' bs=1 seek=\$(( \$(wc -c <'$archive') / 2 )) count=64 conv=notrunc 2>/dev/null" >/dev/null
+    restore_operation="abuse-backup-restore-$$"
+    status=$(api_status POST "$base_url/api/v1/projects/$project_uid/backups/$backup_id/restore" \
+        "$(jq -cn --arg id "$restore_operation" '{operation_id:$id}')" \
+        "$evidence_dir/backup-tamper.restore.json")
+    printf 'restore_dispatch_status=%s\n' "$status" >"$evidence_dir/backup-tamper.env"
+    case "$status" in
+        202)
+            poll_operation "$restore_operation" "$evidence_dir/backup-tamper.restore.final.json" 180 ||
+                fail "backup-tamper: the restore never reached a terminal state"
+            jq -e '.status != "success"' "$evidence_dir/backup-tamper.restore.final.json" >/dev/null ||
+                fail "backup-tamper: a restore from a modified archive succeeded"
+            ;;
+        400|409|422) ;;
+        *) fail "backup-tamper: the restore answered an unexpected HTTP $status" ;;
+    esac
+    after_sha=$(sha256sum "$runtime/projects/compose.yaml" | awk '{ print $1 }')
+    printf 'compose_sha_before=%s\ncompose_sha_after=%s\n' "$before_sha" "$after_sha" \
+        >>"$evidence_dir/backup-tamper.env"
+    [ "$before_sha" = "$after_sha" ] ||
+        fail "backup-tamper: the refused restore still replaced the project file"
+    record backup_tamper_restore_refused PASS
+    record backup_tamper_project_untouched PASS
+fi
+
+# ------------------------------------------- case: non-identical bind path
+# 3.1 and 3.2 require a discovery root to be a bind mount whose host path is
+# identical to its container path, because Compose passes paths to the Docker
+# daemon, which resolves them on the host. A root mounted anywhere else must
+# disable filesystem capability rather than write to a path the daemon would
+# read differently.
+if selected non-identical-bind; then
+    docker rm -f "$agent" >/dev/null
+    # Same host directory, deliberately a different path inside the container.
+    docker run --pull never -d --name "$agent" --network "$network" \
+        --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
+        --group-add "$socket_gid" --label io.dockpilot.role=agent \
+        -v /var/run/docker.sock:/var/run/docker.sock:rw \
+        -v "$runtime/agent:/var/lib/dockpilot:rw" \
+        -v "$runtime/projects:/elsewhere/projects:rw" "$agent_image" agent \
+        --server server:8443 --registration-url https://server:8080 \
+        --server-ca /var/lib/dockpilot/server-ca.crt \
+        --display-name abuse-agent --self-container-name "$agent" \
+        --project-root /elsewhere/projects \
+        >"$evidence_dir/non-identical-bind.container-id"
+    disabled=0
+    deadline=$(( $(date +%s) + 300 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if curl --fail --silent --show-error --max-time 5 --cacert "$runtime/bootstrap/server-ca.crt" \
+            "$base_url/api/v1/dashboard" >"$evidence_dir/non-identical-bind.dashboard.json" 2>/dev/null &&
+            jq -e --arg id "$agent_id" '
+                [.hosts[] | select(.id == $id)] as $host |
+                ($host | length) == 1 and $host[0].state == "ACTIVE" and
+                $host[0].capabilities.fs_write.enabled == false and
+                ($host[0].capabilities.fs_write.reason // "") != ""' \
+                "$evidence_dir/non-identical-bind.dashboard.json" >/dev/null 2>&1; then
+            disabled=1
+            break
+        fi
+        sleep 5
+    done
+    capture_log "$agent" "$evidence_dir/non-identical-bind.log"
+    [ "$disabled" -eq 1 ] ||
+        fail "non-identical-bind: filesystem write capability stayed enabled for a root whose container path differs from its host path"
+    jq -r --arg id "$agent_id" '[.hosts[] | select(.id == $id)][0].capabilities.fs_write.reason' \
+        "$evidence_dir/non-identical-bind.dashboard.json" \
+        >"$evidence_dir/non-identical-bind.reason.txt"
+    # A write must be refused for that reason rather than silently attempted.
+    stale_uid=$(jq -r '.projects[0].uid // ""' "$evidence_dir/non-identical-bind.dashboard.json")
+    if [ -n "$stale_uid" ] && [ "$stale_uid" != null ]; then
+        write_status=$(api_status PUT "$base_url/api/v1/projects/$stale_uid/files" \
+            "$(jq -cn --arg id "abuse-nonidentical-$$" --arg sha "$(printf 'a%.0s' $(seq 64))" \
+                '{operation_id:$id,relative_path:"compose.yaml",expected_sha256:$sha,content:"x"}')" \
+            "$evidence_dir/non-identical-bind.write.json")
+        printf 'write_status=%s\n' "$write_status" >"$evidence_dir/non-identical-bind.env"
+        case "$write_status" in
+            400|403|404|409|503) ;;
+            *) fail "non-identical-bind: a write answered HTTP $write_status instead of a refusal" ;;
+        esac
+    fi
+    # Put the Agent back on an identical-path root for the cases that follow.
+    docker rm -f "$agent" >/dev/null
+    start_agent false >"$evidence_dir/non-identical-bind.restored.container-id"
+    wait_active_host "$agent_id" "$evidence_dir/non-identical-bind.restored.json" 240 ||
+        fail "non-identical-bind: the Agent did not return on an identical-path root"
+    record non_identical_bind_fs_write_disabled PASS
+    record non_identical_bind_write_refused PASS
+fi
+
 # ------------------------------------------------- case: project name collision
 # 7.6 is CORE: two project directories claiming one Compose project name cannot
 # both be operated, because Compose would resolve them to the same runtime
@@ -900,8 +1151,9 @@ EOF
     while [ "$(date +%s)" -lt "$deadline" ]; do
         if curl --fail --silent --show-error --max-time 5 --cacert "$runtime/bootstrap/server-ca.crt" \
             "$base_url/api/v1/dashboard" >"$evidence_dir/protected-compose-project.dashboard.json" 2>/dev/null &&
-            jq -e --arg name "$protected_project" \
-                '.hosts[0].state == "ACTIVE" and ([.projects[] | select(.name == $name)] | length == 1)' \
+            jq -e --arg name "$protected_project" --arg id "$agent_id" \
+                '([.hosts[] | select(.id == $id and .state == "ACTIVE")] | length) == 1 and
+                 ([.projects[] | select(.name == $name)] | length == 1)' \
                 "$evidence_dir/protected-compose-project.dashboard.json" >/dev/null 2>&1; then
             discovered=1
             break
@@ -912,9 +1164,20 @@ EOF
         fail "protected-compose-project: the project sharing the Agent Compose project name was not discovered"
     protected_uid=$(jq -r --arg name "$protected_project" \
         '[.projects[] | select(.name == $name)][0].uid' "$evidence_dir/protected-compose-project.dashboard.json")
-    unrelated_uid=$(jq -r --arg name "$protected_project" \
-        '[.projects[] | select(.name != $name and .collision != true)][0].uid // ""' \
-        "$evidence_dir/protected-compose-project.dashboard.json")
+    # The Server keeps a row for every project UID it has ever seen and marks a
+    # vanished one Missing only after a complete discovery sweep, so a candidate
+    # is only usable once the Agent actually answers for it.
+    unrelated_uid=
+    for candidate in $(jq -r --arg name "$protected_project" \
+        '[.projects[] | select(.name != $name and .collision != true and .stale != true)][].uid' \
+        "$evidence_dir/protected-compose-project.dashboard.json"); do
+        probe=$(api_status GET "$base_url/api/v1/projects/$candidate/files?path=compose.yaml" '' \
+            "$evidence_dir/protected-compose-project.probe.json")
+        if [ "$probe" = 200 ]; then
+            unrelated_uid=$candidate
+            break
+        fi
+    done
     protected_operation="abuse-protected-down-$$"
     status=$(api_status POST "$base_url/api/v1/operations" \
         "$(jq -cn --arg id "$protected_operation" --arg agent "$agent_id" --arg project "$protected_uid" \
