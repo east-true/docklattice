@@ -3,7 +3,7 @@ set -eu
 
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 runner="$repo_dir/scripts/run-clean-host-install-e2e.sh"
-documentation="$repo_dir/docs/clean-host-install-e2e.md"
+documentation="$repo_dir/docs/release/clean-host-install-e2e.md"
 
 [ -x "$runner" ] || {
     printf 'clean-host harness verification failed: runner is not executable\n' >&2

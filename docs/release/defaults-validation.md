@@ -3,7 +3,7 @@
 Status: memory defaults validated; remaining categories provisional  
 Source: architecture section 19 and Appendix B.2  
 Promotion gate: implementation-plan Phase 8 (passed 2026-08-18, see
-`docs/resource-gate.md`)
+`resource-gate.md`)
 
 The values below are product defaults now, so implementation can proceed
 without reopening frozen architecture decisions. A default is not called
@@ -118,12 +118,12 @@ started/completed 2026-08-19T11:46:15Z / 2026-08-19T12:00:22Z
 
 Artifact tree carries a 215-entry `SHA256SUMS` manifest and per-trial
 `workload-evidence.sha256`. The matrix command is the one in
-`docs/resource-gate.md` with `RESOURCE_CASE_SECONDS=600`.
+`resource-gate.md` with `RESOURCE_CASE_SECONDS=600`.
 
 **Per-case result**: trial 1, 2, 3 all `status=PASS`;
 `prototype_acceptance_reused=false`. Three-run resource summaries, the
 Appendix A A.9 bounds actually measured, and the items deliberately not
-measured are recorded in `docs/resource-gate.md`.
+measured are recorded in `resource-gate.md`.
 
 **Changed defaults**: none. The baseline limits held with large headroom -
 peak Agent RSS 27.4-30.5 MiB against 256 MiB and peak Server RSS 30.7-32.0 MiB

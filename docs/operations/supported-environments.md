@@ -46,7 +46,7 @@ record remains authoritative if the two ever disagree.
 - The Agent runs separately from the Compose projects it manages.
 - Agent upgrades are performed from the host. Self-protection prevents
   Dockpilot from replacing its own container; see
-  [`install-containers.md`](install-containers.md).
+  [`install.md`](install.md).
 
 ## Not supported in v1
 
@@ -72,5 +72,5 @@ before it creates either runtime state or an evidence directory. It rejects
 and socket proxies, and it runs a small local cgroup probe.
 
 The same preflight guards the Phase 8 resource matrix
-([`resource-gate.md`](resource-gate.md)), which is why both gates require a
+([`../release/resource-gate.md`](../release/resource-gate.md)), which is why both gates require a
 local Linux Engine on cgroup v2.

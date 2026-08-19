@@ -1,118 +1,206 @@
 # Dockpilot
 
-Dockpilot is a small internal-network control plane for viewing and operating
-multiple Docker hosts from one web interface. Each host runs an outbound-only
-Container Agent; the central Server owns registration, operation history, and
-the canonical Audit archive.
+**One web interface for every Docker host on your internal network.**
 
-> Dockpilot is not affiliated with or endorsed by Docker, Inc. Docker and the
-> Docker logo are trademarks or registered trademarks of Docker, Inc.
+Each host runs an outbound-only Container Agent. A central Server owns
+registration, operation history, and the canonical Audit archive. No inbound
+port on any host, no agent-side firewall rules, no SSH loop.
+
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)](go.mod)
+[![Platforms](https://img.shields.io/badge/platforms-linux%2Famd64%20%7C%20linux%2Farm64-lightgrey.svg)](docs/operations/supported-environments.md)
+[![Status](https://img.shields.io/badge/v1-complete-brightgreen.svg)](docs/release/README.md)
+
+```
+                                    ┌──────────────────┐
+   browser ──── HTTPS ────────────▶ │  Dockpilot       │
+                                    │  Server          │
+                                    │                  │
+                                    │  registration    │
+                                    │  operations      │
+                                    │  audit archive   │
+                                    └────────▲─────────┘
+                                             │  one reverse gRPC connection,
+                    ┌────────────────────────┼────────────────────────┐
+                    │                        │                        │
+            ┌───────┴───────┐        ┌───────┴───────┐        ┌───────┴───────┐
+            │ Agent         │        │ Agent         │        │ Agent         │
+            │ docker.sock   │        │ docker.sock   │        │ docker.sock   │
+            │ /srv/stacks   │        │ /srv/stacks   │        │ /srv/stacks   │
+            └───────────────┘        └───────────────┘        └───────────────┘
+              host A                   host B                   host C
+                                    (behind NAT)             (dynamic IP)
+```
+
+The Agent dials out. That single decision is why hosts behind NAT, behind a
+firewall, or on a changing IP need no special handling at all.
+
+## Read this before you deploy
+
+> [!WARNING]
+> **Dockpilot v1 has no browser authentication.** There are no user accounts, no
+> login, and no sessions — this is a deliberate v1 scope decision, not an
+> oversight. Anyone who can reach the Server's UI port has full control of every
+> connected Docker host.
+>
+> The Server therefore binds to `127.0.0.1` by default and requires an explicit
+> `--allow-public-bind` to do anything else. Put it behind your own
+> authenticating proxy, or reach it through a tunnel. See
+> [SECURITY.md](SECURITY.md).
+
+## What it does
+
+| | |
+|---|---|
+| **Fleet view** | Every host, its containers, images, networks, and volumes, from Docker Engine directly — never from a stale Dockpilot cache. |
+| **Compose operations** | `up`, `down`, `pull`, `start`, `stop`, `restart` per project, with live stdout and a preserved output tail when things fail. |
+| **Container operations** | Start, stop, restart, remove — with the Agent refusing to act on itself. |
+| **Safe file editing** | Compose files and `.env`, whitelisted by name, atomic, validated, snapshotted before every write, and guarded against concurrent edits by hash. |
+| **Configuration backup and restore** | Per-project archives with a per-file SHA-256 manifest, stored on the Agent so `.env` secrets never cross the network. |
+| **Live logs and stats** | Streamed as Server-Sent Events, rate-capped, with dropped bytes reported rather than hidden. |
+| **Durable audit** | Everything done through Dockpilot, plus changes made outside it, in one archive with explicit gap accounting. |
+
+And the things it deliberately refuses to do, because they are the reason
+tools like this become unreliable:
+
+- It does not replicate Docker's runtime state into its own database.
+- It does not store your Compose file contents server-side.
+- It does not keep log or metric history — both are live relays.
+- It does not reimplement anything Docker or Compose already does.
+- It does not offer a lock force-release, because that API's only use is
+  corrupting a half-finished `compose up`.
+- It does not call cancellation "rollback". Cancelling stops further work and
+  says so when effects were partial.
+
+## Quick start
+
+You need a Linux host with a local Docker Engine on cgroup v2. Check
+[supported environments](docs/operations/supported-environments.md) first —
+Docker Desktop, rootless Docker's nonstandard socket, and remote daemons are
+explicitly out of scope.
+
+**1. Prepare Server state and start the Server.**
+
+```sh
+sudo install -d -o 65532 -g 65532 -m 0700 /srv/dockpilot/server-state/tls
+# place your TLS certificate and key as server.crt / server.key, 0600, owned by 65532
+
+docker run -d --name dockpilot-server --restart unless-stopped \
+  -p 8080:8080 -p 8443:8443 \
+  -v /srv/dockpilot/server-state:/var/lib/dockpilot:rw \
+  <signed-server-image-reference>
+```
+
+**2. Issue a one-time Join Token.**
+
+```sh
+umask 077
+dockpilot server issue-token \
+  --state-dir /srv/dockpilot/server-state --ttl 15m \
+  > /etc/dockpilot/join-token
+sudo chown 65532:65532 /etc/dockpilot/join-token
+```
+
+**3. Start an Agent on each Docker host.**
+
+```sh
+docker_socket_gid=$(stat -c '%g' /var/run/docker.sock)
+docker run -d --name dockpilot-agent --restart unless-stopped \
+  --user 65532:65532 --group-add "$docker_socket_gid" \
+  --label io.dockpilot.role=agent \
+  -v /var/run/docker.sock:/var/run/docker.sock:rw \
+  -v dockpilot-agent-state:/var/lib/dockpilot \
+  -v /etc/dockpilot/server-ca.crt:/var/lib/dockpilot/server-ca.crt:ro \
+  -v /etc/dockpilot/join-token:/run/secrets/dockpilot-join-token:ro \
+  -v /srv/stacks:/srv/stacks:ro \
+  <signed-agent-image-reference> agent \
+  --server dockpilot.internal:8443 \
+  --registration-url https://dockpilot.internal:8080 \
+  --server-ca /var/lib/dockpilot/server-ca.crt \
+  --join-token-file /run/secrets/dockpilot-join-token \
+  --project-root /srv/stacks
+```
+
+Remove the token file once the Agent has registered; it is one-time by design.
+
+> **`-v /srv/stacks:/srv/stacks` is not a typo.** Every discovery root must be an
+> **identical** absolute-path bind mount. The Agent hands paths to the Docker
+> daemon, which resolves them on the *host* — if the container's view of a path
+> differs, every bind mount Dockpilot creates silently points somewhere else. The
+> Agent checks this itself at start-up and demotes any root that fails to
+> read-only rather than trusting a path it cannot prove.
+>
+> Use `:ro` for read-only management; that is a first-class mode, not a degraded
+> one. Use `:rw` only when you intend to edit files and restore backups.
+
+Full procedure, including the privilege boundary and host-driven Agent upgrades:
+[docs/operations/install.md](docs/operations/install.md).
+
+## Documentation
+
+**[Start at the documentation index →](docs/README.md)**
+
+| | |
+|---|---|
+| [Concepts](docs/concepts.md) | The mental model: Server, Agent, Project, Operation, Audit. Read this first. |
+| [Architecture decision record](docs/architecture.md) | Why every one of those is the way it is. The authority for all behaviour. Korean. |
+| [Supported environments](docs/operations/supported-environments.md) | Where v1 runs, and what is explicitly refused. |
+| [Installation](docs/operations/install.md) | Container preparation, privilege boundary, Agent upgrade. |
+| [Configuration](docs/operations/configuration.md) | Every flag and every operational default. |
+| [HTTP API](docs/operations/api.md) | Endpoints, error shape, secret handling. |
+| [Identity recovery](docs/operations/recovery.md) | Recovering from Server identity, database, or Agent state loss. |
+| [Degraded storage](docs/operations/degraded-storage.md) | The `DEGRADED_STORAGE` operator procedure. |
+| [Release evidence](docs/release/README.md) | Which gates ran, on what, and what each proves. |
 
 ## Status
 
-Product v1 is complete. Every phase of `docs/implementation-plan.md` has
-passed, including the Phase 9 release gate at revision `f1d4087`. Dockpilot uses
-one Agent-initiated reverse gRPC connection with application-owned P0-P4
-scheduling. The authoritative scope and invariants are in
-`docs/architecture.md`.
+**v1 is complete.** Every phase of
+[the implementation plan](docs/implementation-plan.md) has passed, at revision
+`f1d4087`.
 
-v1 covers:
+Unit, race, and static checks pass. Six gates ran against the release images:
+the production cgroup resource matrix over three trials, clean-host container
+installation, a real-container recovery matrix covering all three Server-side
+loss outcomes, an adversarial failure-injection matrix, an abuse matrix of
+inputs the API must refuse, and a reproducible two-architecture release build
+whose independent runs produced byte-identical archives.
 
-- typed provisional v1 operational defaults;
-- runnable `dockpilot server` / `dockpilot agent` TLS processes and local
-  one-time Join Token issuance;
-- separate Server Identity State and SQLite operational storage;
-- signed Agent credentials, renewal, archive binding, and durable revocation;
-- verified Agent path identity, self-protection, discovery, Docker/Compose
-  operations, safe files, configuration backup/restore, logs, and live stats;
-- bounded Agent Audit WAL, Server canonical Audit archive, coverage/ACK sync,
-  observed Docker events, and crash-safe Managed Operation Audit;
-- embedded Server UI/API for dashboard, environment, operations, files,
-  backups, logs, and live stats.
-
-Unit, race, and static checks pass. Four gates passed against the release
-images built from `f1d4087`: the production cgroup resource matrix over three
-trials (`docs/resource-gate.md`), the clean-host container installation E2E
-(`docs/clean-host-install-e2e.md`), the real-container recovery matrix covering
-all three Server-side loss outcomes (`docs/recovery-matrix-e2e.md`), and a
-reproducible `linux/amd64` + `linux/arm64` release build whose two independent
-runs produced byte-identical archives (`docs/distribution.md`). A separate
-adversarial gate injects Agent and Server kills, a network partition, an
-interrupted operation, a cancelled Compose run, racing writes, a rolled-back
-Server database, and a filesystem too small to hold the WAL
-(`docs/hardening-matrix-e2e.md`). A second adversarial gate feeds the API what
-it must refuse - path escapes, secret exposure, operation ID rebinding, a
-replayed Join Token, a foreign CA, a tampered backup archive, a discovery root
-at a non-identical path, self-directed container and Compose operations,
-malformed and oversized requests, and a Compose project name collision
-(`docs/abuse-matrix-e2e.md`).
-
-The Appendix A transport prototype and its synthetic workloads remain isolated
-from product code.
+What is *not* done is recorded just as plainly: only the memory row of
+[defaults validation](docs/release/defaults-validation.md) is promoted to
+`validated`, and the one-hour and overnight soaks required before signing a
+release candidate have not been run. Details and the two known non-blockers are
+in [release evidence](docs/release/README.md).
 
 ## Development
 
-The project requires the Go version declared in `go.mod`.
+Requires the Go version declared in [`go.mod`](go.mod).
 
 ```sh
+go build ./cmd/dockpilot
 go test ./...
 go test -race ./...
-go build ./cmd/dockpilot
 ```
 
-The official transport evidence is split between compact reports committed to
-Git and a checksum-addressed release bundle. See
-`artifacts/transport-prototype/official/README.md`.
-
-Operator documentation:
-
-- `docs/supported-environments.md` - where v1 is supported, and what is
-  explicitly not supported;
-- `docs/install-containers.md` - container preparation, privilege boundary, and
-  host-driven Agent upgrade;
-- `docs/recovery.md` - matched Server Identity/DB backup recovery and Agent
-  re-enrollment;
-- `docs/degraded-storage-recovery.md` - the `DEGRADED_STORAGE` operator
-  procedure;
-- `docs/resource-gate.md` - the production resource gate and its evidence
-  contract;
-- `docs/clean-host-install-e2e.md` - the clean-host installation gate.
-- `docs/recovery-matrix-e2e.md` - the real-container recovery matrix gate.
-- `docs/hardening-matrix-e2e.md` - the adversarial failure-injection gate.
-- `docs/abuse-matrix-e2e.md` - the untrusted-input and invariant-violation gate.
-
-Release-scope and harness contracts are checked statically:
+Contract and safety-boundary checks, none of which need Docker:
 
 ```sh
-./scripts/verify-release-scope.sh
-./scripts/verify-distribution.sh
-./scripts/verify-resource-harness.sh
-./scripts/verify-product-resource-workload.sh
-./scripts/verify-clean-host-install-harness.sh
-./scripts/verify-recovery-matrix-harness.sh
-./scripts/verify-hardening-matrix-harness.sh
-./scripts/verify-abuse-matrix-harness.sh
+for check in scripts/verify-*.sh; do "$check"; done
 ```
 
-## Scope
-
-Dockpilot delegates runtime state and actions to Docker Engine and Docker
-Compose. It does not aim to replace SSH, Kubernetes, CI systems, log/metric
-platforms, or application-aware backup tools. Consult the architecture before
-adding functionality; every feature is classified as CORE, OPTIONAL, FUTURE,
-or DO NOT BUILD.
+See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change — the
+architecture record classifies every behaviour as CORE, OPTIONAL, FUTURE, or
+DO NOT BUILD, and a pull request that adds a DO NOT BUILD behaviour will be
+rejected by `scripts/verify-release-scope.sh` before a human sees it.
 
 ## License
 
-Apache License 2.0.
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 The embedded frontend is first-party: `internal/webui/assets` is three
-hand-written files with no third-party code and no external references, so it
-carries no license material beyond Dockpilot's own.
+hand-written files with no third-party code and no external references.
 
 Third-party license and NOTICE texts for the Go binary are generated at release
-time from the pinned `go.sum` versions rather than vendored into the
-repository:
+time from the pinned `go.sum` versions rather than vendored:
 
 ```sh
 ./scripts/generate-license-inventory.sh
@@ -120,6 +208,11 @@ repository:
 
 It covers every module actually linked into `./cmd/dockpilot`, writes a
 checksummed `INVENTORY.tsv` under `dist/licenses/`, and fails closed if any
-module has no recoverable license text. The Container Agent image's separately
-bundled programs are covered by `distribution/IMAGE-LICENSES.md` and the
-`/licenses` tree inside the image.
+module has no recoverable license text. The Agent image's separately bundled
+programs are covered by `distribution/IMAGE-LICENSES.md` and the `/licenses`
+tree inside the image.
+
+---
+
+Dockpilot is not affiliated with or endorsed by Docker, Inc. Docker and the
+Docker logo are trademarks or registered trademarks of Docker, Inc.

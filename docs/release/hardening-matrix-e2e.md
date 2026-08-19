@@ -6,7 +6,7 @@ This gate drives a real Server container, a real Agent container, and a real
 Docker workload into failures the product claims to survive, then asserts the
 claim rather than the absence of a crash. It is deliberately adversarial: every
 case injects a fault and every injection is paired with the contract from
-[`architecture.md`](architecture.md) that the fault is supposed to exercise.
+[`../architecture.md`](../architecture.md) that the fault is supposed to exercise.
 
 ## Inputs and safety boundary
 

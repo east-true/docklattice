@@ -126,7 +126,7 @@ private keys, file contents, or other secrets.
 
 The workload driver is implemented, statically verified, and executed. The
 matrix ran three trials against the production images and every trial returned
-`status=PASS`, so `docs/defaults-validation.md` is no longer provisional.
+`status=PASS`, so `defaults-validation.md` is no longer provisional.
 
 ```text
 started_at             2026-08-19T11:46:15Z

@@ -4,7 +4,7 @@ Status: PASS
 
 This is the Phase 9 fail-closed recovery gate. It proves, across a real Server
 container, a real Agent container, and a real reconnect, the three Server-side
-loss outcomes that [`architecture.md`](architecture.md) section 6.1
+loss outcomes that [`../architecture.md`](../architecture.md) section 6.1
 distinguishes. The package-level matrix in
 `internal/serverbootstrap/recovery_matrix_test.go` covers the bootstrap decision
 itself; this gate covers what an operator actually observes.

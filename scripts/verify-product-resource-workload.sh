@@ -4,7 +4,7 @@ set -eu
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 driver="$repo_dir/scripts/run-product-resource-workload.sh"
 runner="$repo_dir/scripts/run-resource-matrix.sh"
-documentation="$repo_dir/docs/resource-gate.md"
+documentation="$repo_dir/docs/release/resource-gate.md"
 
 [ -x "$driver" ] || {
     printf 'product resource workload verification failed: driver is not executable\n' >&2

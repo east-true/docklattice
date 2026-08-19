@@ -57,7 +57,7 @@ Status: complete. Package recovery matrix
 the clean-host install E2E (Agent container removed and recreated with no Join
 Token, reconnecting with an identical Agent ID, project UID, and backup
 metadata); real-container recovery matrix for all three Server-side loss
-outcomes ([`docs/recovery-matrix-e2e.md`](recovery-matrix-e2e.md)).
+outcomes ([`docs/release/recovery-matrix-e2e.md`](release/recovery-matrix-e2e.md)).
 
 - Implement Server identity, signing keys, archive generation, join tokens,
   Agent credentials, and the durable revocation ledger.
@@ -178,7 +178,7 @@ snapshots, and secret non-disclosure tests across DB, API, logs, and Audit.
 ## Phase 8 — Integration Resource Gate
 
 Status: passed 2026-08-18. Three-trial production-image matrix returned
-`status=PASS` in every trial (`docs/resource-gate.md` records the environment,
+`status=PASS` in every trial (`docs/release/resource-gate.md` records the environment,
 per-trial resource summaries, and the Appendix A A.9 bounds measured).
 `operation_progress_event_latency_ms` and the Appendix A prototype acceptance
 items 1/4/5/6 are not measured by this gate; the one-hour and overnight soaks
@@ -203,7 +203,7 @@ memory limits, timeouts, retention, disk budget, scan budget, and sampling
 interval. In particular it must validate Agent 512 MiB and Server 1 GiB hard
 limits rather than inheriting the prototype result.
 
-Harness and current execution status: [`docs/resource-gate.md`](resource-gate.md).
+Harness and current execution status: [`docs/release/resource-gate.md`](release/resource-gate.md).
 
 ## Phase 9 — v1 release gate
 
@@ -223,26 +223,26 @@ complete.
   `scripts/build-release-images.sh` produced byte-identical `linux/amd64` +
   `linux/arm64` OCI archives for both targets, with no target-architecture
   emulation required on the build host
-  ([`docs/distribution.md`](distribution.md)).
+  ([`docs/release/distribution.md`](release/distribution.md)).
 - Clean-host container installation E2E
-  ([`docs/clean-host-install-e2e.md`](clean-host-install-e2e.md)).
+  ([`docs/release/clean-host-install-e2e.md`](release/clean-host-install-e2e.md)).
 - Real-container recovery matrix for all three Server-side loss outcomes
-  ([`docs/recovery-matrix-e2e.md`](recovery-matrix-e2e.md)).
+  ([`docs/release/recovery-matrix-e2e.md`](release/recovery-matrix-e2e.md)).
 - Adversarial hardening matrix: Agent and Server `SIGKILL`, an operation killed
   mid-flight, a network partition, a cancelled Compose run, concurrent and
   racing project writes, a rolled-back Server database, and an Agent filesystem
   too small to hold its WAL
-  ([`docs/hardening-matrix-e2e.md`](hardening-matrix-e2e.md)).
+  ([`docs/release/hardening-matrix-e2e.md`](release/hardening-matrix-e2e.md)).
 - Abuse matrix over the untrusted surface: path escapes, secret exposure,
   operation ID rebinding, a replayed Join Token, a foreign CA, a tampered backup
   archive, a discovery root at a non-identical path, the project lock and result
   ring bounds, self-directed container and Compose operations, malformed and
   oversized requests, and a Compose project name collision
-  ([`docs/abuse-matrix-e2e.md`](abuse-matrix-e2e.md)).
+  ([`docs/release/abuse-matrix-e2e.md`](release/abuse-matrix-e2e.md)).
 - Operator documentation: install, backup/restore, identity-state recovery,
   Agent upgrade, degraded-storage recovery
-  ([`docs/degraded-storage-recovery.md`](degraded-storage-recovery.md)), and
+  ([`docs/operations/degraded-storage.md`](operations/degraded-storage.md)), and
   supported/unsupported environments
-  ([`docs/supported-environments.md`](supported-environments.md)).
+  ([`docs/operations/supported-environments.md`](operations/supported-environments.md)).
 
 Only this gate changes the project status to v1 complete.

@@ -3,7 +3,7 @@ set -eu
 
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 runner="$repo_dir/scripts/run-hardening-matrix-e2e.sh"
-documentation="$repo_dir/docs/hardening-matrix-e2e.md"
+documentation="$repo_dir/docs/release/hardening-matrix-e2e.md"
 
 [ -x "$runner" ] || {
     printf 'hardening harness verification failed: runner is not executable\n' >&2

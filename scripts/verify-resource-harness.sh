@@ -3,7 +3,7 @@ set -eu
 
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 runner="$repo_dir/scripts/run-resource-matrix.sh"
-documentation="$repo_dir/docs/resource-gate.md"
+documentation="$repo_dir/docs/release/resource-gate.md"
 
 [ -x "$runner" ] || {
     printf 'resource harness verification failed: runner is not executable\n' >&2

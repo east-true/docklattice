@@ -20,7 +20,7 @@ For a release build, pass an immutable source revision and its commit time:
 ```
 
 The local operator command for provisioning a one-time Agent registration
-secret is documented in `docs/install-containers.md`; no unauthenticated token
+secret is documented in [`../operations/install.md`](../operations/install.md); no unauthenticated token
 issuance endpoint is exposed by either image.
 
 The script creates multi-platform OCI archives for `linux/amd64` and
