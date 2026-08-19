@@ -396,7 +396,10 @@ func TestProductionPeriodicDiscoveryAuditsExternalConfigChange(t *testing.T) {
 	if err := os.WriteFile(composePath, []byte("services:\n  app:\n    image: externally-changed-private-value\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(time.Second)
+	// The rescan interval is 10ms; the bound only has to outlast scheduling
+	// noise on a loaded machine, and the test still fails if the Audit never
+	// appears.
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		result, readErr := runtime.WAL().ReadAuditFrom(context.Background(), auditwal.Cursor{
 			Incarnation: runtime.Startup().CurrentIncarnation, Seq: 1,

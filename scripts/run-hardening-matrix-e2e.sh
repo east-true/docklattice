@@ -138,6 +138,7 @@ server="$prefix-server"
 agent="$prefix-agent"
 network="$prefix-network"
 compose_project=$(printf '%s' "$prefix-fixture" | tr '[:upper:]' '[:lower:]')
+secret_marker="hardening-secret-must-never-be-recorded-$$"
 completed=0
 failure_reason="harness did not complete"
 
@@ -240,9 +241,13 @@ services:
     pull_policy: never
     command: ["/bin/sh", "-c", "trap 'exit 0' TERM INT; while :; do sleep 60; done"]
 EOF
+# A marked secret lives in the project so that every scenario's closing
+# invariant can prove no failure path moved it into Audit, an Operation result,
+# or a container log.
+printf 'HARDENING_SECRET=%s\n' "$secret_marker" >"$runtime/projects/.env"
 docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
     -v "$runtime:/hardening" "$server_image" -c \
-    'chown -R 65532:65532 /hardening/server /hardening/agent; chmod 0700 /hardening/server /hardening/agent /hardening/server/tls; chmod 0600 /hardening/server/tls/server.crt /hardening/server/tls/server.key; chown -R 65532:65532 /hardening/projects; chmod 0777 /hardening/projects; chmod 0666 /hardening/projects/compose.yaml' \
+    'chown -R 65532:65532 /hardening/server /hardening/agent; chmod 0700 /hardening/server /hardening/agent /hardening/server/tls; chmod 0600 /hardening/server/tls/server.crt /hardening/server/tls/server.key; chown -R 65532:65532 /hardening/projects; chmod 0777 /hardening/projects; chmod 0666 /hardening/projects/compose.yaml /hardening/projects/.env' \
     >/dev/null
 
 server_state_sh() {
@@ -419,6 +424,119 @@ if selected db-restore; then
         fail "baseline: the Agent did not return after the snapshot restart"
 fi
 
+# ------------------------------------------------------------- invariants
+# Every case closes with the same question: is the product's state still
+# describable? A case that leaves an orphan project lock, a live restore
+# journal, a stray staging file, a nonterminal Operation, an undescribed Audit
+# range, a stale session, or a leaked secret has not passed merely because its
+# own assertion held. 13 of the ADR's post-failure invariants are observable
+# from outside the Agent, and those are the ones asserted here.
+observed_operations="$runtime/observed-operations"
+: >"$observed_operations"
+
+track_operation() { printf '%s\n' "$1" >>"$observed_operations"; }
+
+agent_state_dir() {
+    docker exec "$agent" /bin/sh -c '
+        for candidate in /var/lib/dockpilot /constrained/state; do
+            if [ -e "$candidate/identity/agent-state.json" ] || [ -e "$candidate/agent-state.json" ]; then
+                printf %s "$candidate"
+                exit 0
+            fi
+        done
+        exit 1'
+}
+
+check_invariants() {
+    scenario=$1
+    prefix="$evidence_dir/invariants.$scenario"
+
+    # 1. Exactly one ACTIVE Agent: no retired or duplicated session survived.
+    wait_active_host "$agent_id" "$prefix.dashboard.json" 240 ||
+        fail "$scenario: invariant: the fleet did not settle on exactly one ACTIVE Agent"
+
+    # 2. Every Operation this run created is terminal, and terminal exactly once.
+    while read -r tracked; do
+        [ -n "$tracked" ] || continue
+        api GET "$base_url/api/v1/agents/$agent_id/operations/$tracked" '' "$prefix.operation.json"
+        jq -e '.status == "success" or .status == "failed" or .status == "canceled" or
+               .status == "interrupted" or .status == "rejected"' "$prefix.operation.json" >/dev/null ||
+            fail "$scenario: invariant: operation $tracked is still nonterminal"
+        jq -e '.revision > 0' "$prefix.operation.json" >/dev/null ||
+            fail "$scenario: invariant: operation $tracked has no durable revision"
+    done <"$observed_operations"
+
+    # 3. The project lock is free. A lock-taking Operation that is refused for
+    #    any other reason still proves the lock was acquired; only PROJECT_BUSY
+    #    proves an orphan.
+    probe="hardening-lock-probe-$scenario-$$"
+    api POST "$base_url/api/v1/projects/$project_uid/backups" \
+        "$(jq -cn --arg id "$probe" '{operation_id:$id,relative_paths:["compose.yaml"]}')" \
+        "$prefix.probe.accepted.json"
+    track_operation "$probe"
+    poll_operation "$probe" "$prefix.probe.json" 180 ||
+        fail "$scenario: invariant: the project lock probe never reached a terminal state"
+    jq -e '((.error // "") | test("PROJECT_BUSY")) | not' "$prefix.probe.json" >/dev/null ||
+        fail "$scenario: invariant: the project lock is still held by nothing"
+
+    # 4. No restore journal and no staging orphan survives a closed scenario.
+    state_dir=$(agent_state_dir) ||
+        fail "$scenario: invariant: could not locate the Agent state directory"
+    docker exec "$agent" /bin/sh -c "ls -A '$state_dir/restore-journal' 2>/dev/null" \
+        >"$prefix.restore-journal.txt" 2>&1 || true
+    [ ! -s "$prefix.restore-journal.txt" ] ||
+        fail "$scenario: invariant: a restore journal survived a settled scenario"
+    ls -A "$runtime/projects" | grep -e '^\.dockpilot-' >"$prefix.staging.txt" 2>/dev/null || true
+    [ ! -s "$prefix.staging.txt" ] ||
+        fail "$scenario: invariant: staging files were orphaned in the project directory"
+
+    # 5/6. Audit coverage is describable: every gap names its source, precision,
+    #      and an ordered range, and the acknowledged cursor never exceeds what
+    #      the Server says it has.
+    audit_page "$prefix.audit.json"
+    jq -e '
+      (.coverage.gaps // []) | all(
+        (.precision == "exact" or .precision == "coalesced" or .precision == "unknown") and
+        (.source == "AGENT_GAP" or .source == "SERVER_RETENTION" or
+         .source == "AGENT_CONTINUITY_UNCERTAIN" or .source == "SERVER_CURSOR_REGRESSION") and
+        (.from.seq <= .until.seq))' "$prefix.audit.json" >/dev/null ||
+        fail "$scenario: invariant: an Audit coverage entry is missing its source, precision, or ordering"
+    jq -e '
+      (.coverage.ack == null) or (.coverage.delivery_next == null) or
+      (.coverage.ack.incarnation < .coverage.delivery_next.incarnation) or
+      (.coverage.ack.incarnation == .coverage.delivery_next.incarnation and
+       .coverage.ack.seq < .coverage.delivery_next.seq)' "$prefix.audit.json" >/dev/null ||
+        fail "$scenario: invariant: the acknowledged cursor passed the Server delivery cursor"
+
+    # 14. Docker's own answer and Dockpilot's view agree about this run's containers.
+    docker ps --all --filter "label=io.dockpilot.role=agent" --format '{{.ID}}' >"$prefix.docker-agent.txt"
+    api GET "$base_url/api/v1/hosts/$agent_id/containers" '' "$prefix.containers.json"
+    while read -r container; do
+        [ -n "$container" ] || continue
+        jq -e --arg id "$container" 'any(.[]; .id | startswith($id))' "$prefix.containers.json" >/dev/null ||
+            fail "$scenario: invariant: container $container exists in Docker but not in the Dockpilot view"
+    done <"$prefix.docker-agent.txt"
+
+    # 15. The Compose file Dockpilot reads is the file on disk.
+    api GET "$base_url/api/v1/projects/$project_uid/files?path=compose.yaml" '' "$prefix.file.json"
+    on_disk=$(sha256sum "$runtime/projects/compose.yaml" | awk '{ print $1 }')
+    reported=$(jq -r '.sha256' "$prefix.file.json")
+    [ "$on_disk" = "$reported" ] ||
+        fail "$scenario: invariant: Dockpilot reported compose.yaml as $reported, disk says $on_disk"
+
+    # 16. The project secret never reached Audit, an Operation result, or a log.
+    if grep -q -e "$secret_marker" "$prefix.audit.json" "$prefix.probe.json" "$prefix.file.json"; then
+        fail "$scenario: invariant: the project secret leaked into an API answer"
+    fi
+    docker logs "$server" >"$prefix.server.log" 2>&1 || true
+    docker logs "$agent" >"$prefix.agent.log" 2>&1 || true
+    if grep -q -e "$secret_marker" "$prefix.server.log" "$prefix.agent.log"; then
+        fail "$scenario: invariant: the project secret leaked into a container log"
+    fi
+    rm -f "$prefix.server.log" "$prefix.agent.log" "$prefix.operation.json"
+    record "invariants_$(printf '%s' "$scenario" | tr - _)" PASS
+}
+
 read_incarnation() {
     agent_state_sh 'cat /state/identity/agent-state.json 2>/dev/null || cat /state/agent-state.json 2>/dev/null || true' |
         jq -r '.current_incarnation // empty' 2>/dev/null || true
@@ -476,6 +594,7 @@ if selected agent-sigkill; then
     record agent_sigkill_incarnation_before "$incarnation_before"
     record agent_sigkill_incarnation_after "$incarnation_after"
     record agent_sigkill_continuity_uncertain PASS
+    check_invariants agent-sigkill
 fi
 
 # ------------------------------------------- case: operation interrupted by a kill
@@ -508,6 +627,7 @@ services:
         condition: service_healthy
 EOF
     slow_operation="hardening-slow-up-$$"
+    track_operation "$slow_operation"
     api POST "$base_url/api/v1/operations" \
         "$(jq -cn --arg id "$slow_operation" --arg agent "$agent_id" --arg project "$project_uid" \
             '{operation_id:$id,agent_id:$agent,project_uid:$project,kind:"compose.up"}')" \
@@ -541,6 +661,7 @@ EOF
     remove_compose_objects
     record operation_interrupt_terminal_after_kill PASS
     record operation_interrupt_partial_effects_admitted PASS
+    check_invariants operation-interrupt
 fi
 
 # ------------------------------------------------- case: server SIGKILL
@@ -576,6 +697,7 @@ if selected server-sigkill; then
         fail "server-sigkill: the canonical cursor regressed ($canonical_before -> $canonical_after)"
     record server_sigkill_identity_preserved PASS
     record server_sigkill_cursor_monotonic PASS
+    check_invariants server-sigkill
 fi
 
 # ------------------------------------------------- case: network partition
@@ -607,6 +729,7 @@ if selected network-partition; then
         fail "network-partition: recovery consumed a Join Token"
     record network_partition_session_ended PASS
     record network_partition_reconnect_without_token PASS
+    check_invariants network-partition
 fi
 
 # ------------------------------------------------- case: compose interrupt
@@ -615,6 +738,7 @@ fi
 # allowed - but it must not leave an orphaned child behind.
 if selected compose-interrupt; then
     compose_up="hardening-compose-up-$$"
+    track_operation "$compose_up"
     api POST "$base_url/api/v1/operations" \
         "$(jq -cn --arg id "$compose_up" --arg agent "$agent_id" --arg project "$project_uid" \
             '{operation_id:$id,agent_id:$agent,project_uid:$project,kind:"compose.up"}')" \
@@ -625,6 +749,7 @@ if selected compose-interrupt; then
         fail "compose-interrupt: the preparatory compose.up did not succeed"
 
     compose_down="hardening-compose-down-$$"
+    track_operation "$compose_down"
     api POST "$base_url/api/v1/operations" \
         "$(jq -cn --arg id "$compose_down" --arg agent "$agent_id" --arg project "$project_uid" \
             '{operation_id:$id,agent_id:$agent,project_uid:$project,kind:"compose.down"}')" \
@@ -659,6 +784,7 @@ if selected compose-interrupt; then
     record compose_interrupt_terminal PASS
     record compose_interrupt_no_orphan_child PASS
     record compose_interrupt_repeated_cancel_stable PASS
+    check_invariants compose-interrupt
 fi
 
 # ------------------------------------------------- case: concurrent edit
@@ -678,6 +804,7 @@ if selected concurrent-edit; then
     # write is dispatched as an operation and the conflict is the operation's
     # terminal outcome rather than a synchronous status on the dispatch.
     conflict_operation="hardening-concurrent-edit-$$"
+    track_operation "$conflict_operation"
     conflict_status=$(api_status PUT "$base_url/api/v1/projects/$project_uid/files" \
         "$(jq -cn --arg id "$conflict_operation" --arg path compose.yaml --arg sha "$stale_sha" \
             --arg content 'name: overwritten' \
@@ -708,6 +835,7 @@ if selected concurrent-edit; then
     record concurrent_edit_dispatch_status "$conflict_status"
     record concurrent_edit_conflict_identified PASS
     record concurrent_edit_file_unmodified PASS
+    check_invariants concurrent-edit
 fi
 
 # ------------------------------------------------- case: Server DB restore
@@ -756,6 +884,7 @@ if selected db-restore; then
         fail "db-restore: coverage was not re-established after the restore"
     record db_restore_identity_preserved PASS
     record db_restore_ack_watermark_not_regressed PASS
+    check_invariants db-restore
 fi
 
 # ------------------------------------------- case: concurrent project mutation
@@ -774,6 +903,7 @@ if selected concurrent-operations; then
     # correct once either has landed.
     for pair in "$first:A" "$second:B"; do
         operation_id=${pair%%:*}
+        track_operation "$operation_id"
         marker_value=${pair##*:}
         api_status PUT "$base_url/api/v1/projects/$project_uid/files" \
             "$(jq -cn --arg id "$operation_id" --arg path compose.yaml --arg sha "$shared_sha" \
@@ -806,6 +936,7 @@ if selected concurrent-operations; then
         fail "concurrent-operations: the file carries $markers race markers; a serialized write leaves exactly one"
     record concurrent_operations_single_winner PASS
     record concurrent_operations_file_not_blended PASS
+    check_invariants concurrent-operations
 fi
 
 # ------------------------------------------- case: Docker daemon restart
@@ -839,6 +970,7 @@ if selected docker-daemon-restart; then
             "$evidence_dir/docker-daemon-restart.dashboard.json" >/dev/null ||
             fail "docker-daemon-restart: the Docker capability did not recover"
         record docker_daemon_restart PASS
+    check_invariants docker-daemon-restart
     fi
 fi
 
@@ -929,6 +1061,7 @@ if selected disk-pressure || selected audit-gap; then
         record audit_gap_records_accounted "$effective"
         record audit_gap_every_gap_is_described PASS
     fi
+    check_invariants degraded-storage
 fi
 
 {

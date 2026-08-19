@@ -49,6 +49,13 @@ for literal in \
     'HARDENING_ALLOW_DOCKER_DAEMON_RESTART' \
     'SKIPPED_NOT_AUTHORIZED' \
     'rm -f /state/join-token' \
+    'check_invariants ' \
+    'invariant: operation ' \
+    'invariant: the project lock is still held by nothing' \
+    'invariant: a restore journal survived a settled scenario' \
+    'invariant: staging files were orphaned in the project directory' \
+    'invariant: the acknowledged cursor passed the Server delivery cursor' \
+    'invariant: the project secret leaked into a container log' \
     'status=PASS' \
     'seal_evidence'; do
     require_literal "$literal" "$runner"
@@ -64,6 +71,7 @@ for literal in \
     'db_restore_ack_watermark_not_regressed' \
     'disk_pressure_reason_reported' \
     'audit_gap_every_gap_is_described' \
+    'invariants_agent_sigkill' \
     'docker_daemon_restart'; do
     require_literal "$literal" "$documentation"
 done
