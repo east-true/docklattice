@@ -421,6 +421,7 @@ func (e *Engine) recoverJournal() error {
 		}
 		if len(record.OutputTail) > e.config.OutputTailBytes {
 			record.OutputTail = append([]byte(nil), record.OutputTail[len(record.OutputTail)-e.config.OutputTailBytes:]...)
+			record.OutputTail = TrimPartialLeadingRune(record.OutputTail)
 			record.OutputTruncated = true
 		}
 		operation := &Operation{engine: e, spec: Spec{OperationID: record.OperationID, ProjectKey: record.ProjectKey, Target: record.Target, Type: record.Type, PayloadHash: record.PayloadHash}, record: record, outputLimit: e.config.OutputTailBytes}

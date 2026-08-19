@@ -23,11 +23,20 @@ const (
 )
 
 type Handler struct {
-	backend Backend
-	static  http.Handler
+	backend     Backend
+	static      http.Handler
+	diagnostics io.Writer
 }
 
 func New(backend Backend) (*Handler, error) {
+	return NewWithDiagnostics(backend, nil)
+}
+
+// NewWithDiagnostics attaches a writer that receives one bounded line for every
+// request answered with 500. The client is deliberately told nothing beyond
+// "request failed", so without this the only unexpected server-side failure mode
+// leaves no trace anywhere.
+func NewWithDiagnostics(backend Backend, diagnostics io.Writer) (*Handler, error) {
 	if backend == nil {
 		return nil, errors.New("webui: backend is required")
 	}
@@ -35,7 +44,28 @@ func New(backend Backend) (*Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("webui: open embedded assets: %w", err)
 	}
-	return &Handler{backend: backend, static: http.FileServer(http.FS(assets))}, nil
+	return &Handler{backend: backend, static: http.FileServer(http.FS(assets)), diagnostics: diagnostics}, nil
+}
+
+// internalErrorLogLimit bounds one diagnostic line so an error carrying
+// Agent-provided text cannot turn the Server's output into unbounded logging.
+const internalErrorLogLimit = 512
+
+func (h *Handler) logInternalError(err error) {
+	if h.diagnostics == nil || err == nil {
+		return
+	}
+	message := err.Error()
+	if len(message) > internalErrorLogLimit {
+		message = message[:internalErrorLogLimit]
+	}
+	message = strings.Map(func(char rune) rune {
+		if char == '\n' || char == '\r' {
+			return ' '
+		}
+		return char
+	}, message)
+	fmt.Fprintf(h.diagnostics, "api request failed: %s\n", message)
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -636,6 +666,10 @@ func (h *Handler) respond(w http.ResponseWriter, value any, err error) {
 	case errors.Is(err, ErrTooLarge):
 		writeProblem(w, http.StatusRequestEntityTooLarge, "TOO_LARGE", err.Error())
 	default:
+		// ErrCorruptData and anything else unmapped is a genuine Server-side
+		// invariant failure, so 500 is the correct answer. It is recorded here
+		// because the response deliberately carries no detail.
+		h.logInternalError(err)
 		writeProblem(w, http.StatusInternalServerError, "INTERNAL", "request failed")
 	}
 }

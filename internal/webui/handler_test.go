@@ -786,3 +786,45 @@ func TestEmbeddedLiveUIIsAccessibleAndUsesFetchWithoutReconnect(t *testing.T) {
 		t.Fatalf("browser streaming contract missing or reconnect present")
 	}
 }
+
+type failingBackend struct{ Backend }
+
+func (failingBackend) Dashboard(context.Context) (Dashboard, error) {
+	return Dashboard{}, errors.New("serverapi: corrupt data at operations: invalid operation row")
+}
+
+func TestInternalErrorIsRecordedButNotReflectedToTheClient(t *testing.T) {
+	var diagnostics strings.Builder
+	handler, err := NewWithDiagnostics(failingBackend{}, &diagnostics)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/dashboard", nil))
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+	if strings.Contains(recorder.Body.String(), "corrupt data") {
+		t.Fatalf("the response reflected server detail: %s", recorder.Body.String())
+	}
+	recorded := diagnostics.String()
+	if !strings.Contains(recorded, "corrupt data at operations") {
+		t.Fatalf("diagnostics = %q", recorded)
+	}
+	if strings.Count(recorded, "\n") != 1 {
+		t.Fatalf("a failure must record exactly one line: %q", recorded)
+	}
+}
+
+func TestInternalErrorDiagnosticIsBoundedAndSingleLine(t *testing.T) {
+	var diagnostics strings.Builder
+	handler := &Handler{diagnostics: &diagnostics}
+	handler.logInternalError(errors.New(strings.Repeat("a\nb", 4096)))
+	recorded := diagnostics.String()
+	if strings.Count(recorded, "\n") != 1 {
+		t.Fatalf("embedded newlines were not scrubbed: %q", recorded)
+	}
+	if len(recorded) > internalErrorLogLimit+64 {
+		t.Fatalf("diagnostic was not bounded: %d bytes", len(recorded))
+	}
+}

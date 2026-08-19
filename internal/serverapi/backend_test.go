@@ -12,7 +12,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
+	"github.com/east-true/dockpilot/internal/operation"
 	"github.com/east-true/dockpilot/internal/producttransport"
 	"github.com/east-true/dockpilot/internal/projectmodel"
 	"github.com/east-true/dockpilot/internal/serverstore"
@@ -1703,3 +1705,60 @@ func assertNoPersistentSecret(t *testing.T, ctx context.Context, store *serverst
 }
 
 func dbTime(value time.Time) string { return value.UTC().Format(time.RFC3339Nano) }
+
+// A cancel repeated against an already terminal operation must keep answering
+// with the same record. The Agent is authoritative and returns that record
+// unchanged, so the merge sees an equal revision and must not treat it as a
+// conflict or an internal failure.
+func TestRepeatedIdempotentCancelKeepsAnsweringWithTheSameRecord(t *testing.T) {
+	ctx, backend, store, registry := newTestBackend(t)
+	insertAgent(t, ctx, store, "agent-a", "Agent", `{}`)
+	session := newFakeSession("agent-a")
+	session.operation = producttransport.OperationResponse{Status: "running", Phase: "EXECUTING", Revision: 2}
+	if err := registry.Register(session); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.StartOperation(ctx, webui.OperationRequest{ID: "op-1", AgentID: "agent-a", Kind: "docker.prune"}); err != nil {
+		t.Fatal(err)
+	}
+	// A bounded tail keeps the newest bytes, so its head can fall inside a
+	// multi-byte rune. The Agent trims that partial sequence, and the record
+	// must survive every later read.
+	tail := []byte(strings.Repeat("한글", 8))
+	terminal := producttransport.CancelOperationResponse{Outcome: "ALREADY_TERMINAL", Operation: producttransport.OperationResponse{
+		Status: "success", Phase: "FINALIZING", Revision: 7, OutputTail: tail[1:], OutputTruncated: true,
+	}}
+	terminal.Operation.OutputTail = operation.TrimPartialLeadingRune(terminal.Operation.OutputTail)
+
+	var first webui.OperationCancellation
+	for attempt := range 4 {
+		session.cancelOperation = terminal
+		session.cancelOperation.Operation.OutputTail = append([]byte(nil), terminal.Operation.OutputTail...)
+		got, err := backend.CancelOperation(ctx, "agent-a", "op-1")
+		if err != nil {
+			t.Fatalf("attempt %d: cancel error = %v", attempt, err)
+		}
+		if attempt == 0 {
+			first = got
+			continue
+		}
+		if got != first {
+			t.Fatalf("attempt %d returned a different record: %+v vs %+v", attempt, got, first)
+		}
+	}
+	if first.Operation.OutputTail == "" || !utf8.ValidString(first.Operation.OutputTail) {
+		t.Fatalf("output tail = %q", first.Operation.OutputTail)
+	}
+}
+
+// The corrupt-data guard must stay meaningful: a record the Agent could not
+// have produced is still refused rather than served.
+func TestOperationRecordWithSplitRuneIsStillRefused(t *testing.T) {
+	tail := []byte(strings.Repeat("한글", 4))
+	_, err := operationFromAgent("op-1", producttransport.OperationResponse{
+		Status: "success", Phase: "FINALIZING", Revision: 1, OutputTail: tail[1:],
+	})
+	if !errors.Is(err, ErrCorruptData) {
+		t.Fatalf("error = %v", err)
+	}
+}

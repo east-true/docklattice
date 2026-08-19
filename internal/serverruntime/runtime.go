@@ -172,7 +172,7 @@ func (r *Runtime) Ready(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	ui, err := webui.New(backend)
+	ui, err := webui.NewWithDiagnostics(backend, r.config.Diagnostics)
 	if err != nil {
 		return err
 	}

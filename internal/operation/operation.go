@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // Operation is safe for concurrent progress, cancel, commit, and output calls.
@@ -326,15 +327,38 @@ func (o *Operation) WriteOutput(payload []byte) (int, error) {
 			o.record.OutputTruncated = true
 		}
 		o.record.OutputTail = append(o.record.OutputTail[:0], payload[len(payload)-o.outputLimit:]...)
+		o.record.OutputTail = TrimPartialLeadingRune(o.record.OutputTail)
 		return written, nil
 	}
 	o.record.OutputTail = append(o.record.OutputTail, payload...)
 	if overflow := len(o.record.OutputTail) - o.outputLimit; overflow > 0 {
 		copy(o.record.OutputTail, o.record.OutputTail[overflow:])
-		o.record.OutputTail = o.record.OutputTail[:o.outputLimit]
+		o.record.OutputTail = TrimPartialLeadingRune(o.record.OutputTail[:o.outputLimit])
 		o.record.OutputTruncated = true
 	}
 	return written, nil
+}
+
+// TrimPartialLeadingRune drops the leading bytes of a UTF-8 sequence that a
+// byte-bounded tail cut in half.
+//
+// A tail keeps the newest bytes, so a truncation always cuts at the head and
+// never in the middle of the retained text: everything after the first retained
+// byte is contiguous. Without this trim an ordinary truncation can leave a
+// dangling continuation byte at the front, and the Server rejects such a record
+// as corrupt data. That answers 500 for every read of the operation, including
+// a repeated idempotent cancel, for as long as the operation exists.
+//
+// At most utf8.UTFMax-1 bytes are removed. Input that carries no rune start at
+// all is returned unchanged, so the Server's validity check still catches a
+// genuinely non-textual record instead of being silently satisfied here.
+func TrimPartialLeadingRune(tail []byte) []byte {
+	for index := 0; index < len(tail) && index < utf8.UTFMax; index++ {
+		if utf8.RuneStart(tail[index]) {
+			return tail[index:]
+		}
+	}
+	return tail
 }
 
 // AdvanceProgress records COMMITTING sub-step progress (for example, restore
