@@ -52,12 +52,12 @@ services.
 
 ## Phase 2 — Identity and connection lifecycle
 
-Status: package recovery matrix complete
-(`internal/serverbootstrap/recovery_matrix_test.go`); the Agent-replacement
-case of the real-container matrix is covered by the clean-host install E2E
-(Agent container removed and recreated with no Join Token, reconnecting with an
-identical Agent ID, project UID, and backup metadata); the identity-loss and
-database-loss cases remain package-level only
+Status: complete. Package recovery matrix
+(`internal/serverbootstrap/recovery_matrix_test.go`); Agent-replacement case in
+the clean-host install E2E (Agent container removed and recreated with no Join
+Token, reconnecting with an identical Agent ID, project UID, and backup
+metadata); real-container recovery matrix for all three Server-side loss
+outcomes ([`docs/recovery-matrix-e2e.md`](recovery-matrix-e2e.md)).
 
 - Implement Server identity, signing keys, archive generation, join tokens,
   Agent credentials, and the durable revocation ledger.

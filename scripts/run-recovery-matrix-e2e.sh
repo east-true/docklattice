@@ -369,27 +369,56 @@ wait_active_host "$agent_id" "$evidence_dir/dashboard.case1.json" 300 ||
 capture_log "$agent" "$evidence_dir/agent.case1.log"
 capture_log "$server" "$evidence_dir/server.case1.log"
 
-# ------------------------------------------- case 2: Identity State lost
+# --------------- case 2: Identity State lost, Audit database preserved
+# Section 6.1 gives this outcome a different name from a database loss: the
+# Server would present a different server_identity_id over an Audit Archive that
+# belongs to the old one, so it must fail closed rather than adopt the archive.
 docker stop "$server" >/dev/null
 server_state_sh 'rm -rf /state/identity' >/dev/null
 server_state_sh '[ -e /state/identity ] && echo present || echo absent' >"$evidence_dir/case2.identity-removed"
 grep -q absent "$evidence_dir/case2.identity-removed" || fail "case 2: the Identity State was not removed"
-restart_server case2
-identity_case2=$(read_identity_field server_identity_id)
-[ -n "$identity_case2" ] && [ "$identity_case2" != null ] || fail "case 2: the Server did not create a new Identity State"
-[ "$identity_case2" != "$identity_baseline" ] ||
-    fail "case 2: server_identity_id was reused after Identity State loss"
+server_state_sh '[ -e /state/server.db ] && echo present || echo absent' >"$evidence_dir/case2.database-kept"
+grep -q present "$evidence_dir/case2.database-kept" || fail "case 2: the Audit database was removed by mistake"
+docker start "$server" >"$evidence_dir/server.restart.case2"
+refused=0
+deadline=$(( $(date +%s) + 60 ))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+    state=$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$server")
+    case "$state" in
+        "exited "*)
+            [ "$state" != "exited 0" ] || fail "case 2: the Server exited successfully instead of failing closed"
+            refused=1
+            break
+            ;;
+    esac
+    sleep 1
+done
+capture_log "$server" "$evidence_dir/case2.server.log"
+[ "$refused" -eq 1 ] || fail "case 2: the Server did not fail closed after losing only its Identity State"
+grep -q 'another Server Identity' "$evidence_dir/case2.server.log" ||
+    fail "case 2: the Server failed without naming the Archive identity refusal"
+
+# ---------- case 3: both Server stores lost, so a new trust domain is created
+# With no Identity State and no database there is nothing to contradict, and
+# section 6.1 requires manual re-registration because existing Agents now face a
+# different server_identity_id.
+server_state_sh 'rm -f /state/server.db /state/server.db-wal /state/server.db-shm' >/dev/null
+restart_server case3
+identity_case3=$(read_identity_field server_identity_id)
+[ -n "$identity_case3" ] && [ "$identity_case3" != null ] || fail "case 3: the Server did not create a new Identity State"
+[ "$identity_case3" != "$identity_baseline" ] ||
+    fail "case 3: server_identity_id was reused after both stores were lost"
 # The old credential is bound to the lost identity, so the untouched Agent must
 # stay out. A short window is deliberate: this asserts an absence.
-if wait_active_host "$agent_id" "$evidence_dir/dashboard.case2.json" 60; then
-    fail "case 2: the Agent was accepted although the Server identity changed"
+if wait_active_host "$agent_id" "$evidence_dir/dashboard.case3.json" 120; then
+    fail "case 3: the Agent was accepted although the Server identity changed"
 fi
 curl --fail --silent --show-error --max-time 5 --cacert "$runtime/bootstrap/server-ca.crt" \
-    "$base_url/api/v1/dashboard" >"$evidence_dir/dashboard.case2.json" 2>/dev/null ||
-    fail "case 2: dashboard is unavailable after Identity State loss"
-jq -e '[.hosts[] | select(.state == "ACTIVE")] | length == 0' "$evidence_dir/dashboard.case2.json" >/dev/null ||
-    fail "case 2: an ACTIVE host is reported although no Agent can authenticate"
-capture_log "$agent" "$evidence_dir/agent.case2.log"
+    "$base_url/api/v1/dashboard" >"$evidence_dir/dashboard.case3.json" 2>/dev/null ||
+    fail "case 3: dashboard is unavailable after both stores were lost"
+jq -e '[.hosts[] | select(.state == "ACTIVE")] | length == 0' "$evidence_dir/dashboard.case3.json" >/dev/null ||
+    fail "case 3: an ACTIVE host is reported although no Agent can authenticate"
+capture_log "$agent" "$evidence_dir/agent.case3.log"
 
 # Manual re-registration: a fresh Agent state plus a new Join Token.
 docker rm -f "$agent" >/dev/null
@@ -397,11 +426,11 @@ docker run --pull never --rm --user 0:0 --entrypoint /bin/sh -v "$runtime/agent:
     -c 'rm -rf /agent/..?* /agent/.[!.]* /agent/*' >/dev/null 2>&1 || true
 issue_token
 start_agent true >"$evidence_dir/agent.container-id.reregistered"
-wait_active_host "" "$evidence_dir/dashboard.case2-reregistered.json" 120 ||
-    fail "case 2: manual re-registration did not produce an ACTIVE host"
-reregistered_agent_id=$(jq -r '.hosts[0].id' "$evidence_dir/dashboard.case2-reregistered.json")
+wait_active_host "" "$evidence_dir/dashboard.case3-reregistered.json" 120 ||
+    fail "case 3: manual re-registration did not produce an ACTIVE host"
+reregistered_agent_id=$(jq -r '.hosts[0].id' "$evidence_dir/dashboard.case3-reregistered.json")
 [ -n "$reregistered_agent_id" ] && [ "$reregistered_agent_id" != null ] ||
-    fail "case 2: re-registered dashboard omitted the Agent id"
+    fail "case 3: re-registered dashboard omitted the Agent id"
 docker run --pull never --rm --user 0:0 --entrypoint /bin/sh -v "$runtime/agent:/agent" "$server_image" \
     -c 'rm -f /agent/join-token' >/dev/null
 
@@ -415,16 +444,17 @@ docker run --pull never --rm --user 0:0 --entrypoint /bin/sh -v "$runtime/agent:
     printf 'baseline_archive_generation=%s\n' "$generation_baseline"
     printf 'case1_server_identity_id=%s\n' "$identity_case1"
     printf 'case1_archive_generation=%s\n' "$generation_case1"
-    printf 'case2_server_identity_id=%s\n' "$identity_case2"
-    printf 'case2_reregistered_agent_id=%s\n' "$reregistered_agent_id"
+    printf 'case3_server_identity_id=%s\n' "$identity_case3"
+    printf 'case3_reregistered_agent_id=%s\n' "$reregistered_agent_id"
     printf 'finished_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'plain_restart_reconnect=PASS\n'
     printf 'database_loss_identity_preserved=PASS\n'
     printf 'database_loss_generation_advanced=PASS\n'
     printf 'database_loss_automatic_reconnect=PASS\n'
-    printf 'identity_loss_new_trust_domain=PASS\n'
-    printf 'identity_loss_old_agent_rejected=PASS\n'
-    printf 'identity_loss_manual_reregistration=PASS\n'
+    printf 'identity_loss_with_database_fails_closed=PASS\n'
+    printf 'both_stores_lost_new_trust_domain=PASS\n'
+    printf 'both_stores_lost_old_agent_rejected=PASS\n'
+    printf 'both_stores_lost_manual_reregistration=PASS\n'
 } >"$evidence_dir/assertions.env"
 
 used_kib=$(du -sk "$evidence_dir" | awk '{ print $1 }')
