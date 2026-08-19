@@ -233,6 +233,10 @@ complete.
   racing project writes, a rolled-back Server database, and an Agent filesystem
   too small to hold its WAL
   ([`docs/hardening-matrix-e2e.md`](hardening-matrix-e2e.md)).
+- Abuse matrix over the untrusted HTTP surface: path escapes, secret exposure,
+  operation ID rebinding, an operation flood, self-directed container
+  operations, malformed and oversized requests, and a Compose project name
+  collision ([`docs/abuse-matrix-e2e.md`](abuse-matrix-e2e.md)).
 - Operator documentation: install, backup/restore, identity-state recovery,
   Agent upgrade, degraded-storage recovery
   ([`docs/degraded-storage-recovery.md`](degraded-storage-recovery.md)), and

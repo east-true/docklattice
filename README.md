@@ -40,7 +40,11 @@ runs produced byte-identical archives (`docs/distribution.md`). A separate
 adversarial gate injects Agent and Server kills, a network partition, an
 interrupted operation, a cancelled Compose run, racing writes, a rolled-back
 Server database, and a filesystem too small to hold the WAL
-(`docs/hardening-matrix-e2e.md`).
+(`docs/hardening-matrix-e2e.md`). A second adversarial gate feeds the API what
+it must refuse - path escapes, secret exposure, operation ID rebinding, a
+request flood, self-directed container operations, malformed and oversized
+requests, and a Compose project name collision
+(`docs/abuse-matrix-e2e.md`).
 
 The Appendix A transport prototype and its synthetic workloads remain isolated
 from product code.
@@ -74,6 +78,7 @@ Operator documentation:
 - `docs/clean-host-install-e2e.md` - the clean-host installation gate.
 - `docs/recovery-matrix-e2e.md` - the real-container recovery matrix gate.
 - `docs/hardening-matrix-e2e.md` - the adversarial failure-injection gate.
+- `docs/abuse-matrix-e2e.md` - the untrusted-input and invariant-violation gate.
 
 Release-scope and harness contracts are checked statically:
 
@@ -85,6 +90,7 @@ Release-scope and harness contracts are checked statically:
 ./scripts/verify-clean-host-install-harness.sh
 ./scripts/verify-recovery-matrix-harness.sh
 ./scripts/verify-hardening-matrix-harness.sh
+./scripts/verify-abuse-matrix-harness.sh
 ```
 
 ## Scope

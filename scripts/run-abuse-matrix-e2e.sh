@@ -652,8 +652,14 @@ if selected request-abuse; then
     check dashboard-query 400 "$status"
     # An oversized body must be refused on size, never buffered whole.
     oversized=$(mktemp "$runtime/bootstrap/oversized.XXXXXX")
-    jq -cn --arg id "abuse-oversized-$$" --arg agent "$agent_id" --arg pad "$(head -c 2000000 /dev/zero | tr '\0' 'a')" \
-        '{operation_id:$id,agent_id:$agent,kind:"discovery.rescan",target:$pad}' >"$oversized"
+    # Streamed into the file rather than built as an argument: a two-megabyte
+    # argv does not survive execve.
+    {
+        printf '{"operation_id":"abuse-oversized-%s","agent_id":"%s","kind":"discovery.rescan","target":"' \
+            "$$" "$agent_id"
+        head -c 2000000 /dev/zero | tr '\0' 'a'
+        printf '"}'
+    } >"$oversized"
     status=$(curl --silent --show-error --max-time 30 --output "$evidence_dir/request-abuse.oversized.json" \
         --write-out '%{http_code}' --cacert "$runtime/bootstrap/server-ca.crt" \
         -H 'Content-Type: application/json' -X POST --data-binary "@$oversized" \
