@@ -43,6 +43,32 @@ Select a subset with `HARDENING_CASES`. The default is every case.
 | `audit-gap` | the WAL loss caused by that pressure | 11.6: every reported gap carries its precision, a design-named source, and an ordered range - never a silent hole |
 | `docker-daemon-restart` | the host Engine is restarted | the Agent returns ACTIVE and the Docker capability recovers |
 
+## The closing invariant check
+
+A case that only asserts its own outcome can still leave the product in a state
+nobody can describe. Every case therefore ends with the same shared check, and
+the case fails if any of it fails:
+
+| Invariant | How it is observed |
+| --- | --- |
+| Exactly one ACTIVE session; no stale or duplicated one | the fleet dashboard |
+| Every Operation this run requested is terminal, with a durable revision | `GET /agents/{id}/operations/{id}` for each tracked ID |
+| The project lock is free | a fresh lock-taking Operation that must not come back `PROJECT_BUSY` |
+| No restore journal survives a settled scenario | the Agent's `restore-journal` directory |
+| No staging file is orphaned | the project directory, for `.dockpilot-*` entries |
+| Every Audit coverage entry names its source, precision, and an ordered range | the host Audit page |
+| The acknowledged cursor never passes the Server delivery cursor | the same page |
+| Docker's containers are present in Dockpilot's view | `docker ps` against `GET /hosts/{id}/containers` |
+| The Compose file Dockpilot reads is the file on disk | the file route's digest against `sha256sum` |
+| The project secret reached neither an API answer nor a container log | a marked secret in the fixture `.env` |
+
+`db-restore` is the one case that legitimately breaks the second invariant: an
+older Server database has no record of the Operations requested after the
+snapshot. It asserts separately that the Server refuses to describe such an
+Operation with a typed `CONFLICT` or `NOT_FOUND` rather than inventing a status,
+and the tracked set restarts there because a discarded history cannot be
+re-proved.
+
 `docker-daemon-restart` stops every container on the machine, so it runs only
 with `HARDENING_ALLOW_DOCKER_DAEMON_RESTART=1` and a non-interactive
 `systemctl restart docker`. Without both it records an explicit skip reason
@@ -50,13 +76,13 @@ rather than being silently dropped.
 
 ## Recorded execution
 
-    started_at              2026-08-19T13:23:00Z
-    finished_at             2026-08-19T13:30:22Z
+    started_at              2026-08-19T20:40:51Z
+    finished_at             2026-08-19T20:49:20Z
     docker_server_version   29.7.2
     release_version         1.0.0
-    release_revision        f1d4087eb94921f07ce3c6fafddcbf0261314bf3
-    server_image_id         sha256:ead4628e28352ab53ccc73dc1b5d90545398234d9d989b30206ebbeb74805e57
-    agent_image_id          sha256:e45a78076c2af409579c8072b89b7d7255d12bcf263e0b4ffddea358c12954af
+    release_revision        fd04135f6f063c05dd93810addfa46819ef81b6c
+    server_image_id         sha256:eae3d5bf9504c296eb911b3a277d3a8a99856c405167faa768787bd00484b186
+    agent_image_id          sha256:78b649789bbbc1e5a4a624c30198abccf6129e86075d7b38625058d137341fbf
     fixture_image_id        sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
 
 Recorded assertion results:
@@ -79,10 +105,20 @@ Recorded assertion results:
 | `concurrent_operations_file_not_blended` | PASS |
 | `db_restore_identity_preserved` | PASS |
 | `db_restore_ack_watermark_not_regressed` | PASS |
+| `db_restore_prior_operation_explained` | PASS |
 | `disk_pressure_reason_reported` | PASS |
 | `disk_pressure_capabilities_preserved` | PASS |
 | `disk_pressure_allowed_read_works` | PASS |
 | `audit_gap_every_gap_is_described` | PASS |
+| `invariants_agent_sigkill` | PASS |
+| `invariants_operation_interrupt` | PASS |
+| `invariants_server_sigkill` | PASS |
+| `invariants_network_partition` | PASS |
+| `invariants_compose_interrupt` | PASS |
+| `invariants_concurrent_edit` | PASS |
+| `invariants_db_restore` | PASS |
+| `invariants_concurrent_operations` | PASS |
+| `invariants_degraded_storage` | PASS |
 | `docker_daemon_restart` | SKIPPED_NOT_AUTHORIZED |
 
 Observed detail worth keeping:
@@ -98,6 +134,10 @@ Observed detail worth keeping:
   both digests it needs to show a diff.
 - The interrupted `compose.up` came back as
   `{"status":"interrupted","partial_effects_possible":true,"error":"agent restarted while operation was nonterminal"}`.
+- Every one of the nine closing invariant checks passed, including the one run
+  against an Agent in `DEGRADED_STORAGE` on an 8 MiB filesystem, where the lock
+  probe is refused for storage rather than for a lock - which is itself proof
+  that the lock was free.
 
 `STATUS` recorded `status=PASS`, and the run left no container, network, runtime
 root, or Join Token behind.

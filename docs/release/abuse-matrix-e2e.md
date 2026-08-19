@@ -43,13 +43,13 @@ a separate `mktemp` runtime root scrubbed on every exit. Select a subset with
 
 ## Recorded execution
 
-    started_at              2026-08-19T15:43:54Z
-    finished_at             2026-08-19T15:48:26Z
+    started_at              2026-08-19T20:53:03Z
+    finished_at             2026-08-19T20:59:04Z
     docker_server_version   29.7.2
     release_version         1.0.0
-    release_revision        3ac48ce
-    server_image_id         sha256:30e59dfde2baa93b38423a56bef8132f153a4b00049e02f70cb6c4118578f3f4
-    agent_image_id          sha256:5037d3ede732e6d972d5599e1e2089a5d8c16b499bd26301c57afad700ee4a4e
+    release_revision        fd04135f6f063c05dd93810addfa46819ef81b6c
+    server_image_id         sha256:eae3d5bf9504c296eb911b3a277d3a8a99856c405167faa768787bd00484b186
+    agent_image_id          sha256:78b649789bbbc1e5a4a624c30198abccf6129e86075d7b38625058d137341fbf
     fixture_image_id        sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
 
 Recorded assertion results:

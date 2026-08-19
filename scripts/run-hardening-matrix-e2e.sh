@@ -161,7 +161,7 @@ scrub_runtime() {
     case "$runtime" in "$runtime_base"/dockpilot-hardening.*) ;; *) return 1 ;; esac
     docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
         -v "$runtime:/hardening-runtime" "$server_image" \
-        -c 'rm -rf /hardening-runtime/server /hardening-runtime/agent /hardening-runtime/bootstrap /hardening-runtime/projects' \
+        -c 'rm -rf /hardening-runtime/server /hardening-runtime/agent /hardening-runtime/bootstrap /hardening-runtime/projects /hardening-runtime/observed-operations' \
         >/dev/null 2>&1 || return 1
     rmdir "$runtime"
 }
@@ -456,14 +456,24 @@ check_invariants() {
         fail "$scenario: invariant: the fleet did not settle on exactly one ACTIVE Agent"
 
     # 2. Every Operation this run created is terminal, and terminal exactly once.
+    #    An Operation the Server can no longer describe must be refused by name
+    #    rather than answered with a guess, and only a deliberate history
+    #    rollback may produce that refusal.
     while read -r tracked; do
         [ -n "$tracked" ] || continue
-        api GET "$base_url/api/v1/agents/$agent_id/operations/$tracked" '' "$prefix.operation.json"
-        jq -e '.status == "success" or .status == "failed" or .status == "canceled" or
-               .status == "interrupted" or .status == "rejected"' "$prefix.operation.json" >/dev/null ||
-            fail "$scenario: invariant: operation $tracked is still nonterminal"
-        jq -e '.revision > 0' "$prefix.operation.json" >/dev/null ||
-            fail "$scenario: invariant: operation $tracked has no durable revision"
+        operation_status=$(api_status GET "$base_url/api/v1/agents/$agent_id/operations/$tracked" '' "$prefix.operation.json")
+        case "$operation_status" in
+            200)
+                jq -e '.status == "success" or .status == "failed" or .status == "canceled" or
+                       .status == "interrupted" or .status == "rejected"' "$prefix.operation.json" >/dev/null ||
+                    fail "$scenario: invariant: operation $tracked is still nonterminal"
+                jq -e '.revision > 0' "$prefix.operation.json" >/dev/null ||
+                    fail "$scenario: invariant: operation $tracked has no durable revision"
+                ;;
+            *)
+                fail "$scenario: invariant: operation $tracked answered HTTP $operation_status"
+                ;;
+        esac
     done <"$observed_operations"
 
     # 3. The project lock is free. A lock-taking Operation that is refused for
@@ -884,6 +894,34 @@ if selected db-restore; then
         fail "db-restore: coverage was not re-established after the restore"
     record db_restore_identity_preserved PASS
     record db_restore_ack_watermark_not_regressed PASS
+    # The Server's own record of everything requested after the snapshot is
+    # gone. The Agent still holds those results, so the Server must refuse to
+    # describe them by name instead of inventing a status - and the tracked set
+    # restarts here, because a discarded history cannot be re-proved.
+    prior_operation=$(head -n 1 "$observed_operations")
+    if [ -n "$prior_operation" ]; then
+        prior_status=$(api_status GET "$base_url/api/v1/agents/$agent_id/operations/$prior_operation" '' \
+            "$evidence_dir/db-restore.prior-operation.json")
+        case "$prior_status" in
+            200)
+                jq -e '.status == "success" or .status == "failed" or .status == "canceled" or
+                       .status == "interrupted" or .status == "rejected"' \
+                    "$evidence_dir/db-restore.prior-operation.json" >/dev/null ||
+                    fail "db-restore: a surviving Operation came back nonterminal"
+                ;;
+            404|409)
+                jq -e '.code == "CONFLICT" or .code == "NOT_FOUND"' \
+                    "$evidence_dir/db-restore.prior-operation.json" >/dev/null ||
+                    fail "db-restore: a discarded Operation was refused without a typed reason"
+                ;;
+            *)
+                fail "db-restore: an Operation from before the snapshot answered HTTP $prior_status"
+                ;;
+        esac
+        printf 'prior_operation_status=%s\n' "$prior_status" >>"$evidence_dir/db-restore.env"
+    fi
+    : >"$observed_operations"
+    record db_restore_prior_operation_explained PASS
     check_invariants db-restore
 fi
 

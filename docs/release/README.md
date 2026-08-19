@@ -1,9 +1,12 @@
 # Release evidence
 
 Dockpilot v1 is complete. Every phase of
-[`../implementation-plan.md`](../implementation-plan.md) has passed, and the
-gates below were executed against the release images built from revision
-`f1d4087`.
+[`../implementation-plan.md`](../implementation-plan.md) has passed. The
+hardening, abuse, and recovery matrices were executed against release images
+built from revision `fd04135`; the resource matrix, clean-host installation,
+and distribution gates were executed against revision `f1d4087` and are
+unaffected by the changes since, which touch the restore transaction, the Audit
+WAL tail repair, and the harnesses themselves.
 
 This directory exists because "the tests pass" is not evidence. Each gate here
 records what it ran, on which images, on which kernel, and what it deliberately
@@ -16,7 +19,7 @@ did *not* measure.
 | [Production resource matrix](resource-gate.md) | PASS | Real Server and Agent containers under the Appendix A workload mix, measured through cgroup v2 across three trials. Peak RSS 27–31 MiB against 256/512 MiB budgets, zero OOM events. |
 | [Clean-host installation](clean-host-install-e2e.md) | PASS | The documented install procedure on a fresh Linux Docker host, including the host-driven Agent upgrade and identity reconnect. |
 | [Recovery matrix](recovery-matrix-e2e.md) | PASS | All three Server-side loss outcomes from architecture section 6.1, with real containers and a real reconnect. |
-| [Hardening matrix](hardening-matrix-e2e.md) | PASS | Injected failures the product claims to survive: Agent and Server kills, network partition, interrupted operation, cancelled Compose run, racing writes, rolled-back Server database, and a filesystem too small for the WAL. |
+| [Hardening matrix](hardening-matrix-e2e.md) | PASS | Injected failures the product claims to survive: Agent and Server kills, network partition, interrupted operation, cancelled Compose run, racing writes, rolled-back Server database, and a filesystem too small for the WAL. Every case closes with the same invariant check over locks, operations, journals, staging, Audit coverage, and secrets. |
 | [Abuse matrix](abuse-matrix-e2e.md) | PASS | Inputs the product must refuse: path escapes, secret exposure, operation ID rebinding, replayed Join Token, foreign CA, tampered backup archive, non-identical discovery bind, self-directed operations, malformed and oversized requests, and a Compose project name collision. |
 | [Reproducible distribution](distribution.md) | PASS | `linux/amd64` and `linux/arm64` release images whose two independent build runs produced byte-identical archives. |
 
