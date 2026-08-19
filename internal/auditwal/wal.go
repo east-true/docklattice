@@ -395,10 +395,14 @@ func scanSegment(path string, repairTail bool, maxFrameBytes int64) (*segment, e
 			return nil, seekErr
 		}
 		// An incomplete read is necessarily a tail failure. A checksum/length
-		// failure is repairable only when the failed frame reaches physical EOF;
-		// corruption followed by more frames must never be silently truncated.
+		// failure is repairable only when the failed frame reaches physical EOF,
+		// or when nothing but zeros remains - a crash can leave the last segment
+		// extended past the last durable frame, and no frame can begin with a
+		// zero length. Corruption followed by more frames must never be silently
+		// truncated.
 		repairableCorruptTail := errors.Is(err, ErrCorrupt) &&
-			(position == fileInfo.Size() || declaredFrameRunsPastEOF(file, offset, fileInfo.Size()))
+			(position == fileInfo.Size() || declaredFrameRunsPastEOF(file, offset, fileInfo.Size()) ||
+				remainderIsZero(file, offset, fileInfo.Size()))
 		if repairTail && (errors.Is(err, io.ErrUnexpectedEOF) || repairableCorruptTail) {
 			if err := file.Truncate(offset); err != nil {
 				return nil, err
@@ -428,6 +432,35 @@ func scanSegment(path string, repairTail bool, maxFrameBytes int64) (*segment, e
 		return nil, fmt.Errorf("%w: segment filename/start mismatch", ErrCorrupt)
 	}
 	return seg, nil
+}
+
+// remainderIsZero reports whether every byte from offset to EOF is zero. Such
+// a region cannot hold a frame, because a frame's first four bytes are its
+// body length and that length is never zero.
+func remainderIsZero(file *os.File, offset, size int64) bool {
+	if offset >= size {
+		return true
+	}
+	buffer := make([]byte, 32*1024)
+	for offset < size {
+		count := int64(len(buffer))
+		if remaining := size - offset; remaining < count {
+			count = remaining
+		}
+		read, err := file.ReadAt(buffer[:count], offset)
+		if read > 0 {
+			for _, value := range buffer[:read] {
+				if value != 0 {
+					return false
+				}
+			}
+		}
+		if err != nil {
+			return false
+		}
+		offset += int64(read)
+	}
+	return true
 }
 
 func declaredFrameRunsPastEOF(file *os.File, offset, size int64) bool {
