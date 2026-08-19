@@ -27,6 +27,11 @@ type ServerConfig struct {
 	CoverageStartReason auditstore.CoverageStartReason
 	Decoder             EventDecoder
 	Now                 func() time.Time
+	// ServerIdentityID and ArchiveGeneration are announced to the Agent at the
+	// start of every stream so it can apply the archive judgement of
+	// architecture 6.4. They are required at protocol N.
+	ServerIdentityID  string
+	ArchiveGeneration uint64
 }
 
 type Server struct{ config ServerConfig }
@@ -34,6 +39,9 @@ type Server struct{ config ServerConfig }
 func NewServer(config ServerConfig) (*Server, error) {
 	if config.Store == nil || config.ArchiveID == "" || config.Decoder == nil {
 		return nil, errors.New("auditsync: Server store, archive ID, and decoder are required")
+	}
+	if config.ServerIdentityID == "" || config.ArchiveGeneration == 0 {
+		return nil, errors.New("auditsync: Server identity and archive generation are required to announce the archive")
 	}
 	if config.CoverageStartReason == "" {
 		config.CoverageStartReason = auditstore.CoverageServerNeverHad
@@ -66,6 +74,22 @@ func (s *Server) Run(ctx context.Context, session producttransport.AuditControlS
 		return err
 	}
 	defer stream.Close()
+	// The archive announcement precedes every acknowledgement so the Agent
+	// decides whether this is a normal reconnect, a forward Archive Rebind, or a
+	// rejection before it streams a single record. A protocol N-1 Agent ignores
+	// the message and keeps its existing binding.
+	if info.ProtocolVersion >= producttransport.CurrentProductProtocolVersion {
+		if err := stream.SendAck(producttransport.AuditAck{
+			AuditArchiveID: s.config.ArchiveID,
+			Archive: &producttransport.AuditArchiveDescriptor{
+				ServerIdentityID: s.config.ServerIdentityID,
+				Generation:       s.config.ArchiveGeneration,
+				AuditArchiveID:   s.config.ArchiveID,
+			},
+		}); err != nil {
+			return err
+		}
+	}
 
 	var pending *producttransport.AuditCoverageSnapshot
 	var revision uint64

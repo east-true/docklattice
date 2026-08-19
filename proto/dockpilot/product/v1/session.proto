@@ -185,10 +185,23 @@ message AuditUpstream {
   }
 }
 
+// AuditArchiveDescriptor names the Server's current Audit Archive. It is sent
+// once, downstream, before any acknowledgement, so the Agent can apply the
+// archive judgement of architecture 6.4 before it streams any record. A
+// protocol N-1 Server never sends one and the Agent then keeps its binding.
+message AuditArchiveDescriptor {
+  string server_identity_id = 1;
+  uint64 generation = 2;
+  string audit_archive_id = 3;
+}
+
 message AuditAck {
   string audit_archive_id = 1;
   AuditCursor cursor = 2;
   uint64 coverage_revision_seen = 3;
+  // An AuditAck carrying an archive and no cursor is the archive announcement,
+  // not an acknowledgement.
+  AuditArchiveDescriptor archive = 4;
 }
 
 message AuditAckResult {

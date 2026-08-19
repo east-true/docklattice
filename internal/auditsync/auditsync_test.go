@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -239,6 +240,7 @@ func TestServerDurablyIngestsBeforeACKAndAdvancesAfterAgentAcceptance(t *testing
 	}
 	store := auditstore.New(persistent.DB())
 	server, err := NewServer(ServerConfig{Store: store, ArchiveID: testArchive,
+		ServerIdentityID: "server-identity-a", ArchiveGeneration: 1,
 		Decoder: EventDecoderFunc(func(_ context.Context, info producttransport.SessionInfo, record producttransport.AuditRecord) (auditstore.Event, error) {
 			return auditstore.Event{AgentID: info.AgentID,
 				Cursor: auditstore.Cursor{Incarnation: record.Incarnation, Seq: record.Sequence}, OccurredAt: record.AppendedAt,
@@ -305,5 +307,121 @@ func TestCanonicalDecoderPreservesExplicitManagedIndexFields(t *testing.T) {
 		event.Kind != "MANAGED" || event.Actor != "ui:127.0.0.1" || event.ProjectUID != "project-1" ||
 		event.OperationID != "operation-1" || !event.OccurredAt.Equal(at) || string(event.Metadata) != string(payload) {
 		t.Fatalf("decoded event = %#v", event)
+	}
+}
+
+// rebindTestWAL reports a WAL still bound to the retired archive, which is what
+// an Agent holds after the Server rebuilt its Audit Archive.
+type rebindTestWAL struct {
+	ackedArchives []string
+	boundArchive  string
+}
+
+func (w *rebindTestWAL) Bounds() (auditwal.Bounds, error) {
+	bound := w.boundArchive
+	if bound == "" {
+		bound = testArchive
+	}
+	return auditwal.Bounds{WALFloor: &auditwal.Cursor{Incarnation: 1, Seq: 1},
+		NextCursor: auditwal.Cursor{Incarnation: 1, Seq: 2}, AcknowledgedArchiveID: bound}, nil
+}
+func (*rebindTestWAL) GetAuditCoverage() (auditwal.CoverageSnapshot, error) {
+	return auditwal.CoverageSnapshot{AgentID: testAgentID}, nil
+}
+func (*rebindTestWAL) ReadAuditFrom(context.Context, auditwal.Cursor, int) (auditwal.ReadResult, error) {
+	return auditwal.ReadResult{Records: []auditwal.Record{{AgentID: testAgentID,
+		Cursor: auditwal.Cursor{Incarnation: 1, Seq: 1}, AppendedAt: time.Now(), Payload: []byte(`{}`)}}}, nil
+}
+func (w *rebindTestWAL) AckAudit(archiveID string, _ auditwal.Cursor, _ uint64) error {
+	w.ackedArchives = append(w.ackedArchives, archiveID)
+	return nil
+}
+
+func newAnnouncement(archiveID string, generation uint64) producttransport.AuditAck {
+	return producttransport.AuditAck{AuditArchiveID: archiveID,
+		Archive: &producttransport.AuditArchiveDescriptor{
+			ServerIdentityID: "server-identity-a", Generation: generation, AuditArchiveID: archiveID,
+		}}
+}
+
+func runAgentWithAnnouncement(
+	t *testing.T, wal WAL, binder ArchiveBinder, announcement *producttransport.AuditAck, acks []producttransport.AuditAck,
+) (*agentTestStream, error) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream := &agentTestStream{ctx: ctx,
+		sent: make(chan producttransport.AuditUpstream, 8),
+		acks: make(chan producttransport.AuditAck, 8)}
+	if announcement != nil {
+		stream.acks <- *announcement
+	}
+	for _, ack := range acks {
+		stream.acks <- ack
+	}
+	agent, err := NewAgent(AgentConfig{WAL: wal, ArchiveID: testArchive, Binder: binder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- agent.SyncAudit(ctx, producttransport.SessionInfo{
+			AgentID: testAgentID, ProtocolVersion: producttransport.CurrentProductProtocolVersion,
+		}, stream)
+	}()
+	// A healthy stream keeps polling, so a timeout here is the success shape for
+	// the rebind case: cancel it and report the cancellation to the caller.
+	select {
+	case err := <-done:
+		return stream, err
+	case <-time.After(3 * time.Second):
+		cancel()
+		return stream, <-done
+	}
+}
+
+func TestAgentAcknowledgesUnderTheArchiveItRebindsTo(t *testing.T) {
+	const rebound = "archive-generation-2"
+	wal := &rebindTestWAL{}
+	var seen producttransport.AuditArchiveDescriptor
+	// The runtime binder rebinds the WAL before returning; the fake mirrors that.
+	binder := ArchiveBinderFunc(func(_ context.Context, descriptor producttransport.AuditArchiveDescriptor) (string, error) {
+		seen = descriptor
+		wal.boundArchive = descriptor.AuditArchiveID
+		return descriptor.AuditArchiveID, nil
+	})
+	announcement := newAnnouncement(rebound, 2)
+	// A single matching ACK lets the stream finish its first record; the run
+	// then ends when the context is cancelled by the helper.
+	acks := []producttransport.AuditAck{{AuditArchiveID: rebound, Incarnation: 1, Sequence: 1}}
+	_, err := runAgentWithAnnouncement(t, wal, binder, &announcement, acks)
+	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("SyncAudit error = %v", err)
+	}
+	if seen.AuditArchiveID != rebound || seen.Generation != 2 {
+		t.Fatalf("binder saw %+v", seen)
+	}
+	if len(wal.ackedArchives) == 0 || wal.ackedArchives[0] != rebound {
+		t.Fatalf("WAL acknowledged %v, expected the rebound archive first", wal.ackedArchives)
+	}
+}
+
+func TestAgentEndsTheStreamWhenTheArchiveJudgementRefuses(t *testing.T) {
+	refused := errors.New("archive rollback detected")
+	binder := ArchiveBinderFunc(func(context.Context, producttransport.AuditArchiveDescriptor) (string, error) {
+		return "", refused
+	})
+	announcement := newAnnouncement("archive-generation-1", 1)
+	_, err := runAgentWithAnnouncement(t, &rebindTestWAL{}, binder, &announcement, nil)
+	if !errors.Is(err, refused) {
+		t.Fatalf("SyncAudit error = %v", err)
+	}
+}
+
+func TestAgentRequiresTheArchiveAnnouncementBeforeAnyAcknowledgement(t *testing.T) {
+	acks := []producttransport.AuditAck{{AuditArchiveID: testArchive, Incarnation: 1, Sequence: 1}}
+	_, err := runAgentWithAnnouncement(t, &rebindTestWAL{}, nil, nil, acks)
+	if err == nil || !strings.Contains(err.Error(), "did not announce") {
+		t.Fatalf("SyncAudit error = %v", err)
 	}
 }

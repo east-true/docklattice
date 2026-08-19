@@ -1168,6 +1168,16 @@ func auditAckResultFromWire(wire *pb.AuditAckResult) (AuditAckResult, error) {
 }
 
 func auditAckToWire(ack AuditAck) (*pb.AuditAck, error) {
+	if ack.IsArchiveAnnouncement() {
+		archive := ack.Archive
+		if archive.ServerIdentityID == "" || archive.Generation == 0 || archive.AuditArchiveID == "" {
+			return nil, fmt.Errorf("%w: invalid audit archive descriptor", ErrProtocol)
+		}
+		return &pb.AuditAck{AuditArchiveId: archive.AuditArchiveID, Archive: &pb.AuditArchiveDescriptor{
+			ServerIdentityId: archive.ServerIdentityID, Generation: archive.Generation,
+			AuditArchiveId: archive.AuditArchiveID,
+		}}, nil
+	}
 	if ack.AuditArchiveID == "" || ack.Incarnation == 0 || ack.Sequence == 0 {
 		return nil, fmt.Errorf("%w: invalid audit ACK", ErrProtocol)
 	}
@@ -1177,7 +1187,19 @@ func auditAckToWire(ack AuditAck) (*pb.AuditAck, error) {
 }
 
 func auditAckFromWire(message *pb.AuditAck) (AuditAck, error) {
-	if message == nil || message.GetAuditArchiveId() == "" || !validAuditCursorWire(message.GetCursor()) {
+	if message == nil || message.GetAuditArchiveId() == "" {
+		return AuditAck{}, fmt.Errorf("%w: invalid audit ACK", ErrProtocol)
+	}
+	if wire := message.GetArchive(); wire != nil && message.GetCursor() == nil {
+		if wire.GetServerIdentityId() == "" || wire.GetGeneration() == 0 || wire.GetAuditArchiveId() == "" {
+			return AuditAck{}, fmt.Errorf("%w: invalid audit archive descriptor", ErrProtocol)
+		}
+		return AuditAck{AuditArchiveID: message.GetAuditArchiveId(), Archive: &AuditArchiveDescriptor{
+			ServerIdentityID: wire.GetServerIdentityId(), Generation: wire.GetGeneration(),
+			AuditArchiveID: wire.GetAuditArchiveId(),
+		}}, nil
+	}
+	if !validAuditCursorWire(message.GetCursor()) {
 		return AuditAck{}, fmt.Errorf("%w: invalid audit ACK", ErrProtocol)
 	}
 	return AuditAck{AuditArchiveID: message.GetAuditArchiveId(), Incarnation: message.GetCursor().GetIncarnation(),

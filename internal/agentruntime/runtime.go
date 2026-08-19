@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/east-true/dockpilot/internal/agentsafety"
@@ -481,11 +482,84 @@ func (r *Runtime) startAuditSync() error {
 	if snapshot.BoundArchive == nil {
 		return errors.New("agentruntime: Audit sync requires an Archive binding")
 	}
-	audit, err := auditsync.NewAgent(auditsync.AgentConfig{WAL: r.wal, ArchiveID: snapshot.BoundArchive.ArchiveID})
+	audit, err := auditsync.NewAgent(auditsync.AgentConfig{
+		WAL: r.wal, ArchiveID: snapshot.BoundArchive.ArchiveID,
+		Binder: auditsync.ArchiveBinderFunc(r.bindAnnouncedArchive),
+	})
 	if err != nil {
 		return err
 	}
 	r.handler = &auditHeartbeatHandler{heartbeatHandler: r.heartbeat, audit: audit}
+	return nil
+}
+
+// bindAnnouncedArchive applies the archive a Server announces at the start of an
+// Audit sync stream. Architecture 6.4 takes the judgement at reconnect, and
+// after a Server database loss the Agent never re-registers, so this is the only
+// path that can carry a new generation to it. The decision itself belongs to the
+// Agent state machine; this method performs the durable consequences of a
+// forward rebind: the WAL retires the previous archive ACK and the in-band
+// ARCHIVE_REBOUND record of architecture 6.5 is appended.
+func (r *Runtime) bindAnnouncedArchive(ctx context.Context, descriptor producttransport.AuditArchiveDescriptor) (string, error) {
+	if descriptor.ServerIdentityID != r.credential.ServerIdentityID {
+		return "", ErrCredentialIdentity
+	}
+	previous, err := r.state.Snapshot()
+	if err != nil {
+		return "", err
+	}
+	coverage, err := r.coverageBeginsAt()
+	if err != nil {
+		return "", err
+	}
+	result, err := r.state.BindArchive(ctx, descriptor.ServerIdentityID, descriptor.Generation,
+		descriptor.AuditArchiveID, coverage, r.config.Now())
+	if err != nil {
+		return "", fmt.Errorf("agentruntime: bind announced Archive: %w", err)
+	}
+	if !result.Changed {
+		return result.Current.ArchiveID, nil
+	}
+	walFloor := "none"
+	if bounds, boundsErr := r.wal.Bounds(); boundsErr == nil && bounds.WALFloor != nil {
+		walFloor = fmt.Sprintf("%d:%d", bounds.WALFloor.Incarnation, bounds.WALFloor.Seq)
+	}
+	if err := r.wal.RebindArchive(descriptor.AuditArchiveID); err != nil {
+		return "", fmt.Errorf("agentruntime: rebind WAL to announced Archive: %w", err)
+	}
+	if err := r.appendArchiveRebound(ctx, previous.BoundArchive, result, walFloor); err != nil {
+		return "", err
+	}
+	return result.Current.ArchiveID, nil
+}
+
+func (r *Runtime) appendArchiveRebound(
+	ctx context.Context, previous *agentstate.ArchiveBinding, result agentstate.RebindResult, walFloor string,
+) error {
+	appender, err := auditevents.NewAppender(r.wal)
+	if err != nil {
+		return err
+	}
+	attributes := map[string]string{
+		"server_identity_id":     result.Current.ServerIdentityID,
+		"new_archive_generation": strconv.FormatUint(result.Current.Generation, 10),
+		"new_archive_id":         result.Current.ArchiveID,
+		"wal_floor_at_rebind":    walFloor,
+		"coverage_begins_at":     fmt.Sprintf("%d:%d", result.Current.CoverageBeginsAt.Incarnation, result.Current.CoverageBeginsAt.Seq),
+		"previous_archive_id":    "none",
+		"previous_archive_gen":   "0",
+	}
+	if previous != nil {
+		attributes["previous_archive_id"] = previous.ArchiveID
+		attributes["previous_archive_gen"] = strconv.FormatUint(previous.Generation, 10)
+	}
+	now := r.config.Now().UTC()
+	if _, err := appender.Append(ctx, auditgen.Event{
+		Kind: auditgen.KindObserved, ResourceType: "agent", ResourceID: "audit-archive", Action: "archive_rebound",
+		FirstAt: now, LastAt: now, Count: 1, Attributes: attributes,
+	}); err != nil {
+		return fmt.Errorf("agentruntime: append ARCHIVE_REBOUND: %w", err)
+	}
 	return nil
 }
 

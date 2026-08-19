@@ -268,11 +268,28 @@ type AuditRecord struct {
 	Payload     []byte
 }
 
+// AuditArchiveDescriptor names the Server's current Audit Archive. It travels
+// once, downstream, before any acknowledgement, so the Agent can apply the
+// archive judgement of architecture 6.4 before it streams any record.
+type AuditArchiveDescriptor struct {
+	ServerIdentityID string
+	Generation       uint64
+	AuditArchiveID   string
+}
+
 type AuditAck struct {
 	AuditArchiveID       string
 	Incarnation          uint64
 	Sequence             uint64
 	CoverageRevisionSeen uint64
+	// Archive is set only on the archive announcement, which carries no cursor.
+	Archive *AuditArchiveDescriptor
+}
+
+// IsArchiveAnnouncement reports the announcement form, which names the Server's
+// archive and acknowledges nothing.
+func (a AuditAck) IsArchiveAnnouncement() bool {
+	return a.Archive != nil && a.Incarnation == 0 && a.Sequence == 0
 }
 
 type AuditGap struct {

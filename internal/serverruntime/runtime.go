@@ -195,6 +195,8 @@ func (r *Runtime) Ready(ctx context.Context) (err error) {
 	auditServer, err := auditsync.NewServer(auditsync.ServerConfig{
 		Store: auditStore, ArchiveID: components.Archive.AuditArchiveID,
 		CoverageStartReason: coverageStartReason, Decoder: auditsync.CanonicalEventDecoder{},
+		ServerIdentityID:  components.Archive.ServerIdentityID,
+		ArchiveGeneration: components.Archive.Generation,
 	})
 	if err != nil {
 		return err

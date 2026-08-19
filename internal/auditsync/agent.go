@@ -25,14 +25,37 @@ type WAL interface {
 	AckAudit(string, auditwal.Cursor, uint64) error
 }
 
+// ArchiveBinder applies the archive judgement of architecture 6.4 to the
+// descriptor a Server announces at the start of an Audit sync stream. It
+// returns the archive ID the Agent must use for this stream, which differs from
+// the current one exactly when a forward Archive Rebind was performed. A
+// rollback, an identity mismatch, or a same-generation archive change is
+// reported as an error and ends the stream instead of rebinding.
+type ArchiveBinder interface {
+	BindArchive(context.Context, producttransport.AuditArchiveDescriptor) (string, error)
+}
+
+type ArchiveBinderFunc func(context.Context, producttransport.AuditArchiveDescriptor) (string, error)
+
+func (f ArchiveBinderFunc) BindArchive(ctx context.Context, descriptor producttransport.AuditArchiveDescriptor) (string, error) {
+	return f(ctx, descriptor)
+}
+
 type AgentConfig struct {
 	WAL          WAL
 	ArchiveID    string
 	ReadLimit    int
 	PollInterval time.Duration
+	// Binder is consulted for the archive descriptor a protocol N Server
+	// announces. Without one the Agent keeps its configured archive, which is
+	// the protocol N-1 behaviour.
+	Binder ArchiveBinder
 }
 
-type Agent struct{ config AgentConfig }
+type Agent struct {
+	config    AgentConfig
+	archiveID string
+}
 
 func NewAgent(config AgentConfig) (*Agent, error) {
 	if config.WAL == nil || config.ArchiveID == "" {
@@ -47,10 +70,33 @@ func NewAgent(config AgentConfig) (*Agent, error) {
 	if config.ReadLimit < 1 || config.PollInterval <= 0 {
 		return nil, errors.New("auditsync: read limit and poll interval must be positive")
 	}
-	return &Agent{config: config}, nil
+	return &Agent{config: config, archiveID: config.ArchiveID}, nil
 }
 
 func (a *Agent) SyncAudit(ctx context.Context, info producttransport.SessionInfo, stream producttransport.AuditSyncStream) error {
+	// A protocol N Server announces its archive before anything else, so the
+	// rebind judgement happens before a single record leaves the WAL. Reading it
+	// here is safe because the announcement is unconditional at that version.
+	a.archiveID = a.config.ArchiveID
+	if info.ProtocolVersion >= producttransport.CurrentProductProtocolVersion {
+		announcement, err := stream.ReceiveAck()
+		if err != nil {
+			return err
+		}
+		if !announcement.IsArchiveAnnouncement() {
+			return errors.New("auditsync: Server did not announce its Audit Archive before acknowledging")
+		}
+		if a.config.Binder != nil {
+			bound, err := a.config.Binder.BindArchive(ctx, *announcement.Archive)
+			if err != nil {
+				return err
+			}
+			if bound == "" {
+				return errors.New("auditsync: archive binder returned no archive")
+			}
+			a.archiveID = bound
+		}
+	}
 	coverage, err := a.config.WAL.GetAuditCoverage()
 	if err != nil {
 		return err
@@ -125,7 +171,7 @@ func (a *Agent) startCursor() (auditwal.Cursor, error) {
 	if err != nil {
 		return auditwal.Cursor{}, err
 	}
-	if bounds.AcknowledgedArchiveID != "" && bounds.AcknowledgedArchiveID != a.config.ArchiveID {
+	if bounds.AcknowledgedArchiveID != "" && bounds.AcknowledgedArchiveID != a.archiveID {
 		return auditwal.Cursor{}, errors.New("auditsync: WAL is bound to a different archive")
 	}
 	if bounds.ServerACKedThrough != nil {
@@ -146,10 +192,10 @@ func (a *Agent) finishACK(stream producttransport.AuditSyncStream, proposed audi
 		if err != nil {
 			return err
 		}
-		if ack.AuditArchiveID != a.config.ArchiveID || ack.Incarnation != proposed.Incarnation || ack.Sequence != proposed.Seq {
+		if ack.AuditArchiveID != a.archiveID || ack.Incarnation != proposed.Incarnation || ack.Sequence != proposed.Seq {
 			return fmt.Errorf("auditsync: ACK does not match proposed cursor/archive")
 		}
-		err = a.config.WAL.AckAudit(a.config.ArchiveID, proposed, ack.CoverageRevisionSeen)
+		err = a.config.WAL.AckAudit(a.archiveID, proposed, ack.CoverageRevisionSeen)
 		if err == nil {
 			return stream.Send(producttransport.AuditUpstream{AckResult: &producttransport.AuditAckResult{
 				Proposed: producttransport.AuditCursor{Incarnation: proposed.Incarnation, Sequence: proposed.Seq}, Accepted: true,

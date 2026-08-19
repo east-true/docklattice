@@ -1766,18 +1766,85 @@ func (*AuditUpstream_CursorBehindFloor) isAuditUpstream_Message() {}
 
 func (*AuditUpstream_AckResult) isAuditUpstream_Message() {}
 
+// AuditArchiveDescriptor names the Server's current Audit Archive. It is sent
+// once, downstream, before any acknowledgement, so the Agent can apply the
+// archive judgement of architecture 6.4 before it streams any record. A
+// protocol N-1 Server never sends one and the Agent then keeps its binding.
+type AuditArchiveDescriptor struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ServerIdentityId string                 `protobuf:"bytes,1,opt,name=server_identity_id,json=serverIdentityId,proto3" json:"server_identity_id,omitempty"`
+	Generation       uint64                 `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	AuditArchiveId   string                 `protobuf:"bytes,3,opt,name=audit_archive_id,json=auditArchiveId,proto3" json:"audit_archive_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *AuditArchiveDescriptor) Reset() {
+	*x = AuditArchiveDescriptor{}
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuditArchiveDescriptor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuditArchiveDescriptor) ProtoMessage() {}
+
+func (x *AuditArchiveDescriptor) ProtoReflect() protoreflect.Message {
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuditArchiveDescriptor.ProtoReflect.Descriptor instead.
+func (*AuditArchiveDescriptor) Descriptor() ([]byte, []int) {
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *AuditArchiveDescriptor) GetServerIdentityId() string {
+	if x != nil {
+		return x.ServerIdentityId
+	}
+	return ""
+}
+
+func (x *AuditArchiveDescriptor) GetGeneration() uint64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *AuditArchiveDescriptor) GetAuditArchiveId() string {
+	if x != nil {
+		return x.AuditArchiveId
+	}
+	return ""
+}
+
 type AuditAck struct {
 	state                protoimpl.MessageState `protogen:"open.v1"`
 	AuditArchiveId       string                 `protobuf:"bytes,1,opt,name=audit_archive_id,json=auditArchiveId,proto3" json:"audit_archive_id,omitempty"`
 	Cursor               *AuditCursor           `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`
 	CoverageRevisionSeen uint64                 `protobuf:"varint,3,opt,name=coverage_revision_seen,json=coverageRevisionSeen,proto3" json:"coverage_revision_seen,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// An AuditAck carrying an archive and no cursor is the archive announcement,
+	// not an acknowledgement.
+	Archive       *AuditArchiveDescriptor `protobuf:"bytes,4,opt,name=archive,proto3" json:"archive,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AuditAck) Reset() {
 	*x = AuditAck{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[25]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1789,7 +1856,7 @@ func (x *AuditAck) String() string {
 func (*AuditAck) ProtoMessage() {}
 
 func (x *AuditAck) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[25]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1802,7 +1869,7 @@ func (x *AuditAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditAck.ProtoReflect.Descriptor instead.
 func (*AuditAck) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{25}
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *AuditAck) GetAuditArchiveId() string {
@@ -1826,6 +1893,13 @@ func (x *AuditAck) GetCoverageRevisionSeen() uint64 {
 	return 0
 }
 
+func (x *AuditAck) GetArchive() *AuditArchiveDescriptor {
+	if x != nil {
+		return x.Archive
+	}
+	return nil
+}
+
 type AuditAckResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Proposed      *AuditCursor           `protobuf:"bytes,1,opt,name=proposed,proto3" json:"proposed,omitempty"`
@@ -1838,7 +1912,7 @@ type AuditAckResult struct {
 
 func (x *AuditAckResult) Reset() {
 	*x = AuditAckResult{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[26]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1850,7 +1924,7 @@ func (x *AuditAckResult) String() string {
 func (*AuditAckResult) ProtoMessage() {}
 
 func (x *AuditAckResult) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[26]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1863,7 +1937,7 @@ func (x *AuditAckResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditAckResult.ProtoReflect.Descriptor instead.
 func (*AuditAckResult) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{26}
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *AuditAckResult) GetProposed() *AuditCursor {
@@ -2049,11 +2123,18 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"\x13cursor_behind_floor\x18\x03 \x01(\v2,.dockpilot.product.v1.AuditCursorBehindFloorH\x00R\x11cursorBehindFloor\x12E\n" +
 	"\n" +
 	"ack_result\x18\x04 \x01(\v2$.dockpilot.product.v1.AuditAckResultH\x00R\tackResultB\t\n" +
-	"\amessage\"\xa5\x01\n" +
+	"\amessage\"\x90\x01\n" +
+	"\x16AuditArchiveDescriptor\x12,\n" +
+	"\x12server_identity_id\x18\x01 \x01(\tR\x10serverIdentityId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\x04R\n" +
+	"generation\x12(\n" +
+	"\x10audit_archive_id\x18\x03 \x01(\tR\x0eauditArchiveId\"\xed\x01\n" +
 	"\bAuditAck\x12(\n" +
 	"\x10audit_archive_id\x18\x01 \x01(\tR\x0eauditArchiveId\x129\n" +
 	"\x06cursor\x18\x02 \x01(\v2!.dockpilot.product.v1.AuditCursorR\x06cursor\x124\n" +
-	"\x16coverage_revision_seen\x18\x03 \x01(\x04R\x14coverageRevisionSeen\"\xd5\x01\n" +
+	"\x16coverage_revision_seen\x18\x03 \x01(\x04R\x14coverageRevisionSeen\x12F\n" +
+	"\aarchive\x18\x04 \x01(\v2,.dockpilot.product.v1.AuditArchiveDescriptorR\aarchive\"\xd5\x01\n" +
 	"\x0eAuditAckResult\x12=\n" +
 	"\bproposed\x18\x01 \x01(\v2!.dockpilot.product.v1.AuditCursorR\bproposed\x12\x1a\n" +
 	"\baccepted\x18\x02 \x01(\bR\baccepted\x12R\n" +
@@ -2072,7 +2153,7 @@ func file_dockpilot_product_v1_session_proto_rawDescGZIP() []byte {
 	return file_dockpilot_product_v1_session_proto_rawDescData
 }
 
-var file_dockpilot_product_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_dockpilot_product_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_dockpilot_product_v1_session_proto_goTypes = []any{
 	(*HeartbeatRequest)(nil),             // 0: dockpilot.product.v1.HeartbeatRequest
 	(*Capability)(nil),                   // 1: dockpilot.product.v1.Capability
@@ -2099,8 +2180,9 @@ var file_dockpilot_product_v1_session_proto_goTypes = []any{
 	(*AuditBounds)(nil),                  // 22: dockpilot.product.v1.AuditBounds
 	(*AuditCursorBehindFloor)(nil),       // 23: dockpilot.product.v1.AuditCursorBehindFloor
 	(*AuditUpstream)(nil),                // 24: dockpilot.product.v1.AuditUpstream
-	(*AuditAck)(nil),                     // 25: dockpilot.product.v1.AuditAck
-	(*AuditAckResult)(nil),               // 26: dockpilot.product.v1.AuditAckResult
+	(*AuditArchiveDescriptor)(nil),       // 25: dockpilot.product.v1.AuditArchiveDescriptor
+	(*AuditAck)(nil),                     // 26: dockpilot.product.v1.AuditAck
+	(*AuditAckResult)(nil),               // 27: dockpilot.product.v1.AuditAckResult
 }
 var file_dockpilot_product_v1_session_proto_depIdxs = []int32{
 	1,  // 0: dockpilot.product.v1.HeartbeatResponse.capability:type_name -> dockpilot.product.v1.Capability
@@ -2120,15 +2202,16 @@ var file_dockpilot_product_v1_session_proto_depIdxs = []int32{
 	19, // 14: dockpilot.product.v1.AuditUpstream.record:type_name -> dockpilot.product.v1.AuditRecord
 	21, // 15: dockpilot.product.v1.AuditUpstream.coverage:type_name -> dockpilot.product.v1.AuditCoverageSnapshot
 	23, // 16: dockpilot.product.v1.AuditUpstream.cursor_behind_floor:type_name -> dockpilot.product.v1.AuditCursorBehindFloor
-	26, // 17: dockpilot.product.v1.AuditUpstream.ack_result:type_name -> dockpilot.product.v1.AuditAckResult
+	27, // 17: dockpilot.product.v1.AuditUpstream.ack_result:type_name -> dockpilot.product.v1.AuditAckResult
 	18, // 18: dockpilot.product.v1.AuditAck.cursor:type_name -> dockpilot.product.v1.AuditCursor
-	18, // 19: dockpilot.product.v1.AuditAckResult.proposed:type_name -> dockpilot.product.v1.AuditCursor
-	21, // 20: dockpilot.product.v1.AuditAckResult.stale_coverage:type_name -> dockpilot.product.v1.AuditCoverageSnapshot
-	21, // [21:21] is the sub-list for method output_type
-	21, // [21:21] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	25, // 19: dockpilot.product.v1.AuditAck.archive:type_name -> dockpilot.product.v1.AuditArchiveDescriptor
+	18, // 20: dockpilot.product.v1.AuditAckResult.proposed:type_name -> dockpilot.product.v1.AuditCursor
+	21, // 21: dockpilot.product.v1.AuditAckResult.stale_coverage:type_name -> dockpilot.product.v1.AuditCoverageSnapshot
+	22, // [22:22] is the sub-list for method output_type
+	22, // [22:22] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_dockpilot_product_v1_session_proto_init() }
@@ -2148,7 +2231,7 @@ func file_dockpilot_product_v1_session_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dockpilot_product_v1_session_proto_rawDesc), len(file_dockpilot_product_v1_session_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   27,
+			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
