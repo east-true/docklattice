@@ -828,3 +828,46 @@ func TestInternalErrorDiagnosticIsBoundedAndSingleLine(t *testing.T) {
 		t.Fatalf("diagnostic was not bounded: %d bytes", len(recorded))
 	}
 }
+
+// Every read route that takes no parameters, or exactly one, must refuse an
+// unrecognised query rather than ignore it. A silently dropped parameter lets a
+// caller believe it asked for something it did not receive - most consequential
+// on the reveal routes, where the answer differs by exactly that parameter.
+func TestReadRoutesRefuseUnrecognisedQueryParameters(t *testing.T) {
+	handler := newTestHandler(t, &testBackend{env: []EnvironmentEntry{{Name: "API_TOKEN", Value: "plaintext-value", Secret: true}}})
+	cases := []struct {
+		name   string
+		target string
+		status int
+	}{
+		{"dashboard unknown query", "/api/v1/dashboard?unexpected=1", http.StatusBadRequest},
+		{"dashboard bare", "/api/v1/dashboard", http.StatusOK},
+		{"host unknown query", "/api/v1/hosts/agent-a?unexpected=1", http.StatusBadRequest},
+		{"environment unknown query", "/api/v1/projects/project-a/environment?unexpected=1", http.StatusBadRequest},
+		{"environment repeated reveal", "/api/v1/projects/project-a/environment?reveal=true&reveal=false", http.StatusBadRequest},
+		{"environment non-boolean reveal", "/api/v1/projects/project-a/environment?reveal=1", http.StatusBadRequest},
+		{"environment reveal true", "/api/v1/projects/project-a/environment?reveal=true", http.StatusOK},
+		{"environment bare", "/api/v1/projects/project-a/environment", http.StatusOK},
+	}
+	for _, test := range cases {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, test.target, nil))
+		if recorder.Code != test.status {
+			t.Fatalf("%s: status = %d, want %d (%s)", test.name, recorder.Code, test.status, recorder.Body.String())
+		}
+	}
+}
+
+func TestEnvironmentRevealControlsMasking(t *testing.T) {
+	handler := newTestHandler(t, &testBackend{env: []EnvironmentEntry{{Name: "API_TOKEN", Value: "plaintext-value", Secret: true}}})
+	masked := httptest.NewRecorder()
+	handler.ServeHTTP(masked, httptest.NewRequest(http.MethodGet, "/api/v1/projects/project-a/environment", nil))
+	if !strings.Contains(masked.Body.String(), "********") {
+		t.Fatalf("an unrevealed listing must mask secret values: %s", masked.Body.String())
+	}
+	revealed := httptest.NewRecorder()
+	handler.ServeHTTP(revealed, httptest.NewRequest(http.MethodGet, "/api/v1/projects/project-a/environment?reveal=true", nil))
+	if strings.Contains(revealed.Body.String(), "********") {
+		t.Fatalf("an explicitly revealed listing must not mask: %s", revealed.Body.String())
+	}
+}

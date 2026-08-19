@@ -154,9 +154,15 @@ func (h *Handler) serveAPI(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/v1/live/stats" && r.Method == http.MethodGet:
 		h.serveStats(w, r)
 	case r.URL.Path == "/api/v1/dashboard" && r.Method == http.MethodGet:
+		if !requireEmptyGET(w, r) {
+			return
+		}
 		value, err := h.backend.Dashboard(r.Context())
 		h.respond(w, value, err)
 	case strings.HasPrefix(r.URL.Path, "/api/v1/hosts/") && r.Method == http.MethodGet:
+		if !requireEmptyGET(w, r) {
+			return
+		}
 		id, ok := singlePathValue(r.URL.Path, "/api/v1/hosts/")
 		if !ok {
 			writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", "a single host id is required")
@@ -165,12 +171,15 @@ func (h *Handler) serveAPI(w http.ResponseWriter, r *http.Request) {
 		value, err := h.backend.Host(r.Context(), id)
 		h.respond(w, value, err)
 	case projectRoute && resource == "environment" && len(tail) == 0 && r.Method == http.MethodGet:
+		reveal, ok := decodeRevealOnlyQuery(w, r)
+		if !ok {
+			return
+		}
 		entries, err := h.backend.ProjectEnvironment(r.Context(), projectUID)
 		if err != nil {
 			h.respond(w, nil, err)
 			return
 		}
-		reveal := r.URL.Query().Get("reveal") == "true"
 		for i := range entries {
 			if entries[i].Secret && !reveal {
 				entries[i].Value = "********"
@@ -331,6 +340,33 @@ func (h *Handler) serveBackupRestore(w http.ResponseWriter, r *http.Request, pro
 		return
 	}
 	writeJSON(w, http.StatusAccepted, value)
+}
+
+// decodeRevealOnlyQuery parses the single query parameter this route
+// understands. An unrecognised key or a reveal value that is not exactly true
+// or false is refused rather than ignored: a silently dropped parameter lets a
+// caller believe it asked for revealed values and receive masked ones instead.
+func decodeRevealOnlyQuery(w http.ResponseWriter, r *http.Request) (bool, bool) {
+	if r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", "request body is not allowed")
+		return false, false
+	}
+	query := r.URL.Query()
+	for key, values := range query {
+		if key != "reveal" || len(values) != 1 {
+			writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", "only one reveal query value is allowed")
+			return false, false
+		}
+	}
+	value, exists := query["reveal"]
+	if !exists {
+		return false, true
+	}
+	if value[0] != "true" && value[0] != "false" {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", "reveal must be true or false")
+		return false, false
+	}
+	return value[0] == "true", true
 }
 
 func requireNoQuery(w http.ResponseWriter, r *http.Request) bool {
