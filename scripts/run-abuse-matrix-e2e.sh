@@ -961,8 +961,12 @@ if selected backup-tamper; then
     # Flip bytes inside the stored archive without changing its length, so the
     # only thing that can catch it is the per-entry digest.
     agent_state_sh "find /state/backups -type f -name '*.tar*' -print" >"$evidence_dir/backup-tamper.files.txt"
-    archive=$(head -n 1 "$evidence_dir/backup-tamper.files.txt")
-    [ -n "$archive" ] || fail "backup-tamper: no stored backup archive was found"
+    # The archive has to be the one this case restores. Earlier cases leave
+    # pre-write snapshots behind, so picking whichever archive the directory
+    # happens to list first would tamper with a backup nobody reads.
+    archive="/state/backups/$project_uid/$backup_id/files.tar.gz"
+    grep -F -x -- "$archive" "$evidence_dir/backup-tamper.files.txt" >/dev/null ||
+        fail "backup-tamper: the archive of the backup under test was not found on the Agent"
     agent_state_sh "dd if=/dev/urandom of='$archive' bs=1 seek=\$(( \$(wc -c <'$archive') / 2 )) count=64 conv=notrunc 2>/dev/null" >/dev/null
     restore_operation="abuse-backup-restore-$$"
     status=$(api_status POST "$base_url/api/v1/projects/$project_uid/backups/$backup_id/restore" \
