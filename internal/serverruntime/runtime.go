@@ -8,8 +8,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -50,6 +52,44 @@ type Config struct {
 	AuditRetentionPolicy   auditstore.RetentionPolicy
 	AuditRetentionInterval time.Duration
 	AuditRetentionTimeout  time.Duration
+	// Diagnostics receives one bounded line per rejected Agent admission. A
+	// control plane that silently drops an Agent it cannot admit is not
+	// operable, and admission is the one place where an Agent can disappear
+	// with no trace in either the API or the Agent's own output.
+	Diagnostics io.Writer
+}
+
+// admissionRejectionLogLimit bounds one diagnostic line so a hostile or looping
+// peer cannot turn the Server's stderr into unbounded output.
+const admissionRejectionLogLimit = 512
+
+func (r *Runtime) logSessionClosed(agentID string, err error) {
+	r.logDiagnostic("agent session closed", agentID, err)
+}
+
+func (r *Runtime) logAdmissionRejection(err error) {
+	r.logDiagnostic("agent admission rejected", "", err)
+}
+
+func (r *Runtime) logDiagnostic(event, agentID string, err error) {
+	if r.config.Diagnostics == nil || err == nil {
+		return
+	}
+	message := err.Error()
+	if len(message) > admissionRejectionLogLimit {
+		message = message[:admissionRejectionLogLimit]
+	}
+	message = strings.Map(func(char rune) rune {
+		if char == '\n' || char == '\r' {
+			return ' '
+		}
+		return char
+	}, message)
+	if agentID != "" {
+		fmt.Fprintf(r.config.Diagnostics, "%s agent=%s: %s\n", event, agentID, message)
+		return
+	}
+	fmt.Fprintf(r.config.Diagnostics, "%s: %s\n", event, message)
 }
 
 type Runtime struct {
@@ -273,6 +313,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 					}
 					// A malformed or unauthenticated connection is isolated to that
 					// connection and does not stop admission for other Agents.
+					r.logAdmissionRejection(err)
 					continue
 				}
 				sessionID := session.Info().SessionID
@@ -286,6 +327,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 				go func() {
 					defer auditWorkers.Done()
 					if err := auditServer.Run(ctx, auditSession); err != nil && ctx.Err() == nil {
+						r.logSessionClosed(session.Info().AgentID, err)
 						_ = session.Close(err)
 					}
 				}()

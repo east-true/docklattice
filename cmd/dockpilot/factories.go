@@ -41,6 +41,7 @@ func productFactories() app.Factories {
 			TLSPrivateKeyFile:  privateKey,
 			HeartbeatInterval:  cfg.Defaults.HeartbeatInterval,
 			OfflineAfter:       cfg.Defaults.OfflineAfter,
+			Diagnostics:        os.Stderr,
 			AuditRetentionPolicy: auditstore.DefaultRetentionPolicy{
 				MaxAge: cfg.Defaults.ServerAuditRetention, MaxBytes: cfg.Defaults.ServerAuditMaxBytes,
 				WarningPercent: cfg.Defaults.ServerAuditWarnPercent, AggressivePercent: cfg.Defaults.ServerAuditAggressivePercent,

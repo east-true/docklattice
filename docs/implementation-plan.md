@@ -226,8 +226,21 @@ Reproducible multi-platform release build recorded: two independent runs of
 target-architecture binary, so it needs no QEMU or `binfmt_misc` handler on the
 build host.
 
-Outstanding: the identity-loss and database-loss cases of the real-container
-recovery matrix remain package-level only.
+Blocked: the real-container recovery matrix
+(`scripts/run-recovery-matrix-e2e.sh`) reaches its Audit-database-loss case and
+fails there on a missing design behaviour, not on a harness problem. Section 6.4
+requires `same identity + higher generation + new archive_id` to produce an
+automatic Archive Rebind, and section 6.1 requires an existing Agent to
+authenticate automatically after the Server database is lost. Two defects on
+that path were found and fixed (`62ca604`, `c8adb4c`), and the control case — a
+Server restart that loses nothing — now passes. What remains is that the Agent
+only ever learns a new archive from a registration or renewal HTTP response
+(`installCredentialAndArchive`, `stageCredentialRenewalAndBind`); nothing
+carries an archive descriptor over the live session. After a database loss the
+Agent keeps its old `ArchiveID`, the Server ACKs under the new one, and
+`auditsync` fails the session with `ACK does not match proposed
+cursor/archive`. Automatic Archive Rebind over a live session is therefore
+unimplemented, and this gate cannot pass until it exists.
 
 Clean-host container harness and current execution status:
 [`docs/clean-host-install-e2e.md`](clean-host-install-e2e.md).
