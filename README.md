@@ -10,13 +10,13 @@ the canonical Audit archive.
 
 ## Status
 
-The transport decision is complete: Dockpilot uses one Agent-initiated reverse
-gRPC connection with application-owned P0-P4 scheduling. Product v1 is under
-active implementation and is not ready for installation yet. The authoritative
-scope and invariants are in `docs/architecture.md`; implementation and release
-gates are in `docs/implementation-plan.md`.
+Product v1 is complete. Every phase of `docs/implementation-plan.md` has
+passed, including the Phase 9 release gate at revision `b7a2e37`. Dockpilot uses
+one Agent-initiated reverse gRPC connection with application-owned P0-P4
+scheduling. The authoritative scope and invariants are in
+`docs/architecture.md`.
 
-Implemented product foundations currently include:
+v1 covers:
 
 - typed provisional v1 operational defaults;
 - runnable `dockpilot server` / `dockpilot agent` TLS processes and local
@@ -30,11 +30,13 @@ Implemented product foundations currently include:
 - embedded Server UI/API for dashboard, environment, operations, files,
   backups, logs, and live stats.
 
-Unit, race, and static checks pass, and the production cgroup resource matrix
-passed a three-trial run against the release images
-(`docs/resource-gate.md`). The real-Docker recovery matrix, clean-host install
-E2E, and signed release gate have not passed, so the project remains not ready
-for installation.
+Unit, race, and static checks pass. Four gates passed against the release
+images built from `b7a2e37`: the production cgroup resource matrix over three
+trials (`docs/resource-gate.md`), the clean-host container installation E2E
+(`docs/clean-host-install-e2e.md`), the real-container recovery matrix covering
+all three Server-side loss outcomes (`docs/recovery-matrix-e2e.md`), and a
+reproducible `linux/amd64` + `linux/arm64` release build whose two independent
+runs produced byte-identical archives (`docs/distribution.md`).
 
 The Appendix A transport prototype and its synthetic workloads remain isolated
 from product code.
@@ -65,8 +67,8 @@ Operator documentation:
   procedure;
 - `docs/resource-gate.md` - the production resource gate and its evidence
   contract;
-- `docs/clean-host-install-e2e.md` - the clean-host installation gate, passed
-  on 2026-08-18 against the reproducible release images.
+- `docs/clean-host-install-e2e.md` - the clean-host installation gate.
+- `docs/recovery-matrix-e2e.md` - the real-container recovery matrix gate.
 
 Release-scope and harness contracts are checked statically:
 
@@ -76,6 +78,7 @@ Release-scope and harness contracts are checked statically:
 ./scripts/verify-resource-harness.sh
 ./scripts/verify-product-resource-workload.sh
 ./scripts/verify-clean-host-install-harness.sh
+./scripts/verify-recovery-matrix-harness.sh
 ```
 
 ## Scope

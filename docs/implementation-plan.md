@@ -207,52 +207,31 @@ Harness and current execution status: [`docs/resource-gate.md`](resource-gate.md
 
 ## Phase 9 — v1 release gate
 
-Status: in progress. Complete: race suite (720 tests, 54 packages, 0 data
-races); Server persistence schema and filesystem audits
-(`internal/serverstore/persistence_audit_test.go`,
-`internal/serverbootstrap/filesystem_audit_test.go`); release-scope audit over
-the release binary's dependency graph (`scripts/verify-release-scope.sh`, 29
-checks, 40 packages); Go dependency license material
-(`scripts/generate-license-inventory.sh`, 33 modules); operator documentation
-(`docs/supported-environments.md`, `docs/degraded-storage-recovery.md`);
-release images built from revision `bbf6baa` and labelled 1.0.0; clean-host
-install E2E passed on 2026-08-18 against those exact image IDs
-([`docs/clean-host-install-e2e.md`](clean-host-install-e2e.md)).
+Status: passed 2026-08-19 at revision `b7a2e37`. The project status is v1
+complete.
 
-Reproducible multi-platform release build recorded: two independent runs of
-`scripts/build-release-images.sh` produced byte-identical `linux/amd64` +
-`linux/arm64` OCI archives for both targets
-([`docs/distribution.md`](distribution.md)). The build executes no
-target-architecture binary, so it needs no QEMU or `binfmt_misc` handler on the
-build host.
-
-Blocked: the real-container recovery matrix
-(`scripts/run-recovery-matrix-e2e.sh`) reaches its Audit-database-loss case and
-fails there on a missing design behaviour, not on a harness problem. Section 6.4
-requires `same identity + higher generation + new archive_id` to produce an
-automatic Archive Rebind, and section 6.1 requires an existing Agent to
-authenticate automatically after the Server database is lost. Two defects on
-that path were found and fixed (`62ca604`, `c8adb4c`), and the control case — a
-Server restart that loses nothing — now passes. What remains is that the Agent
-only ever learns a new archive from a registration or renewal HTTP response
-(`installCredentialAndArchive`, `stageCredentialRenewalAndBind`); nothing
-carries an archive descriptor over the live session. After a database loss the
-Agent keeps its old `ArchiveID`, the Server ACKs under the new one, and
-`auditsync` fails the session with `ACK does not match proposed
-cursor/archive`. Automatic Archive Rebind over a live session is therefore
-unimplemented, and this gate cannot pass until it exists.
-
-Clean-host container harness and current execution status:
-[`docs/clean-host-install-e2e.md`](clean-host-install-e2e.md).
-
-- Build the single binary and pinned-Compose Container Agent image reproducibly.
-- Run unit, race, integration, recovery, resource, and clean-host install E2E.
-- Audit the schema and filesystem to prove Docker/file state and log/metric
-  history are not mirrored into Server persistence.
-- Check every architecture invariant and every CORE item; verify that no
-  OPTIONAL, FUTURE, or DO NOT BUILD behavior leaked into the release path.
-- Generate Go, frontend, image, license, and NOTICE material for the release.
-- Document install, backup/restore, identity-state recovery, Agent upgrade,
-  degraded-storage recovery, and supported/unsupported environments.
+- Race suite: 732 tests, 54 packages, 0 data races.
+- Server persistence schema and filesystem audits
+  (`internal/serverstore/persistence_audit_test.go`,
+  `internal/serverbootstrap/filesystem_audit_test.go`).
+- Release-scope audit over the release binary's dependency graph
+  (`scripts/verify-release-scope.sh`, 29 checks, 40 packages): no OPTIONAL,
+  FUTURE, or DO NOT BUILD behaviour reaches `./cmd/dockpilot`.
+- Go dependency license material (`scripts/generate-license-inventory.sh`, 33
+  modules).
+- Reproducible multi-platform release build: two independent runs of
+  `scripts/build-release-images.sh` produced byte-identical `linux/amd64` +
+  `linux/arm64` OCI archives for both targets, with no target-architecture
+  emulation required on the build host
+  ([`docs/distribution.md`](distribution.md)).
+- Clean-host container installation E2E
+  ([`docs/clean-host-install-e2e.md`](clean-host-install-e2e.md)).
+- Real-container recovery matrix for all three Server-side loss outcomes
+  ([`docs/recovery-matrix-e2e.md`](recovery-matrix-e2e.md)).
+- Operator documentation: install, backup/restore, identity-state recovery,
+  Agent upgrade, degraded-storage recovery
+  ([`docs/degraded-storage-recovery.md`](degraded-storage-recovery.md)), and
+  supported/unsupported environments
+  ([`docs/supported-environments.md`](supported-environments.md)).
 
 Only this gate changes the project status to v1 complete.

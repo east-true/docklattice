@@ -59,23 +59,23 @@ and a new Join Token restores service.
 
 ## Recorded execution
 
-    started_at              2026-08-19T11:04:31Z
-    finished_at             2026-08-19T11:10:24Z
+    started_at              2026-08-19T11:12:00Z
+    finished_at             2026-08-19T11:17:30Z
     docker_server_version   29.7.2
     release_version         1.0.0
-    release_revision        0a5890b2f31625e519932a9786f8ed2e405eb58a
-    server_image_id         sha256:144cb681fbdac8f5c7b7c17e32c426b0c59d5b23da05c4aadf169f891c20be78
-    agent_image_id          sha256:f02b6192e89c7d13ebe77669db0e7cc8abc2fb2f94cb87917010e38b70fd4acb
+    release_revision        b7a2e37af8e4016ebdc67fa82b86bf78228eb2e7
+    server_image_id         sha256:35efb13f9c032d01fe32471aa606824a9163e2da7008f0353131960f06e9a4f5
+    agent_image_id          sha256:4ca29fe2439de28ede915c5abb947d7110b917e12fad35635117076e3814ebf8
 
 Observed identity and archive facts:
 
 | Fact | Value |
 | --- | --- |
-| baseline `server_identity_id` | `6a88aa17d10acf607adf039f53b01476` |
+| baseline `server_identity_id` | `afc9d4ed212112cd6b55d4c58aa0fb16` |
 | baseline `archive_generation` | 1 |
-| case 1 `server_identity_id` | `6a88aa17d10acf607adf039f53b01476` (unchanged) |
+| case 1 `server_identity_id` | `afc9d4ed212112cd6b55d4c58aa0fb16` (unchanged) |
 | case 1 `archive_generation` | 2 (advanced) |
-| case 3 `server_identity_id` | `cf633aa855f89488d5cef910c79119a9` (new trust domain) |
+| case 3 `server_identity_id` | `4670ec80a149407064e768391cb049cb` (new trust domain) |
 
 Recorded assertion results:
 

@@ -36,17 +36,17 @@ checksum-pinned Compose binary, and checksum-pinned license texts.
 on the reference host, each run producing both targets for both platforms. The
 two runs produced byte-identical archives:
 
-    dockpilot-server-1.0.0.oci.tar  sha256:9befa419dda6d06e41f13a2b6cbeab5c84253d407143b0741babcd4fca4635e0
-    dockpilot-agent-1.0.0.oci.tar   sha256:2e97b2cb379090ef6114f04fa749f9b908d8d0c8fd2f19358553a262e56131be
+    dockpilot-server-1.0.0.oci.tar  sha256:1a31d1a03a3e6cd352c8d4d0e835d6a4a4c784e5d38c8bde91e651c2049755b0
+    dockpilot-agent-1.0.0.oci.tar   sha256:18b26942e220d215ba84955a9dd8defc00bb529fa7da930ea8c5982320ebeade
 
 Each archive carries a two-entry manifest list:
 
 | Archive | Platform | Manifest digest |
 | --- | --- | --- |
-| server | `linux/amd64` | `sha256:f42b67ad59772cfb2d9b178a0cca672fdf8e763807e0b76621ad4986feb80181` |
-| server | `linux/arm64` | `sha256:f68d87921de329ee8551a279306d5baaedb813a27a6bd9b81dbb6f067a557cc2` |
-| agent | `linux/amd64` | `sha256:de0c1ef809a06812fa4569839e1074ea2dbc7c317261c98c1db0bc2ad8d9a075` |
-| agent | `linux/arm64` | `sha256:08b481da54bf3dfd97c839f2d09ddef96b80c089cfcabde24cb6190e5402c8c1` |
+| server | `linux/amd64` | `sha256:a99fe66cce196c4b1174980565cfbd8b322f85c4d5e383ee1b0643c8cf10a3b8` |
+| server | `linux/arm64` | `sha256:e2f7f176b3583f6530e9cfd72728f8049b81ecc63abfc0c6d41f6d76f471ffa8` |
+| agent | `linux/amd64` | `sha256:223036296b41a1c09e48774bb6634efbd79df27909bcecaf343c9d10fe70d48c` |
+| agent | `linux/arm64` | `sha256:803781c5b7c10cfb5734d655ce172e35394d2b7ab7e19abff1aabbda6008fbdd` |
 
 Two properties of the `Dockerfile` make this possible, and
 `scripts/verify-distribution.sh` fails closed on either regressing:
