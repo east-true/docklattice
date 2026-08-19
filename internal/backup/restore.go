@@ -85,17 +85,6 @@ func (manager *Manager) Restore(ctx context.Context, request RestoreRequest) (Re
 			return RestoreResult{}, err
 		}
 	}
-	staged, err := manager.stageArchive(ctx, root, manifest, restoreStageSuffix(request.OperationID, "restore"))
-	if err != nil {
-		return RestoreResult{}, err
-	}
-	cleanupStaged := true
-	defer func() {
-		if cleanupStaged {
-			removeStaged(root, staged)
-		}
-	}()
-
 	existing, err := existingTargets(root, manifest.Files)
 	if err != nil {
 		return RestoreResult{}, err
@@ -111,6 +100,8 @@ func (manager *Manager) Restore(ctx context.Context, request RestoreRequest) (Re
 	for _, entry := range preRestore.Manifest.Files {
 		original[entry.RelPath] = true
 	}
+	restoreSuffix := restoreStageSuffix(request.OperationID, "restore")
+	staged := stagePlan(manifest, restoreSuffix)
 	journal := restoreJournal{
 		Version: journalVersion, OperationID: request.OperationID, ProjectUID: request.Project.UID,
 		BackupID: request.BackupID, WorkingDir: request.Project.WorkingDir, Phase: journalPreparing,
@@ -123,7 +114,21 @@ func (manager *Manager) Restore(ctx context.Context, request RestoreRequest) (Re
 			OriginalExisted: original[entry.RelPath],
 		})
 	}
+	// The journal is written before a single staged byte exists so that no
+	// staging file can ever outlive the transaction that owns it: a crash from
+	// here on always leaves a journal that names every staged path to remove.
 	if err := manager.writeJournal(journal); err != nil {
+		return RestoreResult{PreRestoreSnapshotID: preRestore.Manifest.BackupID}, err
+	}
+	// Until the transaction enters COMMITTING nothing has been replaced, so any
+	// early return discards the whole transaction - journal and staging alike.
+	discardOnReturn := true
+	defer func() {
+		if discardOnReturn {
+			_ = manager.discardJournal(root, journal)
+		}
+	}()
+	if err := manager.stageArchive(ctx, root, manifest, restoreSuffix); err != nil {
 		return RestoreResult{PreRestoreSnapshotID: preRestore.Manifest.BackupID}, err
 	}
 	if err := request.CommitGate.EnterRestoreCommit(ctx); err != nil {
@@ -135,6 +140,9 @@ func (manager *Manager) Restore(ctx context.Context, request RestoreRequest) (Re
 		cleanupErr := manager.discardJournal(root, journal)
 		return RestoreResult{PreRestoreSnapshotID: preRestore.Manifest.BackupID}, errors.Join(err, cleanupErr)
 	}
+	// From here the journal outlives this call unless a replacement path
+	// deliberately retires it: recovery needs it to close the transaction.
+	discardOnReturn = false
 
 	for index := range journal.Files {
 		// Persisting "replaced" first is deliberately conservative. A crash after
@@ -152,7 +160,6 @@ func (manager *Manager) Restore(ctx context.Context, request RestoreRequest) (Re
 		if manager.hooks.afterReplacement != nil {
 			if err := manager.hooks.afterReplacement(index); err != nil {
 				if errors.Is(err, errSimulatedCrash) {
-					cleanupStaged = false
 					return RestoreResult{PreRestoreSnapshotID: preRestore.Manifest.BackupID, RestoredFiles: index + 1}, err
 				}
 				return manager.restoreFailure(root, journal, err)
@@ -166,10 +173,8 @@ func (manager *Manager) Restore(ctx context.Context, request RestoreRequest) (Re
 	}
 	if err := manager.removeJournal(journal.OperationID); err != nil {
 		manager.block(journal.ProjectUID, err)
-		cleanupStaged = false
 		return RestoreResult{PreRestoreSnapshotID: preRestore.Manifest.BackupID, RestoredFiles: len(journal.Files)}, errors.Join(ErrRecoveryRequired, err)
 	}
-	cleanupStaged = false
 	return RestoreResult{PreRestoreSnapshotID: preRestore.Manifest.BackupID, RestoredFiles: len(journal.Files)}, nil
 }
 
@@ -208,23 +213,70 @@ func existingTargets(root *os.Root, entries []FileEntry) ([]string, error) {
 	return paths, nil
 }
 
-func (manager *Manager) stageArchive(ctx context.Context, root *os.Root, manifest Manifest, suffix string) (map[string]string, error) {
+// stagePlan names one staging file per manifest entry. The name is derived
+// only from the transaction and the manifest order, so a retry of the same
+// transaction reuses exactly the same names instead of leaking new ones.
+func stagePlan(manifest Manifest, suffix string) map[string]string {
+	plan := make(map[string]string, len(manifest.Files))
+	for index, entry := range manifest.Files {
+		plan[entry.RelPath] = fmt.Sprintf(".dockpilot-restore-%s-%03d.tmp", suffix, index)
+	}
+	return plan
+}
+
+func stagePrefix(suffix string) string { return ".dockpilot-restore-" + suffix + "-" }
+
+// purgeStaging removes the staging files of one transaction and purpose. Only
+// names carrying that transaction's own prefix are touched, and a crashed
+// attempt is the only thing that can have left them behind.
+func purgeStaging(root *os.Root, suffix string) error {
+	directory, err := root.Open(".")
+	if err != nil {
+		return err
+	}
+	names, err := directory.Readdirnames(-1)
+	directory.Close()
+	if err != nil {
+		return err
+	}
+	prefix := stagePrefix(suffix)
+	removed := false
+	for _, name := range names {
+		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".tmp") {
+			continue
+		}
+		if err := root.Remove(name); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("backup: remove stale restore staging %q: %w", name, err)
+		}
+		removed = true
+	}
+	if !removed {
+		return nil
+	}
+	return syncRoot(root)
+}
+
+func (manager *Manager) stageArchive(ctx context.Context, root *os.Root, manifest Manifest, suffix string) error {
 	if !validSafeID(suffix) {
-		return nil, ErrInvalidPath
+		return ErrInvalidPath
+	}
+	plan := stagePlan(manifest, suffix)
+	if err := purgeStaging(root, suffix); err != nil {
+		return err
 	}
 	backupPath := filepath.Join(manager.backupDir, manifest.ProjectUID, manifest.BackupID)
 	if err := validateStoredBackupDirectory(backupPath); err != nil {
-		return nil, err
+		return err
 	}
 	archivePath := filepath.Join(backupPath, "files.tar.gz")
 	archive, err := openSecureRegular(archivePath)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer archive.Close()
 	gzipReader, err := gzip.NewReader(archive)
 	if err != nil {
-		return nil, fmt.Errorf("%w: gzip: %v", ErrInvalidArchive, err)
+		return fmt.Errorf("%w: gzip: %v", ErrInvalidArchive, err)
 	}
 	defer gzipReader.Close()
 	tarReader := tar.NewReader(gzipReader)
@@ -232,42 +284,39 @@ func (manager *Manager) stageArchive(ctx context.Context, root *os.Root, manifes
 	for _, entry := range manifest.Files {
 		expected[entry.RelPath] = entry
 	}
-	staged := make(map[string]string, len(expected))
+	staged := make(map[string]struct{}, len(expected))
 	cleanup := true
 	defer func() {
 		if cleanup {
-			removeStaged(root, staged)
+			removeStaged(root, plan)
 		}
 	}()
-	index := 0
 	for {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return err
 		}
 		header, err := tarReader.Next()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("%w: tar: %v", ErrInvalidArchive, err)
+			return fmt.Errorf("%w: tar: %v", ErrInvalidArchive, err)
 		}
 		entry, ok := expected[header.Name]
 		if !ok || !validManagedPath(header.Name) || (header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA) {
-			return nil, fmt.Errorf("%w: unexpected archive entry %q", ErrInvalidArchive, header.Name)
+			return fmt.Errorf("%w: unexpected archive entry %q", ErrInvalidArchive, header.Name)
 		}
 		if _, duplicate := staged[header.Name]; duplicate {
-			return nil, fmt.Errorf("%w: duplicate archive entry %q", ErrInvalidArchive, header.Name)
+			return fmt.Errorf("%w: duplicate archive entry %q", ErrInvalidArchive, header.Name)
 		}
 		if header.Size != entry.Size || uint32(header.Mode)&0o777 != entry.Mode {
-			return nil, fmt.Errorf("%w: metadata mismatch for %q", ErrInvalidArchive, header.Name)
+			return fmt.Errorf("%w: metadata mismatch for %q", ErrInvalidArchive, header.Name)
 		}
-		stageName := fmt.Sprintf(".dockpilot-restore-%s-%03d.tmp", suffix, index)
-		index++
-		file, err := root.OpenFile(stageName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		file, err := root.OpenFile(plan[header.Name], os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err != nil {
-			return nil, fmt.Errorf("backup: create restore staging file: %w", err)
+			return fmt.Errorf("backup: create restore staging file: %w", err)
 		}
-		staged[header.Name] = stageName
+		staged[header.Name] = struct{}{}
 		hash := sha256.New()
 		written, copyErr := io.CopyN(io.MultiWriter(file, hash), contextReader{ctx: ctx, reader: tarReader}, entry.Size)
 		if copyErr == nil && written != entry.Size {
@@ -283,20 +332,20 @@ func (manager *Manager) stageArchive(ctx context.Context, root *os.Root, manifes
 			copyErr = closeErr
 		}
 		if copyErr != nil {
-			return nil, fmt.Errorf("%w: extract %q: %v", ErrInvalidArchive, header.Name, copyErr)
+			return fmt.Errorf("%w: extract %q: %v", ErrInvalidArchive, header.Name, copyErr)
 		}
 		if !strings.EqualFold(hex.EncodeToString(hash.Sum(nil)), entry.SHA256) {
-			return nil, fmt.Errorf("%w: digest mismatch for %q", ErrInvalidArchive, header.Name)
+			return fmt.Errorf("%w: digest mismatch for %q", ErrInvalidArchive, header.Name)
 		}
 	}
 	if len(staged) != len(expected) {
-		return nil, fmt.Errorf("%w: archive entries do not match manifest", ErrInvalidArchive)
+		return fmt.Errorf("%w: archive entries do not match manifest", ErrInvalidArchive)
 	}
 	if err := syncRoot(root); err != nil {
-		return nil, err
+		return err
 	}
 	cleanup = false
-	return staged, nil
+	return nil
 }
 
 func validateStoredBackupDirectory(path string) error {
@@ -469,8 +518,9 @@ func (manager *Manager) rollback(root *os.Root, journal restoreJournal) error {
 	if manifest.WorkingDir != journal.WorkingDir {
 		return ErrInvalidArchive
 	}
-	rollbackStaged, err := manager.stageArchive(context.Background(), root, manifest, restoreStageSuffix(journal.OperationID, "rollback"))
-	if err != nil {
+	rollbackSuffix := restoreStageSuffix(journal.OperationID, "rollback")
+	rollbackStaged := stagePlan(manifest, rollbackSuffix)
+	if err := manager.stageArchive(context.Background(), root, manifest, rollbackSuffix); err != nil {
 		return err
 	}
 	defer removeStaged(root, rollbackStaged)
@@ -544,7 +594,12 @@ func (manager *Manager) Recover(ctx context.Context, resolver ProjectResolver) (
 		}
 		if journal.Phase == journalPreparing || !replaced {
 			result.Interrupted = true
-			result.Err = manager.discardJournal(root, journal)
+			// Nothing was replaced, but a journal that cannot be retired would
+			// be replayed on every boot: that is not a clean close either.
+			if result.Err = manager.discardJournal(root, journal); result.Err != nil {
+				result.RecoveryRequired = true
+				manager.block(journal.ProjectUID, result.Err)
+			}
 		} else if rollbackErr := manager.rollback(root, journal); rollbackErr != nil {
 			result.Interrupted, result.RecoveryRequired, result.Err = true, true, rollbackErr
 			manager.block(journal.ProjectUID, rollbackErr)
