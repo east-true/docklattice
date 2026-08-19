@@ -105,15 +105,15 @@ needs. A blanket `Status: validated` would claim evidence that does not exist.
 **Environment and identity**
 
 ```text
-source_revision   412912baecb1096714854e73dcc843557e14d101
-server_image      sha256:906cab21aca5887bf5aaf88da561ed0f57bf6c1e67104e5307a8a08a013f6a47
-agent_image       sha256:722fbf9e91839f016d3c774b9514b1b52978025d5f84ba197c2ff53644ca958e
+source_revision   f1d4087eb94921f07ce3c6fafddcbf0261314bf3
+server_image      sha256:44202ec0ffeddec84b6dba8711b8f2cc353e69f9f876e9c104afb6fe47887125
+agent_image       sha256:22492be1c6a6ad695521ac704ae550711cfceb57e8e6d1883eee9bed939b0e04
 fixture_image     sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
 kernel            Linux 6.18.33.2-microsoft-standard-WSL2 x86_64
 docker_engine     29.7.2
 cgroup            v2, systemd driver
 compose           5.3.1, pinned in the Agent image
-started/completed 2026-08-18T12:54:04Z / 2026-08-18T13:05:51Z
+started/completed 2026-08-19T11:46:15Z / 2026-08-19T12:00:22Z
 ```
 
 Artifact tree carries a 215-entry `SHA256SUMS` manifest and per-trial

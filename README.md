@@ -11,7 +11,7 @@ the canonical Audit archive.
 ## Status
 
 Product v1 is complete. Every phase of `docs/implementation-plan.md` has
-passed, including the Phase 9 release gate at revision `b7a2e37`. Dockpilot uses
+passed, including the Phase 9 release gate at revision `f1d4087`. Dockpilot uses
 one Agent-initiated reverse gRPC connection with application-owned P0-P4
 scheduling. The authoritative scope and invariants are in
 `docs/architecture.md`.
@@ -31,7 +31,7 @@ v1 covers:
   backups, logs, and live stats.
 
 Unit, race, and static checks pass. Four gates passed against the release
-images built from `b7a2e37`: the production cgroup resource matrix over three
+images built from `f1d4087`: the production cgroup resource matrix over three
 trials (`docs/resource-gate.md`), the clean-host container installation E2E
 (`docs/clean-host-install-e2e.md`), the real-container recovery matrix covering
 all three Server-side loss outcomes (`docs/recovery-matrix-e2e.md`), and a

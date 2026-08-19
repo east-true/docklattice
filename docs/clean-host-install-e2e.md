@@ -10,16 +10,16 @@ images on a different platform requires a new evidence directory.
 
 ## Recorded execution
 
-    started_at              2026-08-19T11:17:45Z
-    finished_at             2026-08-19T11:17:58Z
+    started_at              2026-08-19T12:15:53Z
+    finished_at             2026-08-19T12:16:07Z
     kernel                  Linux 6.18.33.2-microsoft-standard-WSL2 x86_64
     docker_server_version   29.7.2
     cgroup                  v2, systemd driver
     release_version         1.0.0
-    release_revision        b7a2e37af8e4016ebdc67fa82b86bf78228eb2e7
+    release_revision        f1d4087eb94921f07ce3c6fafddcbf0261314bf3
     compose_version         5.3.1
-    server_image_id         sha256:35efb13f9c032d01fe32471aa606824a9163e2da7008f0353131960f06e9a4f5
-    agent_image_id          sha256:4ca29fe2439de28ede915c5abb947d7110b917e12fad35635117076e3814ebf8
+    server_image_id         sha256:44202ec0ffeddec84b6dba8711b8f2cc353e69f9f876e9c104afb6fe47887125
+    agent_image_id          sha256:22492be1c6a6ad695521ac704ae550711cfceb57e8e6d1883eee9bed939b0e04
     fixture_image_id        sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
 
 Recorded assertion results:

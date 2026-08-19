@@ -207,10 +207,10 @@ Harness and current execution status: [`docs/resource-gate.md`](resource-gate.md
 
 ## Phase 9 — v1 release gate
 
-Status: passed 2026-08-19 at revision `b7a2e37`. The project status is v1
+Status: passed 2026-08-19 at revision `f1d4087`. The project status is v1
 complete.
 
-- Race suite: 732 tests, 54 packages, 0 data races.
+- Race suite: 739 tests, 54 packages, 0 data races.
 - Server persistence schema and filesystem audits
   (`internal/serverstore/persistence_audit_test.go`,
   `internal/serverbootstrap/filesystem_audit_test.go`).

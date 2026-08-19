@@ -129,9 +129,9 @@ matrix ran three trials against the production images and every trial returned
 `status=PASS`, so `docs/defaults-validation.md` is no longer provisional.
 
 ```text
-started_at             2026-08-18T12:54:04Z
-completed_at           2026-08-18T13:05:51Z
-source_revision        412912baecb1096714854e73dcc843557e14d101
+started_at             2026-08-19T11:46:15Z
+completed_at           2026-08-19T12:00:22Z
+source_revision        f1d4087eb94921f07ce3c6fafddcbf0261314bf3
 kernel                 Linux 6.18.33.2-microsoft-standard-WSL2 x86_64
 docker_server_version  29.7.2
 cgroup                 v2, systemd driver
@@ -144,36 +144,40 @@ prototype_acceptance_reused  false
 Peak process RSS stayed far inside both limits, and cgroup peak never reached
 the 80% warning threshold in any trial:
 
-| trial | role   | peak RSS | limit    | peak anon | cgroup peak | FD | `events.local.max` |
+| trial | role   | peak RSS | budget   | peak anon | cgroup peak | FD | `events.local.max` |
 | ----- | ------ | -------- | -------- | --------- | ----------- | -- | ------------------ |
-| 1     | agent  | 28.2 MiB | 256 MiB  | 14.9 MiB  | 34.3 MiB    | 26 | 0                  |
-| 1     | server | 30.7 MiB | 512 MiB  | 15.8 MiB  | 23.4 MiB    | 33 | 0                  |
-| 2     | agent  | 27.4 MiB | 256 MiB  | 14.3 MiB  | 33.8 MiB    | 26 | 0                  |
-| 2     | server | 32.0 MiB | 512 MiB  | 16.3 MiB  | 23.0 MiB    | 33 | 0                  |
-| 3     | agent  | 30.5 MiB | 256 MiB  | 21.8 MiB  | 36.7 MiB    | 25 | 0                  |
-| 3     | server | 30.9 MiB | 512 MiB  | 15.5 MiB  | 23.7 MiB    | 33 | 0                  |
+| 1     | agent  | 28.1 MiB | 256 MiB  | 27.1 MiB  | 34.8 MiB    | 26 | 0                  |
+| 1     | server | 30.4 MiB | 512 MiB  | 17.8 MiB  | 26.2 MiB    | 34 | 0                  |
+| 2     | agent  | 28.6 MiB | 256 MiB  | 20.9 MiB  | 33.6 MiB    | 25 | 0                  |
+| 2     | server | 30.6 MiB | 512 MiB  | 15.1 MiB  | 24.2 MiB    | 33 | 0                  |
+| 3     | agent  | 27.9 MiB | 256 MiB  | 14.6 MiB  | 35.3 MiB    | 24 | 0                  |
+| 3     | server | 30.4 MiB | 512 MiB  | 15.0 MiB  | 22.9 MiB    | 33 | 0                  |
+
+The budget column is the `AgentRSSTargetBytes` / `ServerRSSTargetBytes` default,
+not the cgroup limit: the runner sets `memory.max` to 512 MiB and 1 GiB so
+pressure is observable without an OOM kill masking the measurement.
 
 `memory.events.local.oom` and `.oom_kill` were 0 in every trial. Post-GC live
-heap was flat at 1 MB for both roles across 111-124 Agent and 259-263 Server
-GC cycles. End-of-trial goroutine headers were 27 (Agent) and 22 (Server) in
-all three trials.
+heap stayed within 1-4 MB for the Agent over 111-115 GC cycles and within 1-3 MB
+for the Server over 269-275 cycles. End-of-trial goroutine headers were 28
+(Agent) and 22 (Server) in all three trials.
 
 Appendix A A.9 items measured by this gate:
 
 | A.9 item                              | bound                | trial 1 | trial 2 | trial 3 |
 | ------------------------------------- | -------------------- | ------- | ------- | ------- |
-| 2. `cancel_ack_latency_ms` p99        | <= 500 ms            | 71 ms   | 72 ms   | 88 ms   |
+| 2. `cancel_ack_latency_ms` p99        | <= 500 ms            | 84 ms   | 73 ms   | 71 ms   |
 | 3. canonical cursor advance           | strictly forward     | 0 regressions | 0 | 0 |
-| 3. `audit_ack_watermark_stalled_seconds` max | <= 10 s      | 2 s     | 0 s     | 0 s     |
+| 3. `audit_ack_watermark_stalled_seconds` max | <= 10 s      | 0 s     | 0 s     | 1 s     |
 | 7. `oom` / `oom_kill`                 | 0                    | 0 / 0   | 0 / 0   | 0 / 0   |
-| 8. goroutines                         | <= 105% baseline     | 27      | 27      | 27      |
+| 8. goroutines                         | <= 105% baseline     | 28      | 28      | 28      |
 | 8. RSS recovery                       | <= 120% baseline     | pass    | pass    | pass    |
 
 Audit coverage gap samples were 0 in every trial, and the ACK cursor was level
 with the canonical cursor (lag 0) at the end of each trial. Bounded stream
-buffers dropped 267,246 / 30,996 / 6,048 bytes with exact drop accounting and
+buffers dropped 69,363 / 383,481 / 20,790 bytes with exact drop accounting and
 recovered after stream stop in all three trials. The real restore journal was
-observed on disk with a peak of 1,553 / 1,551 / 1,553 bytes across 40-71
+observed on disk with a peak of 1,545 / 1,545 / 1,547 bytes across 27-41
 non-zero samples per trial.
 
 ### Anonymous memory judgment
@@ -187,9 +191,9 @@ lowest earlier quarter mean - the same construct Appendix A uses for
 `architecture.md:2198`), with Appendix A item 8's own 120% tolerance. An
 endpoint comparison of three-sample averages is not usable here because
 anonymous memory is a GC sawtooth: the verdict would follow which side of a
-collection each window landed on. Rising-quarter counts in this run were 1-2 of
-4 for the Agent and 2-4 of 4 for the Server; where all four quarters rose, the
-final quarter stayed within the 120% materiality bound.
+collection each window landed on. Rising-quarter counts in this run were 2-3 of
+4 for the Agent and 1-3 of 4 for the Server, so no role approached the failure
+shape, which requires all four.
 
 ### Not measured by this gate
 
