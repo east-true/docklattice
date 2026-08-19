@@ -33,12 +33,14 @@ a separate `mktemp` runtime root scrubbed on every exit. Select a subset with
 | `operation-flood` | a burst of 40 operations | every request gets a decision, the Agent stays ACTIVE, and the Server keeps answering |
 | `self-protection` | `container.stop`, `container.restart`, and `container.remove` aimed at the Agent's own container ID | each is refused and the Agent is still running and ACTIVE afterwards |
 | `request-abuse` | malformed JSON, an unknown field, a wrong method, `limit=0`, a malformed cursor, an unknown query parameter, and a 2 MB body | each is refused with a client status, none with a server error, and the Server is healthy afterwards |
+| `operation-bounds` | a second mutation while a health-gated `compose.up` holds the project, then 525 operations against a 500-entry result ring | the contender is refused with `PROJECT_BUSY` and the holder still completes; the evicted oldest record answers 404 rather than being served from the Server cache |
 | `name-collision` | a second project directory claiming the same Compose project name | 7.6: both projects are marked as colliding and a mutation on one is refused with 409 |
+| `protected-compose-project` | a `compose.down` aimed at the Compose project the Agent itself belongs to | the mutation is refused with `DENY_PROTECTED_PROJECT`, the Agent survives, and an unrelated project still works |
 
 ## Recorded execution
 
-    started_at              2026-08-19T13:44:58Z
-    finished_at             2026-08-19T13:45:32Z
+    started_at              2026-08-19T13:57:41Z
+    finished_at             2026-08-19T14:00:56Z
     docker_server_version   29.7.2
     release_version         1.0.0
     release_revision        3ac48ce
@@ -60,8 +62,14 @@ Recorded assertion results:
 | `self_protection_agent_survives` | PASS |
 | `request_abuse_all_refused_with_client_status` | PASS |
 | `request_abuse_server_healthy` | PASS |
+| `operation_bounds_project_busy` | PASS |
+| `operation_bounds_ring_evicts_oldest` | PASS (525 requested, oldest answered 404) |
+| `operation_bounds_newest_still_readable` | PASS |
 | `name_collision_detected` | PASS |
 | `name_collision_mutation_refused` | PASS |
+| `protected_compose_project_denied` | PASS |
+| `protected_compose_project_unrelated_still_allowed` | PASS |
+| `protected_compose_project_agent_survives` | PASS |
 
 Observed detail worth keeping:
 
@@ -70,9 +78,20 @@ Observed detail worth keeping:
   decision rather than an incidental Docker error.
 - The oversized body was refused with 413 rather than being buffered.
 - `operation_flood_rejected` is 0: forty `discovery.rescan` operations complete
-  faster than the bounded active index fills, so this run exercised
-  responsiveness and decision coverage, not the bound itself. The bound has
-  package-level coverage in `internal/operation`.
+  faster than any bound is reached, so that case exercises responsiveness and
+  decision coverage. The bounds themselves are `operation-bounds`, which holds
+  the project lock open with a health-gated `compose.up` and overruns the result
+  ring on purpose.
+- The refused contender reported
+  `PROJECT_BUSY: project "<uid>" is locked by operation "<holder>"`, so the
+  project lock is demonstrably what refused it, and the holder still finished
+  `success` afterwards.
+- The `compose.down` aimed at the Agent's own Compose project failed with
+  `agentruntime: Compose denied: DENY_PROTECTED_PROJECT: target Compose project
+  contains a protected Agent`, and a `compose.up` on an unrelated project
+  succeeded in the same run - the denial is aimed, not a blanket refusal of
+  Compose mutations. The Agent carries the Compose labels a Compose deployment
+  would give it, which is what `IdentifySelf` reads to build its protection set.
 
 This gate found one defect, now fixed: the dashboard, single-host, and project
 environment routes silently ignored unrecognised query parameters while their

@@ -42,6 +42,12 @@ for literal in \
     'a refusal answered with a server error' \
     'were not both marked as colliding' \
     'a mutation on a colliding project answered HTTP' \
+    'PROJECT_BUSY' \
+    'a second mutation ran while the project was locked' \
+    'an evicted record must be reported as gone' \
+    'DENY_PROTECTED_PROJECT' \
+    'refused a Compose mutation outside the protected project' \
+    'com.docker.compose.project=' \
     'status=PASS' \
     'seal_evidence'; do
     require_literal "$literal" "$runner"
@@ -55,7 +61,10 @@ for literal in \
     'operation_id_reuse_refused' \
     'self_protection_refused' \
     'request_abuse_all_refused_with_client_status' \
-    'name_collision_mutation_refused'; do
+    'name_collision_mutation_refused' \
+    'operation_bounds_project_busy' \
+    'operation_bounds_ring_evicts_oldest' \
+    'protected_compose_project_denied'; do
     require_literal "$literal" "$documentation"
 done
 

@@ -364,7 +364,8 @@ poll_operation() {
     while [ "$(date +%s)" -lt "$deadline" ]; do
         if curl --fail --silent --show-error --max-time 5 --cacert "$runtime/bootstrap/server-ca.crt" \
             "$base_url/api/v1/agents/$agent_id/operations/$operation_id" >"$output.tmp" 2>/dev/null &&
-            jq -e '.status == "success" or .status == "failed" or .status == "canceled" or .status == "interrupted"' \
+            jq -e '.status == "success" or .status == "failed" or .status == "canceled" or
+                   .status == "interrupted" or .status == "rejected"' \
                 "$output.tmp" >/dev/null 2>&1; then
             mv "$output.tmp" "$output"
             return 0

@@ -13,10 +13,16 @@ set -eu
 #   operation-id-reuse       one operation ID cannot be rebound to another spec
 #   operation-flood          a burst of operations stays bounded and the Server
 #                            keeps answering
+#   operation-bounds         the project lock refuses a second mutation with
+#                            PROJECT_BUSY, and an overrun result ring reports its
+#                            forgotten records as gone rather than from cache
 #   name-collision     7.6   two projects claiming one Compose name become
 #                            read-only instead of racing each other
 #   self-protection          a container operation aimed at the Agent itself is
 #                            refused
+#   protected-compose-project a Compose mutation aimed at the Compose project the
+#                            Agent itself belongs to is refused, while an
+#                            unrelated project still works
 #   request-abuse            oversized, malformed, unknown-field, and
 #                            wrong-method requests are refused with their status
 #
@@ -44,7 +50,7 @@ agent_image=$3
 fixture_image=$4
 evidence_max_bytes=${ABUSE_EVIDENCE_MAX_BYTES:-16777216}
 log_max_bytes=${ABUSE_LOG_MAX_BYTES:-1048576}
-selected_cases=${ABUSE_CASES:-path-abuse secret-exposure operation-id-reuse operation-flood name-collision self-protection request-abuse}
+selected_cases=${ABUSE_CASES:-path-abuse secret-exposure operation-id-reuse operation-flood operation-bounds name-collision self-protection protected-compose-project request-abuse}
 
 case "$evidence_dir" in
     /*) ;;
@@ -151,7 +157,7 @@ scrub_runtime() {
     case "$runtime" in "$runtime_base"/dockpilot-abuse.*) ;; *) return 1 ;; esac
     docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
         -v "$runtime:/abuse-runtime" "$server_image" \
-        -c 'rm -rf /abuse-runtime/server /abuse-runtime/agent /abuse-runtime/bootstrap /abuse-runtime/projects /abuse-runtime/projects-second' \
+        -c 'rm -rf /abuse-runtime/server /abuse-runtime/agent /abuse-runtime/bootstrap /abuse-runtime/projects /abuse-runtime/projects-second /abuse-runtime/projects-protected' \
         >/dev/null 2>&1 || return 1
     rmdir "$runtime"
 }
@@ -355,7 +361,8 @@ poll_operation() {
     while [ "$(date +%s)" -lt "$deadline" ]; do
         if curl --fail --silent --show-error --max-time 5 --cacert "$runtime/bootstrap/server-ca.crt" \
             "$base_url/api/v1/agents/$agent_id/operations/$operation_id" >"$output.tmp" 2>/dev/null &&
-            jq -e '.status == "success" or .status == "failed" or .status == "canceled" or .status == "interrupted"' \
+            jq -e '.status == "success" or .status == "failed" or .status == "canceled" or
+                   .status == "interrupted" or .status == "rejected"' \
                 "$output.tmp" >/dev/null 2>&1; then
             mv "$output.tmp" "$output"
             return 0
@@ -679,6 +686,121 @@ if selected request-abuse; then
     record request_abuse_server_healthy PASS
 fi
 
+# ------------------------------------------------- case: operation bounds
+# Two bounds decide what a burst can do: the project lock refuses a second
+# mutation while one holds the project, and the Agent's bounded result ring
+# forgets old records. The Agent is authoritative for both, so a forgotten
+# record must answer 404 rather than being served from the Server cache.
+if selected operation-bounds; then
+    cp "$runtime/projects/compose.yaml" "$runtime/bootstrap/compose.yaml.bounds"
+    cat >"$runtime/projects/compose.yaml" <<EOF
+name: $compose_project
+services:
+  abuse-gate:
+    image: $fixture_image
+    pull_policy: never
+    command: ["/bin/sh", "-c", "sleep 45; touch /tmp/ready; trap 'exit 0' TERM INT; while :; do sleep 60; done"]
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f /tmp/ready ]"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+  abuse-fixture:
+    image: $fixture_image
+    pull_policy: never
+    command: ["/bin/sh", "-c", "trap 'exit 0' TERM INT; while :; do sleep 60; done"]
+    depends_on:
+      abuse-gate:
+        condition: service_healthy
+EOF
+    holder="abuse-lock-holder-$$"
+    api POST "$base_url/api/v1/operations" \
+        "$(jq -cn --arg id "$holder" --arg agent "$agent_id" --arg project "$project_uid" \
+            '{operation_id:$id,agent_id:$agent,project_uid:$project,kind:"compose.up"}')" \
+        "$evidence_dir/operation-bounds.holder.accepted.json"
+    running=0
+    deadline=$(( $(date +%s) + 60 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if curl --fail --silent --show-error --max-time 5 --cacert "$runtime/bootstrap/server-ca.crt" \
+            "$base_url/api/v1/agents/$agent_id/operations/$holder" \
+            >"$evidence_dir/operation-bounds.holder.running.json" 2>/dev/null &&
+            jq -e '.status == "running"' "$evidence_dir/operation-bounds.holder.running.json" >/dev/null 2>&1; then
+            running=1
+            break
+        fi
+        sleep 1
+    done
+    [ "$running" -eq 1 ] ||
+        fail "operation-bounds: the lock-holding compose.up never reported running"
+    contender="abuse-lock-contender-$$"
+    contender_status=$(api_status POST "$base_url/api/v1/operations" \
+        "$(jq -cn --arg id "$contender" --arg agent "$agent_id" --arg project "$project_uid" \
+            '{operation_id:$id,agent_id:$agent,project_uid:$project,kind:"compose.down"}')" \
+        "$evidence_dir/operation-bounds.contender.json")
+    printf 'contender_dispatch_status=%s\n' "$contender_status" >"$evidence_dir/operation-bounds.env"
+    busy=0
+    case "$contender_status" in
+        409)
+            grep -F 'PROJECT_BUSY' "$evidence_dir/operation-bounds.contender.json" >/dev/null && busy=1
+            ;;
+        202)
+            poll_operation "$contender" "$evidence_dir/operation-bounds.contender.final.json" 120 ||
+                fail "operation-bounds: the contending mutation never reached a terminal state"
+            jq -e '.status != "success"' "$evidence_dir/operation-bounds.contender.final.json" >/dev/null ||
+                fail "operation-bounds: a second mutation ran while the project was locked"
+            grep -F 'PROJECT_BUSY' "$evidence_dir/operation-bounds.contender.final.json" >/dev/null && busy=1
+            ;;
+        *) fail "operation-bounds: the contending mutation answered an unexpected HTTP $contender_status" ;;
+    esac
+    [ "$busy" -eq 1 ] ||
+        fail "operation-bounds: the refusal did not name PROJECT_BUSY, so the project lock was not what refused it"
+    poll_operation "$holder" "$evidence_dir/operation-bounds.holder.final.json" 240 ||
+        fail "operation-bounds: the lock-holding operation never finished"
+    jq -e '.status == "success"' "$evidence_dir/operation-bounds.holder.final.json" >/dev/null ||
+        fail "operation-bounds: the lock holder did not complete normally after refusing the contender"
+    cp "$runtime/bootstrap/compose.yaml.bounds" "$runtime/projects/compose.yaml"
+    remove_compose_objects
+    record operation_bounds_project_busy PASS
+
+    # The result ring keeps the newest OperationResultMax records. Overrunning it
+    # must forget the oldest, and a forgotten record must be reported as gone
+    # rather than served from the Server's cache.
+    ring_max=500
+    ring_extra=25
+    first_ring="abuse-ring-1-$$"
+    index=0
+    while [ "$index" -lt $((ring_max + ring_extra)) ]; do
+        index=$((index + 1))
+        status=$(api_status POST "$base_url/api/v1/operations" \
+            "$(jq -cn --arg id "abuse-ring-$index-$$" --arg agent "$agent_id" \
+                '{operation_id:$id,agent_id:$agent,kind:"discovery.rescan"}')" \
+            "$evidence_dir/operation-bounds.ring.body.json")
+        case "$status" in
+            202|409|429|503) ;;
+            *) fail "operation-bounds: ring request $index answered an unexpected HTTP $status" ;;
+        esac
+    done
+    last_ring="abuse-ring-$index-$$"
+    poll_operation "$last_ring" "$evidence_dir/operation-bounds.ring.last.json" 120 ||
+        fail "operation-bounds: the newest ring operation never reached a terminal state"
+    evicted=0
+    deadline=$(( $(date +%s) + 120 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        first_status=$(api_status GET "$base_url/api/v1/agents/$agent_id/operations/$first_ring" '' \
+            "$evidence_dir/operation-bounds.ring.first.json")
+        [ "$first_status" = 404 ] && { evicted=1; break; }
+        sleep 3
+    done
+    {
+        printf 'ring_requested=%s\n' "$index"
+        printf 'oldest_lookup_status=%s\n' "${first_status:-none}"
+    } >>"$evidence_dir/operation-bounds.env"
+    [ "$evicted" -eq 1 ] ||
+        fail "operation-bounds: the oldest record answered HTTP ${first_status:-none} after the ring overran; an evicted record must be reported as gone"
+    record operation_bounds_ring_evicts_oldest PASS
+    record operation_bounds_newest_still_readable PASS
+fi
+
 # ------------------------------------------------- case: project name collision
 # 7.6 is CORE: two project directories claiming one Compose project name cannot
 # both be operated, because Compose would resolve them to the same runtime
@@ -733,6 +855,106 @@ EOF
         fail "name-collision: a mutation on a colliding project answered HTTP $mutation_status instead of 409"
     record name_collision_detected PASS
     record name_collision_mutation_refused PASS
+fi
+
+# ------------------------------------ case: protected Compose project
+# Self-protection covers the Agent's own container and the Compose project that
+# container belongs to. An Agent deployed with Compose carries the project label,
+# so a Compose mutation aimed at that project would take down the Agent that is
+# carrying it out. This case gives the Agent the label a Compose deployment would
+# give it and then aims a mutation at that project name.
+if selected protected-compose-project; then
+    protected_project=$(printf '%s' "$prefix-selfdeploy" | tr '[:upper:]' '[:lower:]')
+    mkdir "$runtime/projects-protected"
+    cat >"$runtime/projects-protected/compose.yaml" <<EOF
+name: $protected_project
+services:
+  abuse-selfdeploy:
+    image: $fixture_image
+    pull_policy: never
+    command: ["/bin/sh", "-c", "trap 'exit 0' TERM INT; while :; do sleep 60; done"]
+EOF
+    docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
+        -v "$runtime/projects-protected:/protected" "$server_image" -c \
+        'chown -R 65532:65532 /protected; chmod 0777 /protected; chmod 0666 /protected/compose.yaml' >/dev/null
+    docker rm -f "$agent" >/dev/null
+    # The Compose labels are exactly what a Compose deployment of the Agent
+    # would set, and are what IdentifySelf reads to build its protection set.
+    docker run --pull never -d --name "$agent" --network "$network" \
+        --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
+        --group-add "$socket_gid" --label io.dockpilot.role=agent \
+        --label "com.docker.compose.project=$protected_project" \
+        --label com.docker.compose.service=agent \
+        --label com.docker.compose.container-number=1 \
+        -v /var/run/docker.sock:/var/run/docker.sock:rw \
+        -v "$runtime/agent:/var/lib/dockpilot:rw" \
+        -v "$runtime/projects:$runtime/projects:rw" \
+        -v "$runtime/projects-protected:$runtime/projects-protected:rw" "$agent_image" agent \
+        --server server:8443 --registration-url https://server:8080 \
+        --server-ca /var/lib/dockpilot/server-ca.crt \
+        --display-name abuse-agent --self-container-name "$agent" \
+        --project-root "$runtime/projects" --project-root "$runtime/projects-protected" \
+        >"$evidence_dir/protected-compose-project.container-id"
+    discovered=0
+    deadline=$(( $(date +%s) + 300 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if curl --fail --silent --show-error --max-time 5 --cacert "$runtime/bootstrap/server-ca.crt" \
+            "$base_url/api/v1/dashboard" >"$evidence_dir/protected-compose-project.dashboard.json" 2>/dev/null &&
+            jq -e --arg name "$protected_project" \
+                '.hosts[0].state == "ACTIVE" and ([.projects[] | select(.name == $name)] | length == 1)' \
+                "$evidence_dir/protected-compose-project.dashboard.json" >/dev/null 2>&1; then
+            discovered=1
+            break
+        fi
+        sleep 5
+    done
+    [ "$discovered" -eq 1 ] ||
+        fail "protected-compose-project: the project sharing the Agent Compose project name was not discovered"
+    protected_uid=$(jq -r --arg name "$protected_project" \
+        '[.projects[] | select(.name == $name)][0].uid' "$evidence_dir/protected-compose-project.dashboard.json")
+    unrelated_uid=$(jq -r --arg name "$protected_project" \
+        '[.projects[] | select(.name != $name and .collision != true)][0].uid // ""' \
+        "$evidence_dir/protected-compose-project.dashboard.json")
+    protected_operation="abuse-protected-down-$$"
+    status=$(api_status POST "$base_url/api/v1/operations" \
+        "$(jq -cn --arg id "$protected_operation" --arg agent "$agent_id" --arg project "$protected_uid" \
+            '{operation_id:$id,agent_id:$agent,project_uid:$project,kind:"compose.down"}')" \
+        "$evidence_dir/protected-compose-project.operation.json")
+    printf 'dispatch_status=%s\n' "$status" >"$evidence_dir/protected-compose-project.env"
+    denied=0
+    case "$status" in
+        202)
+            poll_operation "$protected_operation" "$evidence_dir/protected-compose-project.final.json" 180 ||
+                fail "protected-compose-project: the mutation never reached a terminal state"
+            jq -e '.status != "success"' "$evidence_dir/protected-compose-project.final.json" >/dev/null ||
+                fail "protected-compose-project: a Compose mutation on the Agent's own project succeeded"
+            grep -F 'DENY_PROTECTED_PROJECT' "$evidence_dir/protected-compose-project.final.json" >/dev/null && denied=1
+            ;;
+        400|403|409) denied=1 ;;
+        *) fail "protected-compose-project: the mutation answered an unexpected HTTP $status" ;;
+    esac
+    [ "$denied" -eq 1 ] ||
+        fail "protected-compose-project: the refusal did not name DENY_PROTECTED_PROJECT, so self-protection was not what refused it"
+    [ "$(docker inspect --format '{{.State.Status}}' "$agent")" = running ] ||
+        fail "protected-compose-project: the Agent container is no longer running"
+    # The denial must be aimed, not a blanket refusal of Compose mutations.
+    if [ -n "$unrelated_uid" ] && [ "$unrelated_uid" != null ]; then
+        unrelated_operation="abuse-unrelated-up-$$"
+        api POST "$base_url/api/v1/operations" \
+            "$(jq -cn --arg id "$unrelated_operation" --arg agent "$agent_id" --arg project "$unrelated_uid" \
+                '{operation_id:$id,agent_id:$agent,project_uid:$project,kind:"compose.up"}')" \
+            "$evidence_dir/protected-compose-project.unrelated.accepted.json"
+        poll_operation "$unrelated_operation" "$evidence_dir/protected-compose-project.unrelated.final.json" 180 ||
+            fail "protected-compose-project: the unrelated Compose mutation never reached a terminal state"
+        jq -e '.status == "success"' "$evidence_dir/protected-compose-project.unrelated.final.json" >/dev/null ||
+            fail "protected-compose-project: self-protection refused a Compose mutation outside the protected project"
+        remove_compose_objects
+        record protected_compose_project_unrelated_still_allowed PASS
+    fi
+    wait_active_host "$agent_id" "$evidence_dir/protected-compose-project.after.json" 180 ||
+        fail "protected-compose-project: the Agent is no longer ACTIVE"
+    record protected_compose_project_denied PASS
+    record protected_compose_project_agent_survives PASS
 fi
 
 {
