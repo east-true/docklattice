@@ -33,12 +33,14 @@ const (
 	auditMethod                = "/dockpilot.product.v1.AgentControl/SyncAudit"
 	logsMethod                 = "/dockpilot.product.v1.AgentControl/StreamLogs"
 	statsMethod                = "/dockpilot.product.v1.AgentControl/StreamStats"
+	metricsMatrixMethod        = "/dockpilot.product.v1.AgentControl/StreamMetricsMatrix"
 )
 
 const (
 	auditStreamIndex = iota
 	logsStreamIndex
 	statsStreamIndex
+	metricsMatrixStreamIndex
 )
 
 type AgentConfig struct {
@@ -547,6 +549,14 @@ func (s *controlSession) OpenStats(ctx context.Context, request StatsRequest) (S
 	return &statsReceiveStream{receiveStreamCore: core}, nil
 }
 
+func (s *controlSession) OpenMetricsMatrix(ctx context.Context, _ MetricsMatrixRequest) (MetricsMatrixReceiveStream, error) {
+	core, err := s.openReceiveStream(ctx, P4DisposableLive, metricsMatrixStreamIndex, metricsMatrixMethod, &pb.MetricsMatrixRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return &metricsMatrixReceiveStream{receiveStreamCore: core}, nil
+}
+
 func (s *controlSession) OpenAuditSync(ctx context.Context) (AuditReceiveStream, error) {
 	core, err := s.openReceiveStream(ctx, P1DurableSync, auditStreamIndex, auditMethod, nil)
 	if err != nil {
@@ -677,6 +687,53 @@ func (s *logReceiveStream) Recv(ctx context.Context) (LogEvent, error) {
 	}, nil
 }
 
+// statsSampleFromWire is shared by the single-container stream and the matrix
+// frame so the two cannot drift into reporting the same sample differently.
+func statsSampleFromWire(sample *pb.StatsSample) StatsSample {
+	return StatsSample{
+		ContainerID: sample.GetContainerId(), ObservedAt: timeFromUnixNano(sample.GetObservedAtUnixNano()),
+		CPUPercent: sample.GetCpuPercent(), MemoryUsage: sample.GetMemoryUsage(), MemoryLimit: sample.GetMemoryLimit(),
+		NetworkRX: sample.GetNetworkRx(), NetworkTX: sample.GetNetworkTx(), BlockRead: sample.GetBlockRead(),
+		BlockWrite: sample.GetBlockWrite(), RestartCount: sample.GetRestartCount(), Health: sample.GetHealth(),
+		Uptime: time.Duration(sample.GetUptimeNano()),
+	}
+}
+
+type metricsMatrixReceiveStream struct{ *receiveStreamCore }
+
+func (s *metricsMatrixReceiveStream) Recv(ctx context.Context) (MetricsMatrixFrame, error) {
+	var frame pb.MetricsMatrixFrame
+	if err := s.recv(ctx, &frame); err != nil {
+		if status.Code(err) == codes.Unimplemented {
+			return MetricsMatrixFrame{}, fmt.Errorf("%w: metrics matrix", ErrHandlerUnavailable)
+		}
+		return MetricsMatrixFrame{}, err
+	}
+	return metricsMatrixFrameFromWire(&frame), nil
+}
+
+func metricsMatrixFrameFromWire(frame *pb.MetricsMatrixFrame) MetricsMatrixFrame {
+	result := MetricsMatrixFrame{
+		ObservedAt:    timeFromUnixNano(frame.GetObservedAtUnixNano()),
+		DroppedFrames: frame.GetDroppedFrames(),
+	}
+	if workload := frame.GetWorkload(); workload != nil {
+		result.Workload = WorkloadSummary{
+			CPUCapacity: workload.GetCpuCapacity(), MemoryCapacity: workload.GetMemoryCapacity(),
+			ContainersRunning: workload.GetContainersRunning(), ContainersTotal: workload.GetContainersTotal(),
+		}
+		for _, filesystem := range workload.GetFilesystems() {
+			result.Workload.Filesystems = append(result.Workload.Filesystems, ManagedFilesystem{
+				Path: filesystem.GetPath(), TotalBytes: filesystem.GetTotalBytes(), FreeBytes: filesystem.GetFreeBytes(),
+			})
+		}
+	}
+	for _, sample := range frame.GetContainers() {
+		result.Containers = append(result.Containers, statsSampleFromWire(sample))
+	}
+	return result
+}
+
 type statsReceiveStream struct{ *receiveStreamCore }
 
 func (s *statsReceiveStream) Recv(ctx context.Context) (StatsSample, error) {
@@ -687,13 +744,7 @@ func (s *statsReceiveStream) Recv(ctx context.Context) (StatsSample, error) {
 		}
 		return StatsSample{}, err
 	}
-	return StatsSample{
-		ContainerID: sample.GetContainerId(), ObservedAt: timeFromUnixNano(sample.GetObservedAtUnixNano()),
-		CPUPercent: sample.GetCpuPercent(), MemoryUsage: sample.GetMemoryUsage(), MemoryLimit: sample.GetMemoryLimit(),
-		NetworkRX: sample.GetNetworkRx(), NetworkTX: sample.GetNetworkTx(), BlockRead: sample.GetBlockRead(),
-		BlockWrite: sample.GetBlockWrite(), RestartCount: sample.GetRestartCount(), Health: sample.GetHealth(),
-		Uptime: time.Duration(sample.GetUptimeNano()),
-	}, nil
+	return statsSampleFromWire(&sample), nil
 }
 
 func (s *controlSession) Do(ctx context.Context, class TrafficClass, work func(context.Context) error) error {
@@ -757,6 +808,7 @@ type agentServiceAPI interface {
 	syncAudit(grpc.ServerStream) error
 	streamLogs(*pb.LogStreamRequest, grpc.ServerStream) error
 	streamStats(*pb.StatsStreamRequest, grpc.ServerStream) error
+	streamMetricsMatrix(*pb.MetricsMatrixRequest, grpc.ServerStream) error
 }
 
 type grpcAuditSyncStream struct {
@@ -1037,6 +1089,46 @@ func (s grpcStatsSender) Send(sample StatsSample) error {
 		BlockWrite: sample.BlockWrite, RestartCount: sample.RestartCount, Health: sample.Health,
 		UptimeNano: int64(sample.Uptime),
 	})
+}
+
+type grpcMetricsMatrixSender struct{ stream grpc.ServerStream }
+
+func (s grpcMetricsMatrixSender) Send(frame MetricsMatrixFrame) error {
+	wire := &pb.MetricsMatrixFrame{
+		ObservedAtUnixNano: unixNanoOrZero(frame.ObservedAt),
+		DroppedFrames:      frame.DroppedFrames,
+		Workload: &pb.WorkloadSummary{
+			CpuCapacity: frame.Workload.CPUCapacity, MemoryCapacity: frame.Workload.MemoryCapacity,
+			ContainersRunning: frame.Workload.ContainersRunning, ContainersTotal: frame.Workload.ContainersTotal,
+		},
+	}
+	for _, filesystem := range frame.Workload.Filesystems {
+		wire.Workload.Filesystems = append(wire.Workload.Filesystems, &pb.ManagedFilesystem{
+			Path: filesystem.Path, TotalBytes: filesystem.TotalBytes, FreeBytes: filesystem.FreeBytes,
+		})
+	}
+	for _, sample := range frame.Containers {
+		wire.Containers = append(wire.Containers, &pb.StatsSample{
+			ContainerId: sample.ContainerID, ObservedAtUnixNano: unixNanoOrZero(sample.ObservedAt),
+			CpuPercent: sample.CPUPercent, MemoryUsage: sample.MemoryUsage, MemoryLimit: sample.MemoryLimit,
+			NetworkRx: sample.NetworkRX, NetworkTx: sample.NetworkTX, BlockRead: sample.BlockRead,
+			BlockWrite: sample.BlockWrite, RestartCount: sample.RestartCount, Health: sample.Health,
+			UptimeNano: int64(sample.Uptime),
+		})
+	}
+	return s.stream.SendMsg(wire)
+}
+
+func (s *agentService) streamMetricsMatrix(_ *pb.MetricsMatrixRequest, stream grpc.ServerStream) error {
+	handler, ok := s.handler.(MetricsMatrixStreamHandler)
+	if !ok {
+		return status.Error(codes.Unimplemented, "Agent metrics matrix stream handler is not configured")
+	}
+	err := handler.StreamMetricsMatrix(stream.Context(), s.info, MetricsMatrixRequest{}, grpcMetricsMatrixSender{stream: stream})
+	if errors.Is(err, ErrHandlerUnavailable) {
+		return status.Error(codes.Unimplemented, err.Error())
+	}
+	return err
 }
 
 func (s *agentService) streamStats(request *pb.StatsStreamRequest, stream grpc.ServerStream) error {
@@ -1339,6 +1431,7 @@ func capabilityToWire(capability Capability) *pb.Capability {
 		BundledComposeVersion: capability.BundledComposeVersion, Reason: capability.Reason,
 		FsRead: capability.FSRead, FsWrite: capability.FSWrite,
 		FsReadReason: capability.FSReadReason, FsWriteReason: capability.FSWriteReason,
+		MetricsMatrix: capability.MetricsMatrix,
 	}
 }
 
@@ -1352,6 +1445,7 @@ func capabilityFromWire(capability *pb.Capability) Capability {
 		BundledComposeVersion: capability.GetBundledComposeVersion(), Reason: capability.GetReason(),
 		FSRead: capability.GetFsRead(), FSWrite: capability.GetFsWrite(),
 		FSReadReason: capability.GetFsReadReason(), FSWriteReason: capability.GetFsWriteReason(),
+		MetricsMatrix: capability.GetMetricsMatrix(),
 	}
 }
 
@@ -1461,6 +1555,14 @@ func statsRPCHandler(service any, stream grpc.ServerStream) error {
 	return service.(agentServiceAPI).streamStats(&request, stream)
 }
 
+func metricsMatrixRPCHandler(service any, stream grpc.ServerStream) error {
+	var request pb.MetricsMatrixRequest
+	if err := stream.RecvMsg(&request); err != nil {
+		return err
+	}
+	return service.(agentServiceAPI).streamMetricsMatrix(&request, stream)
+}
+
 func auditRPCHandler(service any, stream grpc.ServerStream) error {
 	return service.(agentServiceAPI).syncAudit(stream)
 }
@@ -1480,6 +1582,7 @@ var agentControlServiceDesc = grpc.ServiceDesc{
 		{StreamName: "SyncAudit", ServerStreams: true, ClientStreams: true, Handler: auditRPCHandler},
 		{StreamName: "StreamLogs", ServerStreams: true, Handler: logsRPCHandler},
 		{StreamName: "StreamStats", ServerStreams: true, Handler: statsRPCHandler},
+		{StreamName: "StreamMetricsMatrix", ServerStreams: true, Handler: metricsMatrixRPCHandler},
 	},
 }
 

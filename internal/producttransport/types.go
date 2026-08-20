@@ -90,6 +90,11 @@ type Capability struct {
 	FSWrite       bool
 	FSReadReason  string
 	FSWriteReason string
+	// MetricsMatrix reports that this Agent can serve the host-scoped metrics
+	// matrix stream. It is a capability rather than a protocol version because
+	// an Agent built before the feature reports the same version as one built
+	// after; only a field the older build does not set can tell them apart.
+	MetricsMatrix bool
 }
 
 type Heartbeat struct {
@@ -239,6 +244,53 @@ type StatsSample struct {
 }
 
 type StatsSender interface{ Send(StatsSample) error }
+
+// MetricsMatrixRequest opens the host-scoped metrics stream. It carries no
+// selector on purpose: a frame is the whole host, and narrowing is the viewer's
+// job rather than the protocol's.
+type MetricsMatrixRequest struct{}
+
+// ManagedFilesystem is capacity for a path Dockpilot writes to, deduplicated by
+// filesystem. It is not an inventory of the host's mounts.
+type ManagedFilesystem struct {
+	Path       string
+	TotalBytes uint64
+	FreeBytes  uint64
+}
+
+// WorkloadSummary is the Docker workload an Agent manages, against the capacity
+// its Engine reports. It is deliberately not host OS metrics; see the comment on
+// the proto message for why reading those from an Agent container is unsafe.
+type WorkloadSummary struct {
+	CPUCapacity       uint32
+	MemoryCapacity    uint64
+	ContainersRunning uint32
+	ContainersTotal   uint32
+	Filesystems       []ManagedFilesystem
+}
+
+// MetricsMatrixFrame is one complete picture of a host at one instant. Rows and
+// summary come from a single membership snapshot, so a frame never disagrees
+// with itself, and frames rather than samples are the unit of loss.
+type MetricsMatrixFrame struct {
+	ObservedAt    time.Time
+	Workload      WorkloadSummary
+	Containers    []StatsSample
+	DroppedFrames uint64
+}
+
+type MetricsMatrixSender interface {
+	Send(MetricsMatrixFrame) error
+}
+
+type MetricsMatrixStreamHandler interface {
+	StreamMetricsMatrix(context.Context, SessionInfo, MetricsMatrixRequest, MetricsMatrixSender) error
+}
+
+type MetricsMatrixReceiveStream interface {
+	Recv(context.Context) (MetricsMatrixFrame, error)
+	Close() error
+}
 
 type StatsStreamHandler interface {
 	StreamStats(context.Context, SessionInfo, StatsRequest, StatsSender) error
@@ -401,6 +453,7 @@ type ControlSession interface {
 	StartOperation(context.Context, OperationRequest) (OperationResponse, error)
 	OpenLogs(context.Context, LogRequest) (LogReceiveStream, error)
 	OpenStats(context.Context, StatsRequest) (StatsReceiveStream, error)
+	OpenMetricsMatrix(context.Context, MetricsMatrixRequest) (MetricsMatrixReceiveStream, error)
 	State() State
 	LastHeartbeat() time.Time
 	Do(context.Context, TrafficClass, func(context.Context) error) error

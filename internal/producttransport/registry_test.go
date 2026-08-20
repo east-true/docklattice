@@ -89,6 +89,9 @@ func (*registryTestSession) StartOperation(context.Context, OperationRequest) (O
 func (*registryTestSession) OpenLogs(context.Context, LogRequest) (LogReceiveStream, error) {
 	return nil, ErrHandlerUnavailable
 }
+func (*registryTestSession) OpenMetricsMatrix(context.Context, MetricsMatrixRequest) (MetricsMatrixReceiveStream, error) {
+	return nil, errors.New("not implemented")
+}
 func (*registryTestSession) OpenStats(context.Context, StatsRequest) (StatsReceiveStream, error) {
 	return nil, ErrHandlerUnavailable
 }

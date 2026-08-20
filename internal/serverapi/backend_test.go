@@ -1436,6 +1436,7 @@ type fakeSession struct {
 	statsRequest           producttransport.StatsRequest
 	logStream              producttransport.LogReceiveStream
 	statsStream            producttransport.StatsReceiveStream
+	matrixStream           producttransport.MetricsMatrixReceiveStream
 }
 
 type fakeRecoverySession struct {
@@ -1547,6 +1548,14 @@ func (s *fakeSession) OpenLogs(_ context.Context, request producttransport.LogRe
 		return nil, producttransport.ErrHandlerUnavailable
 	}
 	return s.logStream, nil
+}
+func (s *fakeSession) OpenMetricsMatrix(_ context.Context, _ producttransport.MetricsMatrixRequest) (producttransport.MetricsMatrixReceiveStream, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.matrixStream == nil {
+		return nil, producttransport.ErrHandlerUnavailable
+	}
+	return s.matrixStream, nil
 }
 func (s *fakeSession) OpenStats(_ context.Context, request producttransport.StatsRequest) (producttransport.StatsReceiveStream, error) {
 	s.mu.Lock()

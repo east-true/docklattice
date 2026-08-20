@@ -214,6 +214,9 @@ func (*serverTestSession) StartOperation(context.Context, producttransport.Opera
 func (*serverTestSession) OpenLogs(context.Context, producttransport.LogRequest) (producttransport.LogReceiveStream, error) {
 	return nil, io.EOF
 }
+func (*serverTestSession) OpenMetricsMatrix(context.Context, producttransport.MetricsMatrixRequest) (producttransport.MetricsMatrixReceiveStream, error) {
+	return nil, io.EOF
+}
 func (*serverTestSession) OpenStats(context.Context, producttransport.StatsRequest) (producttransport.StatsReceiveStream, error) {
 	return nil, io.EOF
 }
