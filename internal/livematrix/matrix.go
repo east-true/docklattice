@@ -60,10 +60,16 @@ type Capacity struct {
 	Filesystems     []Filesystem
 }
 
+// Filesystem is one managed path's capacity. Unavailable says this particular
+// filesystem could not be read - a discovery root that has gone, or one the
+// Agent cannot stat - which is a fact about that path and not about the host.
+// One unreadable root must not take the whole workload summary with it.
 type Filesystem struct {
-	Path       string
-	TotalBytes uint64
-	FreeBytes  uint64
+	Path        string
+	TotalBytes  uint64
+	FreeBytes   uint64
+	Unavailable bool
+	Reason      string
 }
 
 // Row is one container in a frame. Pending is true when the container is in the
@@ -94,6 +100,13 @@ type Frame struct {
 	Rows             []Row
 	MembershipStale  bool
 	MembershipReason string
+	// WorkloadStale is the Engine's own capacity numbers failing to refresh. It
+	// moves independently of MembershipStale: listing containers and asking the
+	// Engine about itself are different calls that fail for different reasons,
+	// and collapsing them into one frame-wide error would report a stale CPU
+	// count as containers of unknown membership, or the reverse.
+	WorkloadStale  bool
+	WorkloadReason string
 }
 
 type Clock interface{ Now() time.Time }
@@ -165,8 +178,10 @@ type hostRelay struct {
 
 	// staleReason is empty when the last membership refresh succeeded. It is
 	// what turns "these rows are current" into "these rows are the last ones we
-	// could confirm, and here is why".
-	staleReason string
+	// could confirm, and here is why". workloadReason is the same fact about
+	// the Engine's capacity, kept separately because the two calls fail apart.
+	staleReason    string
+	workloadReason string
 }
 
 func New(config Config) (*Hub, error) {
@@ -348,13 +363,19 @@ func (h *Hub) reconcile(relay *hostRelay) {
 		h.mu.Unlock()
 	}
 
-	if capacity, err := h.config.Workload.Capacity(relay.ctx); err == nil {
-		h.mu.Lock()
-		if h.relay == relay {
-			relay.capacity, relay.haveCap = capacity, true
+	// The Engine's capacity is a separate call and fails separately. A failure
+	// here leaves the last known capacity in place and marks only the workload
+	// half of the frame; the container rows are unaffected.
+	capacity, capacityErr := h.config.Workload.Capacity(relay.ctx)
+	h.mu.Lock()
+	if h.relay == relay {
+		if capacityErr == nil {
+			relay.capacity, relay.haveCap, relay.workloadReason = capacity, true, ""
+		} else {
+			relay.workloadReason = boundedReason(capacityErr)
 		}
-		h.mu.Unlock()
 	}
+	h.mu.Unlock()
 }
 
 // publish assembles one frame and hands it to every viewer.
@@ -376,6 +397,8 @@ func (h *Hub) publish(relay *hostRelay) {
 	}
 	capacity := relay.capacity
 	staleReason := relay.staleReason
+	workloadReason := relay.workloadReason
+	haveCapacity := relay.haveCap
 	viewers := make([]*Subscription, 0, len(relay.viewers))
 	for _, viewer := range relay.viewers {
 		viewers = append(viewers, viewer)
@@ -404,6 +427,8 @@ func (h *Hub) publish(relay *hostRelay) {
 		Rows:             rows,
 		MembershipStale:  staleReason != "",
 		MembershipReason: staleReason,
+		WorkloadStale:    workloadReason != "" || !haveCapacity,
+		WorkloadReason:   workloadReason,
 	}
 	for _, viewer := range viewers {
 		viewer.put(frame)

@@ -253,9 +253,11 @@ type MetricsMatrixRequest struct{}
 // ManagedFilesystem is capacity for a path Dockpilot writes to, deduplicated by
 // filesystem. It is not an inventory of the host's mounts.
 type ManagedFilesystem struct {
-	Path       string
-	TotalBytes uint64
-	FreeBytes  uint64
+	Path        string
+	TotalBytes  uint64
+	FreeBytes   uint64
+	Unavailable bool
+	Reason      string
 }
 
 // WorkloadSummary is the Docker workload an Agent manages, against the capacity
@@ -286,6 +288,10 @@ type MetricsMatrixFrame struct {
 	// current one, with MembershipReason saying why the refresh failed.
 	MembershipStale  bool
 	MembershipReason string
+	// WorkloadStale moves independently of MembershipStale: the two come from
+	// different Engine calls that fail for different reasons.
+	WorkloadStale  bool
+	WorkloadReason string
 }
 
 type MetricsMatrixSender interface {

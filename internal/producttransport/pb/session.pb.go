@@ -1167,10 +1167,15 @@ func (*MetricsMatrixRequest) Descriptor() ([]byte, []int) {
 // root or the Agent state directory - deduplicated by filesystem. It is not an
 // inventory of the host's mounts.
 type ManagedFilesystem struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	TotalBytes    uint64                 `protobuf:"varint,2,opt,name=total_bytes,json=totalBytes,proto3" json:"total_bytes,omitempty"`
-	FreeBytes     uint64                 `protobuf:"varint,3,opt,name=free_bytes,json=freeBytes,proto3" json:"free_bytes,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Path       string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	TotalBytes uint64                 `protobuf:"varint,2,opt,name=total_bytes,json=totalBytes,proto3" json:"total_bytes,omitempty"`
+	FreeBytes  uint64                 `protobuf:"varint,3,opt,name=free_bytes,json=freeBytes,proto3" json:"free_bytes,omitempty"`
+	// unavailable is this one path failing to answer - a discovery root that has
+	// gone, or one the Agent cannot stat. It is a fact about the path, and must
+	// not take the rest of the workload summary with it.
+	Unavailable   bool   `protobuf:"varint,4,opt,name=unavailable,proto3" json:"unavailable,omitempty"`
+	Reason        string `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1224,6 +1229,20 @@ func (x *ManagedFilesystem) GetFreeBytes() uint64 {
 		return x.FreeBytes
 	}
 	return 0
+}
+
+func (x *ManagedFilesystem) GetUnavailable() bool {
+	if x != nil {
+		return x.Unavailable
+	}
+	return false
+}
+
+func (x *ManagedFilesystem) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
 }
 
 // WorkloadSummary is the Docker workload this Agent manages, against the
@@ -1335,8 +1354,14 @@ type MetricsMatrixFrame struct {
 	// a sample yet. Present-but-unreported is not the same as gone, and a slow
 	// container must not delay the frame for the others.
 	PendingContainerIds []string `protobuf:"bytes,7,rep,name=pending_container_ids,json=pendingContainerIds,proto3" json:"pending_container_ids,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// workload_stale moves independently of membership_stale. Listing containers
+	// and asking the Engine about its own capacity are different calls that fail
+	// for different reasons; one frame-wide error would report a stale CPU count
+	// as containers of unknown membership, or the reverse.
+	WorkloadStale  bool   `protobuf:"varint,8,opt,name=workload_stale,json=workloadStale,proto3" json:"workload_stale,omitempty"`
+	WorkloadReason string `protobuf:"bytes,9,opt,name=workload_reason,json=workloadReason,proto3" json:"workload_reason,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *MetricsMatrixFrame) Reset() {
@@ -1416,6 +1441,20 @@ func (x *MetricsMatrixFrame) GetPendingContainerIds() []string {
 		return x.PendingContainerIds
 	}
 	return nil
+}
+
+func (x *MetricsMatrixFrame) GetWorkloadStale() bool {
+	if x != nil {
+		return x.WorkloadStale
+	}
+	return false
+}
+
+func (x *MetricsMatrixFrame) GetWorkloadReason() string {
+	if x != nil {
+		return x.WorkloadReason
+	}
+	return ""
 }
 
 type StatsSample struct {
@@ -2372,19 +2411,21 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"\x05error\x18\b \x01(\tR\x05error\"7\n" +
 	"\x12StatsStreamRequest\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\"\x16\n" +
-	"\x14MetricsMatrixRequest\"g\n" +
+	"\x14MetricsMatrixRequest\"\xa1\x01\n" +
 	"\x11ManagedFilesystem\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1f\n" +
 	"\vtotal_bytes\x18\x02 \x01(\x04R\n" +
 	"totalBytes\x12\x1d\n" +
 	"\n" +
-	"free_bytes\x18\x03 \x01(\x04R\tfreeBytes\"\x82\x02\n" +
+	"free_bytes\x18\x03 \x01(\x04R\tfreeBytes\x12 \n" +
+	"\vunavailable\x18\x04 \x01(\bR\vunavailable\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"\x82\x02\n" +
 	"\x0fWorkloadSummary\x12!\n" +
 	"\fcpu_capacity\x18\x01 \x01(\rR\vcpuCapacity\x12'\n" +
 	"\x0fmemory_capacity\x18\x02 \x01(\x04R\x0ememoryCapacity\x12-\n" +
 	"\x12containers_running\x18\x03 \x01(\rR\x11containersRunning\x12)\n" +
 	"\x10containers_total\x18\x04 \x01(\rR\x0fcontainersTotal\x12I\n" +
-	"\vfilesystems\x18\x05 \x03(\v2'.dockpilot.product.v1.ManagedFilesystemR\vfilesystems\"\x80\x03\n" +
+	"\vfilesystems\x18\x05 \x03(\v2'.dockpilot.product.v1.ManagedFilesystemR\vfilesystems\"\xd0\x03\n" +
 	"\x12MetricsMatrixFrame\x121\n" +
 	"\x15observed_at_unix_nano\x18\x01 \x01(\x03R\x12observedAtUnixNano\x12A\n" +
 	"\bworkload\x18\x02 \x01(\v2%.dockpilot.product.v1.WorkloadSummaryR\bworkload\x12A\n" +
@@ -2394,7 +2435,9 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"\x0edropped_frames\x18\x04 \x01(\x04R\rdroppedFrames\x12)\n" +
 	"\x10membership_stale\x18\x05 \x01(\bR\x0fmembershipStale\x12+\n" +
 	"\x11membership_reason\x18\x06 \x01(\tR\x10membershipReason\x122\n" +
-	"\x15pending_container_ids\x18\a \x03(\tR\x13pendingContainerIds\"\xa6\x03\n" +
+	"\x15pending_container_ids\x18\a \x03(\tR\x13pendingContainerIds\x12%\n" +
+	"\x0eworkload_stale\x18\b \x01(\bR\rworkloadStale\x12'\n" +
+	"\x0fworkload_reason\x18\t \x01(\tR\x0eworkloadReason\"\xa6\x03\n" +
 	"\vStatsSample\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x121\n" +
 	"\x15observed_at_unix_nano\x18\x02 \x01(\x03R\x12observedAtUnixNano\x12\x1f\n" +

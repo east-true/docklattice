@@ -136,6 +136,11 @@ message ManagedFilesystem {
   string path = 1;
   uint64 total_bytes = 2;
   uint64 free_bytes = 3;
+  // unavailable is this one path failing to answer - a discovery root that has
+  // gone, or one the Agent cannot stat. It is a fact about the path, and must
+  // not take the rest of the workload summary with it.
+  bool unavailable = 4;
+  string reason = 5;
 }
 
 // WorkloadSummary is the Docker workload this Agent manages, against the
@@ -178,6 +183,12 @@ message MetricsMatrixFrame {
   // a sample yet. Present-but-unreported is not the same as gone, and a slow
   // container must not delay the frame for the others.
   repeated string pending_container_ids = 7;
+  // workload_stale moves independently of membership_stale. Listing containers
+  // and asking the Engine about its own capacity are different calls that fail
+  // for different reasons; one frame-wide error would report a stale CPU count
+  // as containers of unknown membership, or the reverse.
+  bool workload_stale = 8;
+  string workload_reason = 9;
 }
 
 message StatsSample {

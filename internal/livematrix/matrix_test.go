@@ -77,13 +77,23 @@ type fakeWorkload struct {
 	mu       sync.Mutex
 	capacity Capacity
 	calls    int
+	err      error
 }
 
 func (w *fakeWorkload) Capacity(context.Context) (Capacity, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.calls++
+	if w.err != nil {
+		return Capacity{}, w.err
+	}
 	return w.capacity, nil
+}
+
+func (w *fakeWorkload) fail(err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.err = err
 }
 
 // manualTicker lets a test decide exactly when a frame is assembled.
@@ -469,4 +479,170 @@ func TestASlowViewerLosesWholeFramesAndIsToldHowMany(t *testing.T) {
 	if len(frame.Rows) != 1 {
 		t.Fatalf("the surviving frame is incomplete: %+v", frame.Rows)
 	}
+}
+
+// TestPendingMeansOnlyAwaitingItsFirstSample pins what pending is and is not.
+// It is membership minus what has reported - never a way to describe a failed
+// listing, and never overlapping the rows that did report.
+func TestPendingMeansOnlyAwaitingItsFirstSample(t *testing.T) {
+	source := &statsSource{slow: map[string]bool{"quiet": true}}
+	h := newHarness(t, source, "loud", "quiet")
+	viewer, err := h.hub.Subscribe(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer viewer.Close()
+	waitFor(t, "first reconcile", func() bool { return h.membership.callCount() >= 1 })
+
+	for attempt := 0; attempt < 50; attempt++ {
+		h.tickers.tick(t)
+		frame := nextFrame(t, viewer)
+
+		members := map[string]bool{}
+		pending := map[string]int{}
+		sampled := map[string]bool{}
+		for _, row := range frame.Rows {
+			members[row.ContainerID] = true
+			if row.Pending {
+				pending[row.ContainerID]++
+			} else {
+				sampled[row.ContainerID] = true
+			}
+		}
+		for id, count := range pending {
+			if count != 1 {
+				t.Fatalf("%q appears pending %d times", id, count)
+			}
+			if !members[id] {
+				t.Fatalf("%q is pending but not a member", id)
+			}
+			if sampled[id] {
+				t.Fatalf("%q is both pending and sampled", id)
+			}
+		}
+		if _, quietPending := pending["quiet"]; !quietPending {
+			t.Fatalf("a container that never emitted is not pending: %+v", frame.Rows)
+		}
+		if sampled["loud"] {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("the emitting container never produced a sample")
+}
+
+// TestMembershipAndWorkloadFailIndependently: the container listing and the
+// Engine's own capacity are different calls, and one failing must not describe
+// the other as unknown.
+func TestMembershipAndWorkloadFailIndependently(t *testing.T) {
+	source := &statsSource{}
+	h := newHarness(t, source, "a", "b")
+	viewer, err := h.hub.Subscribe(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer viewer.Close()
+	waitFor(t, "first reconcile", func() bool { return h.membership.callCount() >= 1 })
+
+	// Engine info fails; the container listing does not.
+	h.workload.fail(errors.New("engine info unavailable"))
+	before := h.membership.callCount()
+	h.events.fire()
+	waitFor(t, "reconcile", func() bool { return h.membership.callCount() > before })
+	h.tickers.tick(t)
+	frame := nextFrame(t, viewer)
+	if frame.MembershipStale {
+		t.Fatalf("an Engine info failure marked the container rows stale: %+v", frame)
+	}
+	if !frame.WorkloadStale || frame.WorkloadReason == "" {
+		t.Fatalf("an Engine info failure was not reported: %+v", frame)
+	}
+	if len(frame.Rows) != 2 {
+		t.Fatalf("rows were lost to an unrelated failure: %+v", frame.Rows)
+	}
+
+	// The reverse: listing fails, Engine info recovers.
+	h.workload.fail(nil)
+	h.membership.mu.Lock()
+	h.membership.err = errors.New("listing unavailable")
+	h.membership.mu.Unlock()
+	before = h.membership.callCount()
+	h.events.fire()
+	waitFor(t, "reconcile", func() bool { return h.membership.callCount() > before })
+	h.tickers.tick(t)
+	frame = nextFrame(t, viewer)
+	if !frame.MembershipStale {
+		t.Fatalf("a failed listing was not reported: %+v", frame)
+	}
+}
+
+// TestAnEventBurstCoalescesIntoSequentialReconciles is the bound that keeps a
+// noisy host from turning into a reconcile storm. A hundred events must not
+// become a hundred concurrent listings: the signal is collapsed and the
+// reconciles run one after another on the relay's own goroutine.
+func TestAnEventBurstCoalescesIntoSequentialReconciles(t *testing.T) {
+	source := &statsSource{}
+	h := newHarness(t, source, "a")
+
+	// Count how many listings overlap. Sequential reconciles never exceed one.
+	var concurrent, peak int
+	var peakMu sync.Mutex
+	h.membership.mu.Lock()
+	h.membership.mu.Unlock()
+	original := h.membership
+	gate := &gatedMembership{inner: original, onEnter: func() {
+		peakMu.Lock()
+		concurrent++
+		if concurrent > peak {
+			peak = concurrent
+		}
+		peakMu.Unlock()
+		time.Sleep(time.Millisecond)
+	}, onExit: func() {
+		peakMu.Lock()
+		concurrent--
+		peakMu.Unlock()
+	}}
+	hub, err := New(Config{
+		Stats: h.statsHub, Membership: gate, Events: h.events, Workload: h.workload,
+		FrameInterval: time.Hour, ReconcileEvery: 1000, TickerFactory: h.tickers,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hub.Close()
+	viewer, err := hub.Subscribe(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer viewer.Close()
+	waitFor(t, "first reconcile", func() bool { return original.callCount() >= 1 })
+
+	for range 100 {
+		h.events.fire()
+	}
+	// Let the relay work through whatever the burst produced.
+	time.Sleep(200 * time.Millisecond)
+
+	peakMu.Lock()
+	observed := peak
+	peakMu.Unlock()
+	if observed > 1 {
+		t.Fatalf("%d listings ran concurrently; an event burst must coalesce", observed)
+	}
+	if calls := original.callCount(); calls > 20 {
+		t.Fatalf("100 events produced %d listings; the signal did not coalesce", calls)
+	}
+}
+
+type gatedMembership struct {
+	inner   *fakeMembership
+	onEnter func()
+	onExit  func()
+}
+
+func (g *gatedMembership) Running(ctx context.Context) ([]string, error) {
+	g.onEnter()
+	defer g.onExit()
+	return g.inner.Running(ctx)
 }

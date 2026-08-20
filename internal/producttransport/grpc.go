@@ -719,6 +719,8 @@ func metricsMatrixFrameFromWire(frame *pb.MetricsMatrixFrame) MetricsMatrixFrame
 		PendingContainerIDs: append([]string(nil), frame.GetPendingContainerIds()...),
 		MembershipStale:     frame.GetMembershipStale(),
 		MembershipReason:    frame.GetMembershipReason(),
+		WorkloadStale:       frame.GetWorkloadStale(),
+		WorkloadReason:      frame.GetWorkloadReason(),
 	}
 	if workload := frame.GetWorkload(); workload != nil {
 		result.Workload = WorkloadSummary{
@@ -728,6 +730,7 @@ func metricsMatrixFrameFromWire(frame *pb.MetricsMatrixFrame) MetricsMatrixFrame
 		for _, filesystem := range workload.GetFilesystems() {
 			result.Workload.Filesystems = append(result.Workload.Filesystems, ManagedFilesystem{
 				Path: filesystem.GetPath(), TotalBytes: filesystem.GetTotalBytes(), FreeBytes: filesystem.GetFreeBytes(),
+				Unavailable: filesystem.GetUnavailable(), Reason: filesystem.GetReason(),
 			})
 		}
 	}
@@ -1103,6 +1106,8 @@ func (s grpcMetricsMatrixSender) Send(frame MetricsMatrixFrame) error {
 		PendingContainerIds: append([]string(nil), frame.PendingContainerIDs...),
 		MembershipStale:     frame.MembershipStale,
 		MembershipReason:    frame.MembershipReason,
+		WorkloadStale:       frame.WorkloadStale,
+		WorkloadReason:      frame.WorkloadReason,
 		Workload: &pb.WorkloadSummary{
 			CpuCapacity: frame.Workload.CPUCapacity, MemoryCapacity: frame.Workload.MemoryCapacity,
 			ContainersRunning: frame.Workload.ContainersRunning, ContainersTotal: frame.Workload.ContainersTotal,
@@ -1111,6 +1116,7 @@ func (s grpcMetricsMatrixSender) Send(frame MetricsMatrixFrame) error {
 	for _, filesystem := range frame.Workload.Filesystems {
 		wire.Workload.Filesystems = append(wire.Workload.Filesystems, &pb.ManagedFilesystem{
 			Path: filesystem.Path, TotalBytes: filesystem.TotalBytes, FreeBytes: filesystem.FreeBytes,
+			Unavailable: filesystem.Unavailable, Reason: filesystem.Reason,
 		})
 	}
 	for _, sample := range frame.Containers {
