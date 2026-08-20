@@ -528,7 +528,48 @@ record other_projects_on_host "$(jq -r --arg uid "$project_uid" '[.projects[]? |
 # The database snapshot for the restore case is taken here, while the Server is
 # stopped, so that later cases can advance the canonical Audit past it and the
 # restore is genuinely backwards rather than a no-op.
+#
+# It is taken only once Audit coverage is established and acknowledged, and that
+# is the difference between this case testing one thing or another. A snapshot
+# taken before the Agent's first Audit sync restores to a database with no
+# coverage row at all, and the Server then establishes coverage fresh at
+# wherever the Agent resumes - a real path, but the easy one. A snapshot taken
+# after coverage exists restores an archive that believes it acknowledged far
+# less than it had, while the Agent resumes from the acknowledgement this Server
+# issued and has now forgotten. That is the case 6.4 is about, and waiting for
+# the precondition is what makes it happen every run instead of some runs.
 if selected db-restore; then
+    # Coverage is established by the Agent's first Audit sync, and that needs
+    # something to have happened. When this case runs inside the full matrix the
+    # earlier cases supply it; run on its own it would wait for events nobody is
+    # producing. These containers are created by this harness, carry its own
+    # label, and remove themselves.
+    activity=1
+    while [ "$activity" -le 6 ]; do
+        docker run --pull never --rm --name "$prefix-audit-activity-$activity" \
+            --label io.dockpilot.role=hardening-fixture --entrypoint /bin/sh \
+            "$fixture_image" -c 'exit 0' >/dev/null 2>&1 || true
+        activity=$((activity + 1))
+    done
+    snapshot_ready=0
+    deadline=$(( $(date +%s) + 180 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        # The request is made inline rather than through audit_page, which is
+        # defined further down the file and does not exist yet at this point.
+        if curl --fail --silent --show-error --max-time 10 --cacert "$runtime/bootstrap/server-ca.crt" \
+            "$base_url/api/v1/hosts/$agent_id/audit?limit=1" \
+            >"$evidence_dir/db-restore.snapshot-precondition.json" 2>/dev/null &&
+            jq -e '.coverage.established == true and .coverage.ack != null and (.coverage.ack.seq // 0) > 0' \
+                "$evidence_dir/db-restore.snapshot-precondition.json" >/dev/null 2>&1; then
+            snapshot_ready=1
+            break
+        fi
+        sleep 2
+    done
+    [ "$snapshot_ready" -eq 1 ] ||
+        fail "db-restore: Audit coverage was never established, so a snapshot would not exercise a backwards restore"
+    record db_restore_snapshot_ack "$(jq -r '"\(.coverage.ack.incarnation),\(.coverage.ack.seq)"' \
+        "$evidence_dir/db-restore.snapshot-precondition.json")"
     docker stop "$server" >/dev/null
     # The helper runs as root, so the copy has to be handed back to the Server's UID.
     server_state_sh 'cp /state/server.db /state/server.db.snapshot && chown 65532:65532 /state/server.db.snapshot && chmod 0600 /state/server.db.snapshot' >/dev/null
@@ -1086,9 +1127,20 @@ if selected db-restore; then
     # acknowledgement had moved past the snapshot, which this harness does not
     # control. Record which path was taken so the evidence says what was
     # exercised rather than leaving it to be inferred from a pass.
-    record db_restore_server_regression_ranges "$(jq -r '
+    regression_ranges=$(jq -r '
         [.coverage.gaps[]? | select(.source == "SERVER_CURSOR_REGRESSION")] | length
-      ' "$evidence_dir/db-restore.audit.after.json" 2>/dev/null || echo 0)"
+      ' "$evidence_dir/db-restore.audit.after.json" 2>/dev/null || echo 0)
+    case "$regression_ranges" in ''|*[!0-9]*) regression_ranges=0 ;; esac
+    record db_restore_server_regression_ranges "$regression_ranges"
+    restored_start=$(jq -r '.coverage.start.cursor | "\(.incarnation),\(.seq)"' \
+        "$evidence_dir/db-restore.audit.after.json" 2>/dev/null || echo unknown)
+    record db_restore_coverage_start_after "$restored_start"
+    # The snapshot carried an established coverage row, so the restore had to
+    # strand a range and the Server had to account for it. Recovering by
+    # establishing coverage afresh would mean the precondition above did not
+    # hold and this case is measuring the easy path again.
+    [ "$regression_ranges" -ge 1 ] ||
+        fail "db-restore: the restore stranded no range; the snapshot precondition did not hold and the recovery path was not exercised"
     record db_restore_identity_preserved PASS
     record db_restore_ack_watermark_not_regressed PASS
     # The Server's own record of everything requested after the snapshot is
