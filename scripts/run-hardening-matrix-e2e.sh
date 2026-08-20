@@ -1042,8 +1042,20 @@ if selected db-restore; then
         fail "db-restore: server_identity_id changed although only the database was restored"
     [ "$(read_identity_field archive_generation)" = "$generation_baseline" ] ||
         fail "db-restore: archive_generation advanced although the Identity State was untouched"
-    wait_active_host "$agent_id" "$evidence_dir/db-restore.dashboard.json" 300 ||
+    if ! wait_active_host "$agent_id" "$evidence_dir/db-restore.dashboard.json" 300; then
+        # A reconnect that never happens is decided by cursor state, and the
+        # dashboard shows only that the host is OFFLINE. Capture what the two
+        # sides believe about coverage before the run is torn down, or the
+        # failure is unactionable.
+        audit_page "$evidence_dir/db-restore.audit.stuck.json" 2>/dev/null || true
+        agent_state_sh 'cat /state/identity/agent-state.json 2>/dev/null || true' \
+            >"$evidence_dir/db-restore.agent-state.stuck.json" 2>/dev/null || true
+        agent_state_sh 'ls -l /state/audit-wal 2>/dev/null || true' \
+            >"$evidence_dir/db-restore.agent-wal.stuck.txt" 2>/dev/null || true
+        capture_log "$agent" "$evidence_dir/db-restore.agent.stuck.log"
+        capture_log "$server" "$evidence_dir/db-restore.server.stuck.log"
         fail "db-restore: the Agent did not reconnect to the restored Server"
+    fi
     settled=0
     deadline=$(( $(date +%s) + 180 ))
     while [ "$(date +%s)" -lt "$deadline" ]; do

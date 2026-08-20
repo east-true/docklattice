@@ -184,9 +184,12 @@ root, or Join Token behind.
 `join-token-restart` is not in the default selection and is asked for by name.
 It has to run before any case that replaces the Agent container, since the flag
 still being on the argument list is the whole point; but an extra Agent restart
-at the head of the sequence changes what `db-restore` measures, and that case
-then fails. The interaction is recorded as an open question in the
-[campaign record](v1-final-hardening.md) rather than averaged away by reordering.
+at the head of the sequence makes `db-restore` more likely to hit an open
+product defect - a Server restored behind the Agent's WAL floor leaves a range
+neither side can explain, and the Agent never reconnects. That defect is
+described in the [campaign record](v1-final-hardening.md) and pinned by
+`internal/auditstore/restore_floor_test.go`. Running this case separately keeps
+`db-restore` measuring the restore contract rather than the defect's odds.
 The case asserts both of its preconditions - the consumed token is gone, and the
 container still carries `--join-token-file` - before it does anything, so it
 cannot quietly degrade into a plain restart test.

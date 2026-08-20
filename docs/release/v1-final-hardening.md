@@ -77,40 +77,64 @@ each one meant a gate had been reporting a result it had not established.
   not, and failed. The driver now waits for that evidence, bounded by the case
   deadline.
 
-### One interaction is unexplained
+### `db-restore`: an Agent that can never reconnect
 
-`db-restore` restores a Server database snapshot taken once, immediately after
-the baseline, and requires the Agent to come back. Adding one more Agent
-restart to the head of the sequence - which is what `join-token-restart` does -
-makes it fail:
+The hardening matrix's `db-restore` case fails intermittently with
+"the Agent did not reconnect to the restored Server". It was first noticed
+because `join-token-restart` made it more likely, and first written up here as
+an interaction between the two cases. That was wrong - the extra restart only
+changes the odds. The cause has since been isolated to a single state, and it
+has nothing to do with either case.
 
-| Selection | Result |
-|---|---|
-| the ten default cases | PASS (1/1) |
-| the ten plus `join-token-restart` first | FAIL (2/2), `db-restore: the Agent did not reconnect to the restored Server` |
-| `db-restore` alone | PASS (2/2) |
-| `join-token-restart` then `db-restore` | PASS (1/1) |
+**What happens.** An operator restores a Server database backup. The restored
+database knows it acknowledged Audit records through some cursor. The Agent was
+not restored, and it released everything it saw acknowledged *after* that backup
+was taken, so its WAL floor now sits above the restored delivery cursor. The
+range between them exists nowhere: the Server does not have it, and the Agent
+cannot resend it.
 
-The Server refuses the session in a loop:
+`CheckAndAdvanceACK` therefore refuses every ACK, because the range is covered by
+neither a canonical event nor an effective gap entry:
 
     agent session closed agent=...: AUDIT_ACK_INELIGIBLE: proposed (4,63), 1 unexplained ranges
 
-and the host stays OFFLINE for the full 300-second window. The harness's own
-standard for this case is that the Server either refuses the cursor regression
-or catches up from the Agent's retained WAL; neither happens here, and the Agent
-has no diagnostics of its own to say so (finding 4 again).
+The session ends, the Agent reconnects, and it is refused again - indefinitely.
+The host stays OFFLINE, and the Agent has no diagnostics of its own to say why
+(finding 4 again).
 
-This is not a regression from the bootstrap fix: the same source passed the full
-sequence when the extra restart was absent, and the two-case reproduction passes.
-It is a sensitivity to how much audit history and how many incarnations precede
-the restore, and one extra incarnation crosses it. `join-token-restart` is
-therefore run as its own invocation rather than in the default selection, so
-neither gate silently measures something other than what it was written for.
+**Why nothing recovers it.** `auditsync`'s `CursorBehindFloor` branch is the one
+path that would raise the Server's coverage start to the Agent's floor, and it
+is gated on coverage *not* already being established - which after a restore it
+is, from the restored row. `EstablishCoverageStart` is immutable once set, so the
+Server cannot raise it afterwards either. Only a gap entry explains the range,
+and only the Agent can claim one today - and it has no basis to claim a gap for
+records it delivered and saw acknowledged. The side that knows the range will
+never exist is the Server.
 
-**Open.** What has not been established is whether an Agent in this state can
-ever recover, or whether a real operator restoring a Server backup onto a fleet
-with ordinary restart history would land in it. Both need answering before the
-interface freeze.
+`internal/auditstore/restore_floor_test.go` pins all four steps: the refusal with
+the exact unexplained range, the immutable coverage start, the refusal persisting
+after the attempted repair, and a gap claim resolving it.
+
+**Severity: P1.** A Server backup restore is a documented recovery procedure, and
+the longer a fleet has been running the more likely each Agent's floor is to have
+advanced past the backup. The result is an Agent that is permanently offline and
+gives no local reason.
+
+**Proposed fix, not yet made.** When `CursorBehindFloor` arrives and coverage is
+already established, the Server should record an effective gap for
+`[requested, floor)` with its own reason, rather than doing nothing. That is what
+a gap entry means - the Server will never hold these records, and here is why -
+and it keeps the claim on the side that can actually make it truthfully. This
+changes Audit coverage semantics, so it is written down here rather than done as
+a side effect of investigating.
+
+**Measured rate.** With `join-token-restart` at the head of the full sequence:
+FAIL, FAIL, PASS. Without it: PASS. `db-restore` alone: PASS, PASS. Three cases
+including it: PASS. The earlier claim in this record that it failed 2/2 with the
+case and passed 1/1 without was drawn before the third run and read more into
+those numbers than they support; the case affects likelihood, not outcome.
+`join-token-restart` is still run as its own invocation, so neither gate's result
+depends on that likelihood.
 
 ## What is missing
 
