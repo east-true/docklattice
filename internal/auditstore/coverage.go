@@ -261,7 +261,7 @@ func snapshotEqualsRevision(ctx context.Context, tx *connectionTx, snapshot Cove
 	return true, rows.Err()
 }
 
-func loadCursorState(ctx context.Context, tx *connectionTx, archiveID, agentID string) (cursorState, error) {
+func loadCursorState(ctx context.Context, tx reader, archiveID, agentID string) (cursorState, error) {
 	var nextInc, nextSeq, ackInc, ackSeq sql.NullInt64
 	var revision int64
 	var updated string

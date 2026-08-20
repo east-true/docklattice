@@ -90,7 +90,7 @@ func cursorValue(cursor *Cursor) Cursor {
 
 func unexplainedACKRanges(
 	ctx context.Context,
-	tx *connectionTx,
+	tx reader,
 	archiveID, agentID string,
 	currentACK *Cursor,
 	proposed, deliveryNext Cursor,
@@ -146,7 +146,7 @@ func unexplainedACKRanges(
 	return unexplained, nil
 }
 
-func coverageStart(ctx context.Context, tx *connectionTx, archiveID, agentID string) (Cursor, error) {
+func coverageStart(ctx context.Context, tx reader, archiveID, agentID string) (Cursor, error) {
 	var incarnation, seq int64
 	err := tx.row(ctx, `
 		SELECT from_incarnation, from_seq
@@ -166,7 +166,7 @@ func coverageStart(ctx context.Context, tx *connectionTx, archiveID, agentID str
 
 func relevantIncarnations(
 	ctx context.Context,
-	tx *connectionTx,
+	tx reader,
 	archiveID, agentID string,
 	from, until uint64,
 ) (map[uint64]struct{}, error) {
@@ -200,7 +200,7 @@ func relevantIncarnations(
 // vacuously complete.
 func ackRangeEnd(
 	ctx context.Context,
-	tx *connectionTx,
+	tx reader,
 	archiveID, agentID string,
 	incarnation uint64,
 	proposed, deliveryNext Cursor,
@@ -236,7 +236,7 @@ type sequenceInterval struct{ from, until uint64 }
 
 func missingACKCoverage(
 	ctx context.Context,
-	tx *connectionTx,
+	tx reader,
 	archiveID, agentID string,
 	incarnation, from, until uint64,
 ) ([]Range, error) {

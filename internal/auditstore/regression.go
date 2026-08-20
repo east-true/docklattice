@@ -58,7 +58,7 @@ func (s *Store) ACKEligibility(
 	// writer. CheckAndAdvanceACK re-decides this under IMMEDIATE before it
 	// advances anything, so a snapshot that goes stale here can only cost an
 	// extra refusal - never a wrong acceptance.
-	return s.withRead(ctx, func(tx *connectionTx) error {
+	return s.withRead(ctx, func(tx reader) error {
 		state, err := loadCursorState(ctx, tx, archiveID, agentID)
 		if err != nil {
 			return err

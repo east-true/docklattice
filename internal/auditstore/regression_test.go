@@ -2,6 +2,7 @@ package auditstore
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
@@ -268,4 +269,25 @@ func assertRegressionEntries(t *testing.T, ctx context.Context, store *Store, wa
 			t.Fatalf("entry[%d] = %+v, want %+v", index, got[index], want[index])
 		}
 	}
+}
+
+// TestAReadTransactionCannotWrite pins the guarantee that makes withRead safe
+// to use on the Audit hot path.
+//
+// A deferred transaction that tries to upgrade to a write is refused outright,
+// without waiting on busy_timeout - the contention defect the Server write path
+// was changed for. withRead therefore hands its body a handle with no exec, so
+// the compiler refuses the mistake rather than a comment asking someone not to
+// make it. This fails if exec is ever added to readTx, or if reader is widened
+// to include it.
+func TestAReadTransactionCannotWrite(t *testing.T) {
+	var tx reader = (*readTx)(nil)
+	if _, writable := tx.(interface {
+		exec(ctx context.Context, query string, args ...any) (sql.Result, error)
+	}); writable {
+		t.Fatal("a read transaction handle can execute writes; a deferred transaction that upgrades is refused without waiting")
+	}
+	// The immediate transaction's handle still satisfies the same read surface,
+	// so helpers shared by both paths keep working.
+	var _ reader = (*connectionTx)(nil)
 }

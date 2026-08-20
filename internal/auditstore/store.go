@@ -59,14 +59,30 @@ func (s *Store) withImmediate(ctx context.Context, fn func(*connectionTx) error)
 	return nil
 }
 
+// reader is the query surface shared by both transaction kinds. Helpers that
+// only read take this, so they can be called from either.
+type reader interface {
+	query(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	row(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// readTx is a deferred transaction's handle. It deliberately has no exec: a
+// deferred transaction that later tries to write is refused outright, without
+// waiting on busy_timeout, which is the contention defect the write path was
+// changed for. Rather than leave that to a comment and a careful reader, a body
+// running under withRead is handed something that cannot write at all.
+type readTx struct{ conn *sql.Conn }
+
+func (tx *readTx) query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return tx.conn.QueryContext(ctx, query, args...)
+}
+func (tx *readTx) row(ctx context.Context, query string, args ...any) *sql.Row {
+	return tx.conn.QueryRowContext(ctx, query, args...)
+}
+
 // withRead runs a read-only body inside one deferred transaction, so several
 // queries see a single consistent snapshot without taking the write lock.
-//
-// A deferred transaction that later tries to write is refused without waiting
-// on busy_timeout - that is the contention defect the write path was changed
-// for - so this is only ever safe for a body that reads. Nothing it calls may
-// write; withImmediate is for that.
-func (s *Store) withRead(ctx context.Context, fn func(*connectionTx) error) (err error) {
+func (s *Store) withRead(ctx context.Context, fn func(reader) error) (err error) {
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return err
@@ -78,7 +94,7 @@ func (s *Store) withRead(ctx context.Context, fn func(*connectionTx) error) (err
 	defer func() {
 		_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
 	}()
-	return fn(&connectionTx{conn: conn})
+	return fn(&readTx{conn: conn})
 }
 
 func (tx *connectionTx) exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
