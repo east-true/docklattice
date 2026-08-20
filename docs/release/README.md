@@ -24,7 +24,7 @@ did *not* measure.
 | [Reproducible distribution](distribution.md) | PASS | `linux/amd64` and `linux/arm64` release images whose two independent build runs produced byte-identical archives. |
 | [Multi-Agent lab](multi-agent-lab.md) | PASS | Three Agents, each on its own Docker Engine. One host partitioned, daemon-restarted, killed, or filled up must not affect the others; a crossed Agent/project pair must be refused; unequal backlogs must all be delivered. Found and now pins the dashboard heartbeat defect. |
 | [Power cut](power-cut.md) | PASS | A libvirt guest losing power mid-write. The file the API had acknowledged survived whole; the acknowledgement in flight at the cut landed too. |
-| [Long-running soak](soak.md) | STAGE 1 PASS | Accumulation that no injected fault can show. One hour of active workload - 113 cycles, 254 stream opens and closes, 84 operations, 9 reconnects - left descriptors and threads flat, Agent state settled, Audit lag at 1, and no OOM, 5xx, or SQLite contention. Stages 2 and 3 outstanding. |
+| [Long-running soak](soak.md) | STAGE 1 PASS (at `fd04135`) | Accumulation that no injected fault can show. One hour of active workload - 113 cycles, 254 stream opens and closes, 84 operations, 9 reconnects - left descriptors and threads flat, Agent state settled, Audit lag at 1, and no OOM, 5xx, or SQLite contention. Stages 2 and 3 outstanding. |
 
 ## Re-running the matrices, and the disposable-VM lab
 
@@ -59,6 +59,7 @@ Supporting record:
 | Document | Subject |
 |---|---|
 | [Defaults validation](defaults-validation.md) | Which operational defaults have final evidence and which remain provisional, row by row. |
+| [v1 final hardening campaign](v1-final-hardening.md) | What the re-runs and the three new gates found, what was fixed, what is still open, and why the interface freeze is not yet claimable. |
 
 ## Reading the gates honestly
 

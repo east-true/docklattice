@@ -1,6 +1,8 @@
 # Long-running soak
 
-Status: Stage 1 PASS. Stages 2 and 3 outstanding.
+Status: Stage 1 PASS at revision `fd04135`. Not yet re-established at the
+current revision - see the incomplete re-run at the end. Stages 2 and 3
+outstanding.
 
 Every other gate in this directory injects something and asserts what survives.
 This one injects nothing. It runs the product for hours and asserts that
@@ -223,3 +225,28 @@ does not make a soak unnecessary.
 It also does not run `docker-daemon-restart` or any other host-wide
 disruption. Those belong to a disposable host, not to a machine that has been
 running the operator's containers for the whole soak.
+
+## Stage 1 re-run at revision c6366b8: incomplete
+
+The recorded one-hour run above predates the dashboard heartbeat fix, and
+architecture section 30 asks for a soak after a transport or session change. A
+re-run was started at revision `c6366b83dc31c712b58ace47fe384bffb15a2a32` and
+stopped by the operator at 17.6 of 60 minutes, so **stage 1 has not been
+established at the current revision**.
+
+What the 35 samples it did produce showed, recorded because discarding it would
+be worse than labelling it:
+
+| Series | First | Peak | Last |
+|---|---|---|---|
+| Server RSS | 27.2 MiB | 31.2 MiB | 29.2 MiB |
+| Agent RSS | 25.2 MiB | 28.0 MiB | 26.3 MiB |
+| Server descriptors | 15 | 16 | 16 |
+| Agent descriptors | 11 | 11 | 10 |
+| Server / Agent threads | 11 / 11 | 12 / 12 | 12 / 12 |
+| Agent state on disk | 48 KiB | — | 356 KiB |
+| Audit lag | 1 | 1 | 1 |
+
+Zero gaps, zero OOM events, zero HTTP errors, and `host_state` ACTIVE in every
+sample. Seventeen minutes is not a soak: none of this is evidence that nothing
+accumulates, only that nothing had accumulated visibly by then.
