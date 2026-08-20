@@ -71,6 +71,7 @@ a uid the root cannot derive, and the request guard.
 | `db-restore` | the Server database is replaced with an older snapshot | 6.4/6.5: identity and generation are untouched and the acknowledged cursor is not left below its pre-restore watermark |
 | `disk-pressure` | the Agent state is moved to an 8 MiB filesystem | 14.3: a degraded-storage reason is reported through capability reason, capabilities stay enabled, and allowed reads keep working |
 | `audit-gap` | the WAL loss caused by that pressure | 11.6: every reported gap carries its precision, a design-named source, and an ordered range - never a silent hole |
+| `join-token-restart` | a registered Agent restarts with `--join-token-file` still on its command line and the consumed token deleted | the Agent returns ACTIVE with its original identity, and no second host appears |
 | `docker-daemon-restart` | the host Engine is restarted | the Agent returns ACTIVE and the Docker capability recovers |
 
 ## The closing invariant check
@@ -180,6 +181,12 @@ Observed detail worth keeping:
 `STATUS` recorded `status=PASS`, and the run left no container, network, runtime
 root, or Join Token behind.
 
+`join-token-restart` runs first. Later cases replace the Agent container with
+one started without the token flag, and the flag still being there is the whole
+point of this one. It also depends on the baseline having deleted the consumed
+token, and asserts both preconditions before it does anything, so it cannot
+quietly degrade into a plain restart test.
+
 ## Second recorded execution: the ten portable cases at the current revision
 
 The matrix was re-run after the fixture-safety, write-transaction, dashboard
@@ -226,3 +233,34 @@ Validate the checked-in static contract without Docker:
 ```sh
 ./scripts/verify-hardening-matrix-harness.sh
 ```
+
+## Fourth recorded execution: with `join-token-restart`, after the bootstrap fix
+
+    started_at              2026-08-20T12:03:04Z
+    finished_at             2026-08-20T12:11:42Z
+    docker_server_version   29.7.2
+    release_revision        7ed4e3a
+    server_image_id         sha256:935f7a646737300bc2589aec5c4157a8251df62c752d9c7e14ff010410287256
+    agent_image_id          sha256:64877302683103e73a9516bd7c52c8e32af4a2953bb915d9327214eda72b630b
+    selected_cases          join-token-restart plus the ten above
+
+`STATUS` recorded `status=PASS`, including:
+
+| Assertion | Result |
+| --- | --- |
+| `join_token_restart_without_bootstrap_secret` | PASS |
+| `join_token_restart_identity_preserved` | PASS |
+| `invariants_join_token_restart` | PASS |
+
+The case was written against the defect and checked in both directions. Run
+alone against the previous images it reproduces the report exactly:
+
+    status=FAIL
+    reason=join-token-restart: a registered Agent did not return ACTIVE after
+           restarting with a consumed Join Token file
+
+    dockpilot agent failed: configure agent runtime: inspect Join Token file:
+    lstat /var/lib/dockpilot/join-token: no such file or directory
+
+Against the images built from the fix it passes, and the Agent's log for the
+whole run is empty.

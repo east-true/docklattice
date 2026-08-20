@@ -37,10 +37,17 @@ find.
 | 2 | P1 | A deferred SQLite transaction that upgrades to a write is refused with `SQLITE_BUSY_SNAPSHOT` without the busy handler being invoked, so a concurrent write could fail immediately rather than wait. | Fixed. `Store.BeginWrite` takes an immediate write lock from a dedicated pool; `ErrBusy` answers 503 `SERVER_BUSY` instead of 500. |
 | 3 | P2 | A client hanging up — a closed tab, an SSE stream the reader walked away from, a `curl` that hit `--max-time` — reached the internal-error arm: HTTP 500 plus a line in the Server's failure diagnostics. Every live stream ends this way, so a diagnostics log meant for finding real failures filled with teardown noise. | Fixed. Client cancellation answers 499 and records nothing. |
 | 4 | P2 | The Agent process writes no diagnostics at all. Only the Server has a diagnostics writer, and an Agent's `docker logs` is empty across kills, restarts, partitions and an archive-rollback refusal — an unrecoverable condition with no local signal. An operator debugging a stuck Agent has the dashboard and nothing else. | **Open.** The rollback refusal is observable through the audit stream, which is how the recovery matrix asserts it, but that requires a working Server. |
-| 5 | P3 | `--join-token-file` is read unconditionally at startup. A registered Agent does not need a token — the runtime says so — but the flag is resolved before the runtime is consulted, so an operator who removes the consumed token and runs under a restart policy finds the Agent refusing to start. | **Open.** Workaround: drop the flag after registration. A narrow fix would treat `ENOENT` as "no token" while keeping every other error fail-closed. |
+| 5 | P1 | `--join-token-file` was read while the process was being assembled, before any durable state was loaded and therefore before anything knew whether an enrollment was needed. A container's argument list does not change between restarts, so an operator who followed the install guide's own instruction to remove the consumed token found the Agent refusing to start, and `restart: unless-stopped` could not recover it. On a fleet that is every Agent whose bootstrap secret was rotated or unmounted. | Fixed. The token is resolved on the enrollment path only; a registered Agent never opens the file. Pinned by eight tests in `internal/agentruntime/bootstrap_token_test.go` and the hardening matrix's `join-token-restart` case. |
 
 Fixes 1 and 2 predate this record; 3 was found by the multi-Agent lab's closing
 invariant and fixed here.
+
+Finding 5 was first recorded as P3 on the reasoning that an operator can drop
+the flag. That was wrong twice over. The install guide tells operators to
+remove the token after registration, so the product's own documented procedure
+walked into it; and the recovery is a container recreation on every affected
+host, which is exactly the fleet-wide manual intervention a restart policy
+exists to avoid. An already-registered Agent that cannot restart is P1.
 
 ### Harness defects found by running the harnesses
 

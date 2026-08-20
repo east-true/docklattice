@@ -72,7 +72,19 @@ docker run -d --name dockpilot-agent --restart unless-stopped \
 
 The Join Token file must be a regular owner-readable file with mode 0600 and
 must be readable as UID 65532 inside the container. Remove it after successful
-registration. Each discovery root must be an identical absolute-path bind
+registration: it is a bootstrap secret, and the Agent does not need it again.
+
+Removing it does not affect restarts. A registered Agent holds a runtime
+credential in its state volume and reconnects with that, so the Join Token file
+is read only when an enrollment is actually required - a new state volume, or
+an expired credential. Leaving `--join-token-file` on the container's command
+line while the file behind it is gone is therefore the expected steady state,
+and `--restart unless-stopped` recovers the Agent normally. Dockpilot never
+deletes the file itself; removing the secret stays the operator's action.
+
+Losing the state volume is the case that does need a token again. Issue a new
+one - purpose-bound with `--rejoin-agent-id` if the Agent had registered before -
+rather than expecting the consumed one to still work. Each discovery root must be an identical absolute-path bind
 mount: `/srv/stacks:/srv/stacks`, never a remapped path. Use `:ro` for the
 first-class read-only mode; use `:rw` only when file editing and backup restore
 are intended, and grant UID 65532 the corresponding host filesystem access.
