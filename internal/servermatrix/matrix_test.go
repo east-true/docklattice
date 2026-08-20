@@ -625,6 +625,30 @@ func TestUnmappedContainersKeepTheirMetrics(t *testing.T) {
 	}
 }
 
+// Knowing a container's image while knowing no project for it is the ordinary
+// state of a container somebody started by hand. It is unmapped, and it is
+// still shown.
+func TestAContainerKnownOnlyByItsImageIsStillUnmapped(t *testing.T) {
+	sessions := &fakeSessions{}
+	hub, source, _ := newContextHub(t, sessions)
+	source.set(map[string]ContainerContext{"a": {Image: "redis:7"}})
+
+	viewer, err := hub.Subscribe(context.Background(), "agent-1")
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	sessions.current().push(sampleFrame("a"))
+	view := nextView(t, viewer)
+
+	row := flatContainers(view)[0]
+	if !row.Unmapped || row.Image != "redis:7" {
+		t.Fatalf("row is %+v, want an unmapped container that still shows its image", row)
+	}
+	if len(view.Projects) != 1 || !view.Projects[0].Unmapped {
+		t.Fatalf("projects are %+v, want the unmapped bucket alone", view.Projects)
+	}
+}
+
 // Discovery failing is not the same as a container being unmanaged, and the
 // view says which one it is. The previous mapping stays rather than every row
 // losing its project name over one failed call.

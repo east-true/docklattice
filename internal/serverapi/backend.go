@@ -18,6 +18,7 @@ import (
 	"github.com/east-true/dockpilot/internal/auditstore"
 	"github.com/east-true/dockpilot/internal/producttransport"
 	"github.com/east-true/dockpilot/internal/projectmodel"
+	"github.com/east-true/dockpilot/internal/servermatrix"
 	"github.com/east-true/dockpilot/internal/serverstore"
 	"github.com/east-true/dockpilot/internal/webui"
 	"google.golang.org/grpc/status"
@@ -50,6 +51,7 @@ type Backend struct {
 	operationMergeGate chan struct{}
 	auditArchiveID     string
 	audit              *auditstore.Store
+	matrix             *servermatrix.Hub
 }
 
 type Option func(*Backend) error
@@ -105,6 +107,13 @@ func New(store *serverstore.Store, registry *producttransport.SessionRegistry, o
 			return nil, err
 		}
 	}
+	matrix, err := servermatrix.New(servermatrix.Config{
+		Sessions: matrixSessions{backend: backend}, Context: matrixContext{backend: backend},
+	})
+	if err != nil {
+		return nil, err
+	}
+	backend.matrix = matrix
 	return backend, nil
 }
 
@@ -931,12 +940,22 @@ func (b *Backend) OpenStats(ctx context.Context, request webui.LiveRequest) (web
 }
 
 func (b *Backend) authorizeLiveRequest(ctx context.Context, request webui.LiveRequest) error {
-	if request.AgentID == "" || !utf8.ValidString(request.AgentID) || !canonicalContainerID.MatchString(request.ContainerID) {
+	if !canonicalContainerID.MatchString(request.ContainerID) {
 		return fmt.Errorf("%w: valid Agent ID and canonical container ID are required", webui.ErrInvalidRequest)
+	}
+	return b.authorizeAgent(ctx, request.AgentID)
+}
+
+// authorizeAgent admits a live request only for an Agent the Server still has a
+// row for. A host-scoped stream carries no container ID to check, so this is
+// the whole check for it.
+func (b *Backend) authorizeAgent(ctx context.Context, agentID string) error {
+	if agentID == "" || !utf8.ValidString(agentID) {
+		return fmt.Errorf("%w: valid Agent ID is required", webui.ErrInvalidRequest)
 	}
 	var exists int
 	if err := b.store.DB().QueryRowContext(ctx,
-		`SELECT EXISTS(SELECT 1 FROM agents WHERE id = ? AND retired_at IS NULL)`, request.AgentID,
+		`SELECT EXISTS(SELECT 1 FROM agents WHERE id = ? AND retired_at IS NULL)`, agentID,
 	).Scan(&exists); err != nil {
 		return fmt.Errorf("serverapi: authorize live request: %w", err)
 	}

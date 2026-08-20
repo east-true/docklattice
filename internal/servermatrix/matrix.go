@@ -108,7 +108,7 @@ type ContainerRow struct {
 	Pending     bool
 	Sample      producttransport.StatsSample
 	ContainerContext
-	// Unmapped says discovery has no entry for this container. The row is still
+	// Unmapped says this container belongs to no project. The row is still
 	// here, with its metrics, because the Engine is the authority for what is
 	// running and a failed metadata join must not erase a running container.
 	// Hiding it would make the matrix quietly wrong exactly when something has
@@ -508,13 +508,12 @@ func (h *Hub) assemble(
 func containerRow(
 	id string, pending bool, sample producttransport.StatsSample, mapping map[string]ContainerContext,
 ) ContainerRow {
-	row := ContainerRow{ContainerID: id, Pending: pending, Sample: sample}
-	context, known := mapping[id]
-	if !known {
-		row.Unmapped = true
-		return row
-	}
-	row.ContainerContext = context
+	row := ContainerRow{ContainerID: id, Pending: pending, Sample: sample, ContainerContext: mapping[id]}
+	// Unmapped asks whether this container belongs to a project, not whether
+	// the lookup returned anything. Knowing a container's image while knowing
+	// no project for it is the ordinary state of a container somebody started
+	// by hand, and it is exactly as unmapped as one nothing is known about.
+	row.Unmapped = row.ProjectUID == "" && row.ProjectName == ""
 	return row
 }
 
