@@ -308,8 +308,15 @@ thresholds, Prometheus compatibility, process-level metrics, image-level runtime
 metrics, prediction. None started, none prepared for.
 
 `docs/interface-freeze.md` §9 says metrics are live, viewer-scoped, ephemeral,
-with no server-side history. This stays inside that sentence; the section is
-revised to name the new stream, the capability, and the host row's meaning.
+with no server-side history. This stays inside that sentence, and §9 has since
+been rewritten around the implementation: the two streams, the capability, the
+host row's meaning and what it is not, the three freshness facts, pending and
+unmapped containers, the aggregation and health rules, the two drop counters,
+and the lifecycle.
+
+The division of labour between the two documents is deliberate. This one keeps
+why — the measurements, the revisions, and the readings that turned out to be
+wrong. §9 keeps only what an outside consumer may depend on.
 
 ## 15. Test plan
 
