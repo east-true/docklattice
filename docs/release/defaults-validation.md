@@ -145,4 +145,8 @@ no adjacent-limit comparison was needed.
 | Stats interval/ring | provisional | real Docker viewer 0/1/N soak |
 
 The one-hour combined soak and the overnight soak required before the v1
-release candidate is signed have not been run.
+release candidate is signed have not been run. The harness that runs them now
+exists - see [`soak.md`](soak.md) - with all three of its stages outstanding.
+None of the rows above change until a stage produces evidence: the soak owns
+direction over time, not the values in this table, so even a passing soak
+promotes nothing here on its own.

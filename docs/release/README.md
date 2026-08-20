@@ -22,6 +22,25 @@ did *not* measure.
 | [Hardening matrix](hardening-matrix-e2e.md) | PASS | Injected failures the product claims to survive: Agent and Server kills, network partition, interrupted operation, cancelled Compose run, racing writes, rolled-back Server database, and a filesystem too small for the WAL. Every case closes with the same invariant check over locks, operations, journals, staging, Audit coverage, and secrets. |
 | [Abuse matrix](abuse-matrix-e2e.md) | PASS | Inputs the product must refuse: path escapes, secret exposure, operation ID rebinding, replayed Join Token, foreign CA, tampered backup archive, non-identical discovery bind, self-directed operations, malformed and oversized requests, and a Compose project name collision. |
 | [Reproducible distribution](distribution.md) | PASS | `linux/amd64` and `linux/arm64` release images whose two independent build runs produced byte-identical archives. |
+| [Long-running soak](soak.md) | NOT RUN | Accumulation that no injected fault can show: retained memory, threads and descriptors that are never released, Agent state that never settles, an Audit cursor that never catches up. The harness and its verifier are complete; no stage has produced evidence. |
+
+## Re-running the matrices on a working host
+
+The recorded execution in each gate document is the release evidence: revision
+`fd04135` / `f1d4087`, on the platform stated there. It is not replaced by
+anything below.
+
+The hardening, abuse, and recovery matrices were re-run afterwards on a
+developer machine that was also running ten unrelated Compose containers, to
+check the fixture-safety and write-transaction changes against a host the
+original evidence never covered. Hardening passed all ten selected cases,
+abuse passed three consecutive full runs, and recovery passed. Those runs used
+images built from a working tree rather than a tagged revision, so they are a
+verification result and not release evidence, and no gate document's status or
+recorded execution is derived from them.
+
+`docker-daemon-restart` was not among the selected cases: it stops every
+container on the machine, and that machine was not disposable.
 
 Supporting record:
 
@@ -39,13 +58,25 @@ point:
   names the final evidence it lacks. The resource matrix was defined to produce
   memory evidence, so it promotes memory evidence and nothing else.
 - The one-hour combined soak and the overnight soak that the plan requires
-  before a release candidate is signed **have not been run**.
+  before a release candidate is signed **have not been run**. What changed is
+  that there is now a harness to run them with, and a
+  [document](soak.md) that says plainly which stages are outstanding - which is
+  all three. A harness is not evidence.
 
 Two known non-blockers are recorded in the gates themselves: the hardening
 matrix records `docker-daemon-restart` as `SKIPPED_NOT_AUTHORIZED` unless the
 host grants non-interactive `sudo systemctl restart docker`, and the abuse
 matrix's `operation_flood_rejected` counter is 0 by the nature of that case —
 the real bounds are covered by its `operation-bounds` case instead.
+
+A third is worth stating in the same place: the harnesses now refuse to run
+against any project they did not create, and the clean-host gate reports
+`SKIPPED_NOT_CLEAN` rather than a product failure on a host that already
+manages other Compose projects. Both are consequences of these gates being run
+on a working machine for the first time; see
+[hardening-matrix-e2e.md](hardening-matrix-e2e.md) for the rule and
+[clean-host-install-e2e.md](clean-host-install-e2e.md) for what "clean" means
+in that gate.
 
 ## Running the gates yourself
 
@@ -61,7 +92,17 @@ boundary before it is trusted. Run the verifiers first; they need no Docker:
 ./scripts/verify-recovery-matrix-harness.sh
 ./scripts/verify-hardening-matrix-harness.sh
 ./scripts/verify-abuse-matrix-harness.sh
+./scripts/verify-fixture-selection.sh
+./scripts/verify-soak-harness.sh
 ```
+
+`verify-fixture-selection.sh` and `verify-soak-harness.sh` do more than read the
+runners. The first extracts the fixture-selection functions from the hardening
+and abuse runners and exercises them against a host with no projects, one
+project, many projects, a fixture that sorts last, the same project name at
+another root, and a uid the root cannot derive. The second does the same for the
+soak's leak verdict, against a real leak, ordinary noise, a settled warm-up, and
+a growing Audit lag. Both fail if the behaviour they describe stops being true.
 
 `verify-release-scope.sh` audits the transitive dependency graph of
 `./cmd/dockpilot` — not a directory — for any behaviour architecture section 18

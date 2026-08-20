@@ -1,6 +1,7 @@
 # Long-running soak
 
-Status: Stage 1 PASS (one-hour active soak). Stages 2 and 3 outstanding.
+Status: NOT RUN. The harness is complete and verified; no stage has produced
+evidence yet.
 
 Every other gate in this directory injects something and asserts what survives.
 This one injects nothing. It runs the product for hours and asserts that
@@ -142,15 +143,29 @@ A failure at any stage is fixed before the next is attempted. A later stage
 does not re-prove an earlier one; it looks for the slower accumulation the
 shorter run could not resolve.
 
+All three stages are outstanding.
+
 ## Recorded execution
 
-    stage                   1 (one-hour active soak)
-    mode                    active
-    duration                3600 s measured, 120 s settle
-    sample interval         30 s
+None. This section carries a stage's environment, sample count, per-metric
+quarter medians, and verdict once that stage has produced a sealed evidence
+directory. A harness that runs is not a gate that passed.
 
-Results are recorded here once each stage completes; see `STATUS`,
-`trend.json`, and `samples.jsonl` in the stage's evidence directory.
+What has been run so far, and is not evidence:
+
+- A three-minute active shakedown that exercised every workload branch, the
+  trend verdict, and the closing invariants end to end. It proves the harness
+  works, not that the product does.
+- A one-hour active run that was **discarded rather than recorded**. Its
+  descriptor counts were structurally zero: `/proc/<pid>/fd` cannot be listed
+  from the host for a process owned by another uid, and both containers run as
+  65532, so the check silently passed on a metric it never measured. The count
+  is now taken from inside the container. The same run was also edited while it
+  was executing, which invalidates it on its own - `sh` reads a script by byte
+  offset, so the trailing statements would have resumed mid-token.
+
+Stage 1 has to be run again on the corrected harness before this section says
+anything.
 
 ## What this gate does not do
 
