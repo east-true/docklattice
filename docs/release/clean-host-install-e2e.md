@@ -107,6 +107,37 @@ Any missing capability, extra host/project/fixture, terminal operation failure,
 timeout, malformed response, wrong image ID, or cleanup failure produces FAIL.
 There are no warning-only success paths.
 
+## Second recorded execution: a genuinely clean host
+
+The first execution ran on a WSL2 developer machine that happened to have no
+other Compose projects. This one ran on a disposable libvirt guest where
+Dockpilot had never run, provisioned by
+[`../../scripts/vm-lab-provision.sh`](../../scripts/vm-lab-provision.sh) with
+Docker installed from Ubuntu's own repository and nothing else - which is what
+this gate is defined for.
+
+    started_at              2026-08-20T10:39:06Z
+    finished_at             2026-08-20T10:39:16Z
+    guest                   dp-vm-clean, Ubuntu 24.04
+    kernel                  Linux 6.8.0-137-generic x86_64
+    docker_server_version   29.1.3
+    cgroup                  v2, systemd driver
+    release_version         1.0.0
+    release_revision        c6366b83dc31c712b58ace47fe384bffb15a2a32
+    compose_version         5.3.1
+    server_image_id         sha256:0c05818885eb56673b95608de83bb2b0ea7401ad8ed23c9018809ad87c4de6ee
+    agent_image_id          sha256:0d221f24ed5cb744e9b3b785bdbdf738cb3b950827951b4856e09acb9fda99f2
+    fixture_image_id        sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
+
+Every assertion above recorded PASS, with `network_downloads`, `image_builds`
+and `image_pushes` FORBIDDEN as before. The images were transferred to the guest
+with `docker save`/`docker load` and their IDs were preserved exactly, so the
+`--pull never` exact-ID contract held across the transfer.
+
+An earlier attempt on the same guest recorded `SKIPPED_NOT_CLEAN` because a
+previous gate had left one Compose project behind. That is the harness working:
+the gate refuses to claim a clean-host result on a host that is not clean.
+
 ## Evidence and cleanup
 
 API responses are capped at 1 MiB. Docker uses its bounded local log driver;

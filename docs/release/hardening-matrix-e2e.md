@@ -102,7 +102,15 @@ re-proved.
 `docker-daemon-restart` stops every container on the machine, so it runs only
 with `HARDENING_ALLOW_DOCKER_DAEMON_RESTART=1` and a non-interactive
 `systemctl restart docker`. Without both it records an explicit skip reason
-rather than being silently dropped.
+rather than being silently dropped. It has since been executed, in a disposable
+VM rather than on a working machine - see the second recorded execution below.
+
+The case restarts the Agent the way every other restart case in this matrix
+does, without the `--join-token-file` the baseline deliberately deleted. It
+originally used `docker start`, which re-ran the container's whole argument
+list including that flag, and the Agent refused to start against a file the
+harness had removed on purpose. That was a harness defect and not a product
+one: nothing in the product deletes a consumed token.
 
 ## Recorded execution
 
@@ -149,7 +157,7 @@ Recorded assertion results:
 | `invariants_db_restore` | PASS |
 | `invariants_concurrent_operations` | PASS |
 | `invariants_degraded_storage` | PASS |
-| `docker_daemon_restart` | SKIPPED_NOT_AUTHORIZED |
+| `docker_daemon_restart` | SKIPPED_NOT_AUTHORIZED (executed separately, below) |
 
 Observed detail worth keeping:
 
@@ -171,6 +179,47 @@ Observed detail worth keeping:
 
 `STATUS` recorded `status=PASS`, and the run left no container, network, runtime
 root, or Join Token behind.
+
+## Second recorded execution: the ten portable cases at the current revision
+
+The matrix was re-run after the fixture-safety, write-transaction, dashboard
+heartbeat and client-cancellation changes, on a developer workstation that was
+also running unrelated Compose projects - a host the original evidence never
+covered.
+
+    started_at              2026-08-20T10:30:10Z
+    finished_at             2026-08-20T10:38:34Z
+    docker_server_version   29.7.2
+    release_revision        c6366b83dc31c712b58ace47fe384bffb15a2a32
+    server_image_id         sha256:0c05818885eb56673b95608de83bb2b0ea7401ad8ed23c9018809ad87c4de6ee
+    agent_image_id          sha256:0d221f24ed5cb744e9b3b785bdbdf738cb3b950827951b4856e09acb9fda99f2
+    selected_cases          the ten cases above; docker-daemon-restart excluded
+
+`STATUS` recorded `status=PASS`. The fixture project was selected by the UID
+derived from this run's own Agent id and project root, with one unrelated
+Compose project on the host at the time.
+
+## Third recorded execution: `docker-daemon-restart` against a real service manager
+
+Run inside `dp-vm-clean`, a disposable Ubuntu 24.04 guest, so that
+`systemctl restart docker` acted on a machine nobody was using.
+
+    started_at              2026-08-20T10:31:58Z
+    finished_at             2026-08-20T10:32:10Z
+    docker_server_version   29.1.3
+    guest                   dp-vm-clean (libvirt)
+    release_revision        c6366b83dc31c712b58ace47fe384bffb15a2a32
+
+| Assertion | Result |
+| --- | --- |
+| `fixture_identity_verified` | PASS |
+| `docker_daemon_restart` | PASS |
+| `invariants_docker_daemon_restart` | PASS |
+
+The restart was real and the guest's own service manager is the proof:
+`systemctl show docker -p ActiveEnterTimestamp` moved to a time between the
+baseline dashboard and the post-restart dashboard. The Agent returned ACTIVE
+with its original identity and the Docker capability recovered.
 
 Validate the checked-in static contract without Docker:
 

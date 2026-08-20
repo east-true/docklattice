@@ -158,6 +158,25 @@ sibling routes refused them. The environment route was the consequential one,
 because a caller passing `reveal=1` or misspelling the key received masked
 values while believing it had asked for revealed ones.
 
+## Second recorded execution: at the current revision
+
+Re-run after the fixture-safety, write-transaction, dashboard heartbeat and
+client-cancellation changes, on a developer workstation that was also running
+unrelated Compose projects.
+
+    started_at              2026-08-20T10:39:38Z
+    docker_server_version   29.7.2
+    release_version         1.0.0
+    release_revision        c6366b83dc31c712b58ace47fe384bffb15a2a32
+    server_image_id         sha256:0c05818885eb56673b95608de83bb2b0ea7401ad8ed23c9018809ad87c4de6ee
+    agent_image_id          sha256:0d221f24ed5cb744e9b3b785bdbdf738cb3b950827951b4856e09acb9fda99f2
+
+All thirteen cases ran and `STATUS` recorded `status=PASS`. Two of them -
+`protected-compose-project` and `name-collision` - are the ones that used to
+pick their target by list position; on this host that would have aimed a real
+`compose.up` at somebody else's project. Both now resolve their target from the
+UID derived from this run's own Agent id and project root.
+
 Validate the checked-in static contract without Docker:
 
 ```sh

@@ -22,25 +22,37 @@ did *not* measure.
 | [Hardening matrix](hardening-matrix-e2e.md) | PASS | Injected failures the product claims to survive: Agent and Server kills, network partition, interrupted operation, cancelled Compose run, racing writes, rolled-back Server database, and a filesystem too small for the WAL. Every case closes with the same invariant check over locks, operations, journals, staging, Audit coverage, and secrets. |
 | [Abuse matrix](abuse-matrix-e2e.md) | PASS | Inputs the product must refuse: path escapes, secret exposure, operation ID rebinding, replayed Join Token, foreign CA, tampered backup archive, non-identical discovery bind, self-directed operations, malformed and oversized requests, and a Compose project name collision. |
 | [Reproducible distribution](distribution.md) | PASS | `linux/amd64` and `linux/arm64` release images whose two independent build runs produced byte-identical archives. |
+| [Multi-Agent lab](multi-agent-lab.md) | PASS | Three Agents, each on its own Docker Engine. One host partitioned, daemon-restarted, killed, or filled up must not affect the others; a crossed Agent/project pair must be refused; unequal backlogs must all be delivered. Found and now pins the dashboard heartbeat defect. |
+| [Power cut](power-cut.md) | PASS | A libvirt guest losing power mid-write. The file the API had acknowledged survived whole; the acknowledgement in flight at the cut landed too. |
 | [Long-running soak](soak.md) | STAGE 1 PASS | Accumulation that no injected fault can show. One hour of active workload - 113 cycles, 254 stream opens and closes, 84 operations, 9 reconnects - left descriptors and threads flat, Agent state settled, Audit lag at 1, and no OOM, 5xx, or SQLite contention. Stages 2 and 3 outstanding. |
 
-## Re-running the matrices on a working host
+## Re-running the matrices, and the disposable-VM lab
 
-The recorded execution in each gate document is the release evidence: revision
-`fd04135` / `f1d4087`, on the platform stated there. It is not replaced by
-anything below.
+The first recorded execution in each gate document is the release evidence:
+revision `fd04135` / `f1d4087`, on the platform stated there. It is not replaced
+by anything below.
 
-The hardening, abuse, and recovery matrices were re-run afterwards on a
-developer machine that was also running ten unrelated Compose containers, to
-check the fixture-safety and write-transaction changes against a host the
-original evidence never covered. Hardening passed all ten selected cases,
-abuse passed three consecutive full runs, and recovery passed. Those runs used
-images built from a working tree rather than a tagged revision, so they are a
-verification result and not release evidence, and no gate document's status or
-recorded execution is derived from them.
+Everything was then re-run at revision `c6366b8`, after the fixture-safety,
+write-transaction, dashboard-heartbeat and client-cancellation changes. Those
+runs used images built from a working tree rather than a tagged revision, so
+each is recorded as a second execution inside its own gate document rather than
+replacing the release evidence.
 
-`docker-daemon-restart` was not among the selected cases: it stops every
-container on the machine, and that machine was not disposable.
+Three things could not run on a working machine at all, and now run in
+disposable libvirt guests created by
+[`../../scripts/vm-lab-provision.sh`](../../scripts/vm-lab-provision.sh):
+
+| Needs | Why a workstation cannot host it | Gate |
+|---|---|---|
+| a real `systemctl restart docker` | stops every container on the machine | [hardening matrix](hardening-matrix-e2e.md), third execution |
+| a genuinely clean host | the gate is defined for a machine where Dockpilot has never run | [clean-host installation](clean-host-install-e2e.md), second execution |
+| an abrupt power cut | only a hypervisor can take the power away | [power cut](power-cut.md) |
+
+The [multi-Agent lab](multi-agent-lab.md) runs there too, for a different
+reason: it needs privileged Docker-in-Docker, which loads kernel modules and
+rewrites netfilter state on the *host* and does not undo either when its
+containers are removed. On this project's workstation that cost the operator
+remote access twice. The lab now refuses to start outside a `dp-vm-*` guest.
 
 Supporting record:
 

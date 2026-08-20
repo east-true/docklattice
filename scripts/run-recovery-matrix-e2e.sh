@@ -621,6 +621,10 @@ docker run --pull never --rm --user 0:0 --entrypoint /bin/sh -v "$runtime/agent:
     printf 'finished_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'plain_restart_reconnect=PASS\n'
     printf 'database_loss_identity_preserved=PASS\n'
+    printf 'archive_rebind_recorded=PASS\n'
+    printf 'archive_rollback_not_adopted=PASS\n'
+    printf 'archive_rollback_no_downward_rebind=PASS\n'
+    printf 'archive_rollback_generations_to_recover=%s\n' "$attempts"
     printf 'database_loss_generation_advanced=PASS\n'
     printf 'database_loss_automatic_reconnect=PASS\n'
     printf 'identity_loss_with_database_fails_closed=PASS\n'
