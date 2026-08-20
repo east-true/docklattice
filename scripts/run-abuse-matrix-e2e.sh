@@ -43,6 +43,10 @@ usage() {
 fail() {
     printf 'abuse matrix failed: %s\n' "$*" >&2
     failure_reason=$*
+    # fail is also reached from command substitutions, whose exit only leaves
+    # the subshell. set -e still aborts the run, but the reason would be lost,
+    # so it is recorded where cleanup can read it back.
+    [ -z "${failure_reason_file:-}" ] || printf '%s\n' "$*" >"$failure_reason_file" 2>/dev/null || true
     exit 1
 }
 
@@ -145,6 +149,7 @@ compose_project=$(printf '%s' "$prefix-fixture" | tr '[:upper:]' '[:lower:]')
 completed=0
 extra_containers=
 failure_reason="harness did not complete"
+failure_reason_file=
 
 capture_log() {
     docker inspect "$1" >/dev/null 2>&1 || return 0
@@ -201,6 +206,8 @@ cleanup() {
             printf 'status=PASS\n' >"$evidence_dir/STATUS"
         else
             [ "$status" -ne 0 ] || status=1
+            [ ! -s "${failure_reason_file:-/nonexistent}" ] ||
+                failure_reason=$(head -c 4096 "$failure_reason_file")
             [ "$runtime_cleaned" = true ] || failure_reason="runtime cleanup failed"
             {
                 printf 'status=FAIL\n'
@@ -222,6 +229,7 @@ chmod 0700 "$runtime"
 mkdir "$evidence_dir"
 chmod 0700 "$evidence_dir"
 artifact_created=1
+failure_reason_file="$evidence_dir/failure-reason.txt"
 {
     printf 'started_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'docker_server_version=%s\n' "$(docker info --format '{{.ServerVersion}}')"
@@ -234,6 +242,7 @@ artifact_created=1
 } >"$evidence_dir/environment.env"
 
 mkdir "$runtime/server" "$runtime/server/tls" "$runtime/agent" "$runtime/bootstrap" "$runtime/projects"
+fixture_root="$runtime/projects"
 socket_gid=$(stat -c '%g' /var/run/docker.sock)
 openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
     -subj '/CN=server' -addext 'subjectAltName=DNS:server,IP:127.0.0.1' \
@@ -290,8 +299,50 @@ wait_server_ready() {
     fail "Server did not become HTTPS-ready"
 }
 
+# fixture_uids is the set of project identities this harness created. Nothing
+# else may ever be the target of a request. allow_fixture_uid is the only way
+# into that set, and every entry is a UID this harness derived itself.
+fixture_uids=
+
+allow_fixture_uid() {
+    fixture_uids="$fixture_uids $1"
+}
+
+is_fixture_uid() {
+    for known_fixture_uid in $fixture_uids; do
+        [ "$known_fixture_uid" = "$1" ] && return 0
+    done
+    return 1
+}
+
+# guard_project_target sits in the one place every request passes through, so
+# a call site cannot forget it and a new one cannot be added without it. It
+# refuses both a project-scoped URL and an operation body that names a project
+# this harness does not own.
+guard_project_target() {
+    guarded_url=$1
+    guarded_body=$2
+    case "$guarded_url" in
+        */api/v1/projects/*)
+            guarded_target=${guarded_url#*/api/v1/projects/}
+            guarded_target=${guarded_target%%/*}
+            guarded_target=${guarded_target%%\?*}
+            is_fixture_uid "$guarded_target" ||
+                fail "fixture guard: request targets project $guarded_target, which this harness did not create"
+            ;;
+    esac
+    case "$guarded_body" in
+        *project_uid*)
+            guarded_target=$(printf '%s' "$guarded_body" | jq -r '.project_uid // empty' 2>/dev/null || true)
+            [ -z "$guarded_target" ] || is_fixture_uid "$guarded_target" ||
+                fail "fixture guard: request body targets project $guarded_target, which this harness did not create"
+            ;;
+    esac
+}
+
 api() {
     method=$1; url=$2; body=$3; output=$4
+    guard_project_target "$url" "$body"
     if [ "$method" = GET ]; then
         curl --fail --silent --show-error --max-time 15 --cacert "$runtime/bootstrap/server-ca.crt" "$url" >"$output.tmp"
     else
@@ -305,6 +356,7 @@ api() {
 # api_status writes the numeric HTTP status to stdout and the body to a file.
 api_status() {
     method=$1; url=$2; body=$3; output=$4
+    guard_project_target "$url" "$body"
     if [ "$method" = GET ]; then
         curl --silent --show-error --max-time 15 --output "$output" --write-out '%{http_code}' \
             --cacert "$runtime/bootstrap/server-ca.crt" "$url"
@@ -398,6 +450,54 @@ record() {
     printf '%s=%s\n' "$1" "$2" >>"$evidence_dir/assertions.env"
 }
 
+# ------------------------------------------------------- fixture identity
+# This matrix deliberately drives refused writes, restores, and Compose
+# mutations. On a host that also runs the operator's own Compose projects, a
+# target chosen by list position would aim those attempts at real files, so
+# every target is resolved from the identity this harness created.
+# The Agent derives a project UID as sha256(agent_id || NUL || canonical
+# working directory), so the harness can compute the UID it expects instead of
+# trusting the answer it is checking.
+expected_fixture_uid() {
+    printf '%s\000%s' "$1" "$2" | sha256sum | awk '{ print $1 }'
+}
+
+# find_fixture_project prints the UID of the one project carrying the fixture
+# name at the fixture root given in $2, or nothing when the dashboard does not
+# list it. It never falls back to a list position: more than one match, or a
+# UID that does not match the derivation above, is a failure rather than a
+# guess. Only genuine absence yields an empty answer.
+find_fixture_project() {
+    dashboard=$1
+    root=$2
+    # Some cases create a second root under a name of their own; both are still
+    # identities this harness made.
+    expect_name=${3:-$compose_project}
+    matched=$(jq -r --arg name "$expect_name" --arg root "$root" \
+        '[.projects[]? | select(.name == $name and .working_dir == $root)] | length' "$dashboard")
+    case "$matched" in
+        0) return 0 ;;
+        1) ;;
+        *) fail "fixture: $matched dashboard projects claim the fixture identity $expect_name at $root" ;;
+    esac
+    selected_uid=$(jq -r --arg name "$expect_name" --arg root "$root" \
+        '[.projects[] | select(.name == $name and .working_dir == $root)][0].uid' "$dashboard")
+    [ -n "$selected_uid" ] && [ "$selected_uid" != null ] ||
+        fail "fixture: the dashboard omitted the uid of the fixture project at $root"
+    [ "$selected_uid" = "$(expected_fixture_uid "$agent_id" "$root")" ] ||
+        fail "fixture: dashboard uid $selected_uid does not match the uid derived from $root"
+    printf '%s' "$selected_uid"
+}
+
+# select_fixture_project is the same lookup where absence is also a failure.
+select_fixture_project() {
+    resolved=$(find_fixture_project "$1" "$2" "${3:-$compose_project}")
+    [ -n "$resolved" ] ||
+        fail "fixture: no dashboard project is named ${3:-$compose_project} at $2"
+    printf '%s' "$resolved"
+}
+
+
 
 # ------------------------------------------------------------------ baseline
 start_server >"$evidence_dir/server.container-id"
@@ -408,14 +508,17 @@ start_agent true >"$evidence_dir/agent.container-id"
 wait_active_host "" "$evidence_dir/dashboard.baseline.json" 180 ||
     fail "baseline registration did not produce exactly one ACTIVE host"
 agent_id=$(jq -r '.hosts[0].id' "$evidence_dir/dashboard.baseline.json")
-project_uid=$(jq -r '.projects[0].uid' "$evidence_dir/dashboard.baseline.json")
 [ -n "$agent_id" ] && [ "$agent_id" != null ] || fail "baseline dashboard omitted the Agent id"
-[ -n "$project_uid" ] && [ "$project_uid" != null ] || fail "baseline dashboard omitted the project uid"
+project_uid=$(select_fixture_project "$evidence_dir/dashboard.baseline.json" "$fixture_root")
+allow_fixture_uid "$project_uid"
 agent_state_sh 'rm -f /state/join-token' >/dev/null
 identity_baseline=$(read_identity_field server_identity_id)
 generation_baseline=$(read_identity_field archive_generation)
 record baseline_agent_id "$agent_id"
 record baseline_project_uid "$project_uid"
+record fixture_root "$fixture_root"
+record fixture_identity_verified PASS
+record other_projects_on_host "$(jq -r --arg uid "$project_uid" '[.projects[]? | select(.uid != $uid)] | length' "$evidence_dir/dashboard.baseline.json")"
 
 read_incarnation() {
     agent_state_sh 'cat /state/identity/agent-state.json 2>/dev/null || cat /state/agent-state.json 2>/dev/null || true' |
@@ -955,7 +1058,13 @@ if selected backup-tamper; then
     jq -e '.status == "success"' "$evidence_dir/backup-tamper.create.final.json" >/dev/null ||
         fail "backup-tamper: the backup did not succeed"
     api GET "$base_url/api/v1/projects/$project_uid/backups" '' "$evidence_dir/backup-tamper.list.json"
-    backup_id=$(jq -r '.[0].backup_id // .backups[0].backup_id // ""' "$evidence_dir/backup-tamper.list.json")
+    # The listing is already scoped to the fixture, but the newest manual entry
+    # is the one this case just created; taking whichever entry the listing
+    # happens to return first would tamper with a backup nobody restores.
+    backup_id=$(jq -r --arg uid "$project_uid" '
+        [ (if type == "array" then . else (.backups // []) end)[]
+          | select((.project_uid // $uid) == $uid) ]
+        | sort_by(.created_at) | last | .backup_id // ""' "$evidence_dir/backup-tamper.list.json")
     [ -n "$backup_id" ] && [ "$backup_id" != null ] || fail "backup-tamper: the backup listing had no backup_id"
     before_sha=$(sha256sum "$runtime/projects/compose.yaml" | awk '{ print $1 }')
     # Flip bytes inside the stored archive without changing its length, so the
@@ -1035,7 +1144,12 @@ if selected non-identical-bind; then
         "$evidence_dir/non-identical-bind.dashboard.json" \
         >"$evidence_dir/non-identical-bind.reason.txt"
     # A write must be refused for that reason rather than silently attempted.
-    stale_uid=$(jq -r '.projects[0].uid // ""' "$evidence_dir/non-identical-bind.dashboard.json")
+    # The Agent was restarted with the same host directory bound at a
+    # different container path, so the fixture now appears under that path with
+    # the UID that path derives. It is still an identity this harness created,
+    # and it is still the only project this case may touch.
+    stale_uid=$(find_fixture_project "$evidence_dir/non-identical-bind.dashboard.json" /elsewhere/projects)
+    [ -z "$stale_uid" ] || allow_fixture_uid "$stale_uid"
     if [ -n "$stale_uid" ] && [ "$stale_uid" != null ]; then
         write_status=$(api_status PUT "$base_url/api/v1/projects/$stale_uid/files" \
             "$(jq -cn --arg id "abuse-nonidentical-$$" --arg sha "$(printf 'a%.0s' $(seq 64))" \
@@ -1101,7 +1215,14 @@ EOF
     done
     [ "$collided" -eq 1 ] ||
         fail "name-collision: two projects claiming one Compose name were not both marked as colliding"
-    collided_uid=$(jq -r '[.projects[] | select(.collision == true)][0].uid' "$evidence_dir/name-collision.dashboard.json")
+    # Both colliding projects are this harness's; the second root is the one
+    # under test. Taking whichever colliding project the dashboard lists first
+    # would aim a mutation at an operator project that happens to collide.
+    collided_uid=$(select_fixture_project "$evidence_dir/name-collision.dashboard.json" "$runtime/projects-second")
+    allow_fixture_uid "$collided_uid"
+    jq -e --arg uid "$collided_uid" '[.projects[] | select(.uid == $uid and .collision == true)] | length == 1' \
+        "$evidence_dir/name-collision.dashboard.json" >/dev/null ||
+        fail "name-collision: the fixture's second root was not the project marked as colliding"
     mutation_status=$(api_status POST "$base_url/api/v1/operations" \
         "$(jq -cn --arg id "abuse-collision-$$" --arg agent "$agent_id" --arg project "$collided_uid" \
             '{operation_id:$id,agent_id:$agent,project_uid:$project,kind:"compose.up"}')" \
@@ -1166,22 +1287,19 @@ EOF
     done
     [ "$discovered" -eq 1 ] ||
         fail "protected-compose-project: the project sharing the Agent Compose project name was not discovered"
-    protected_uid=$(jq -r --arg name "$protected_project" \
-        '[.projects[] | select(.name == $name)][0].uid' "$evidence_dir/protected-compose-project.dashboard.json")
-    # The Server keeps a row for every project UID it has ever seen and marks a
-    # vanished one Missing only after a complete discovery sweep, so a candidate
-    # is only usable once the Agent actually answers for it.
+    protected_uid=$(select_fixture_project "$evidence_dir/protected-compose-project.dashboard.json" \
+        "$runtime/projects-protected" "$protected_project")
+    allow_fixture_uid "$protected_uid"
+    # The control for "the denial is aimed, not blanket" has to be a project
+    # this harness owns. Searching the dashboard for any readable project would
+    # run a real compose.up against whatever the operator happens to be
+    # running, so the baseline fixture is used instead. The Server keeps a row
+    # for every project UID it has ever seen, so it is only usable once the
+    # Agent actually answers for it.
     unrelated_uid=
-    for candidate in $(jq -r --arg name "$protected_project" \
-        '[.projects[] | select(.name != $name and .collision != true and .stale != true)][].uid' \
-        "$evidence_dir/protected-compose-project.dashboard.json"); do
-        probe=$(api_status GET "$base_url/api/v1/projects/$candidate/files?path=compose.yaml" '' \
-            "$evidence_dir/protected-compose-project.probe.json")
-        if [ "$probe" = 200 ]; then
-            unrelated_uid=$candidate
-            break
-        fi
-    done
+    probe=$(api_status GET "$base_url/api/v1/projects/$project_uid/files?path=compose.yaml" '' \
+        "$evidence_dir/protected-compose-project.probe.json")
+    [ "$probe" != 200 ] || unrelated_uid=$project_uid
     protected_operation="abuse-protected-down-$$"
     status=$(api_status POST "$base_url/api/v1/operations" \
         "$(jq -cn --arg id "$protected_operation" --arg agent "$agent_id" --arg project "$protected_uid" \
