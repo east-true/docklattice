@@ -104,14 +104,85 @@ func (s *fakeStream) fail(err error) {
 
 func (s *fakeStream) push(frame producttransport.MetricsMatrixFrame) { s.frames <- frame }
 
+// fakeContext is discovery as this package sees it: a mapping a test can
+// change, an error it can inject, and a count of how often it was asked.
+type fakeContext struct {
+	mu      sync.Mutex
+	mapping map[string]ContainerContext
+	err     error
+	calls   int
+}
+
+func (c *fakeContext) ContainerContext(context.Context, string) (map[string]ContainerContext, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.calls++
+	if c.err != nil {
+		return nil, c.err
+	}
+	mapping := make(map[string]ContainerContext, len(c.mapping))
+	for id, value := range c.mapping {
+		mapping[id] = value
+	}
+	return mapping, nil
+}
+
+func (c *fakeContext) set(mapping map[string]ContainerContext) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.mapping = mapping
+}
+
+func (c *fakeContext) fail(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.err = err
+}
+
+func (c *fakeContext) callCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls
+}
+
+// testClock advances only when a test says so, so refresh intervals are
+// decided by the test rather than by how long it happened to take.
+type testClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *testClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *testClock) advance(by time.Duration) {
+	c.mu.Lock()
+	c.now = c.now.Add(by)
+	c.mu.Unlock()
+}
+
 func newTestHub(t *testing.T, sessions Sessions) *Hub {
 	t.Helper()
-	hub, err := New(Config{Sessions: sessions})
+	hub, _, _ := newContextHub(t, sessions)
+	return hub
+}
+
+func newContextHub(t *testing.T, sessions Sessions) (*Hub, *fakeContext, *testClock) {
+	t.Helper()
+	source := &fakeContext{}
+	clock := &testClock{now: time.Unix(1_700_000_000, 0).UTC()}
+	hub, err := New(Config{
+		Sessions: sessions, Context: source, Clock: clock,
+		ContextRefresh: time.Minute, ContextRetryInterval: 10 * time.Second,
+	})
 	if err != nil {
 		t.Fatalf("new hub: %v", err)
 	}
 	t.Cleanup(func() { _ = hub.Close() })
-	return hub
+	return hub, source, clock
 }
 
 func sampleFrame(ids ...string) producttransport.MetricsMatrixFrame {
@@ -137,6 +208,36 @@ func nextView(t *testing.T, viewer *Subscription) View {
 		t.Fatalf("next view: %v", err)
 	}
 	return view
+}
+
+// viewUntil drives frames through the relay until a view satisfies the
+// condition. Context refreshes settle asynchronously, so what a test is really
+// waiting for is the first view assembled after one landed.
+func viewUntil(t *testing.T, viewer *Subscription, stream *fakeStream, frame producttransport.MetricsMatrixFrame, what string, condition func(View) bool) View {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		stream.push(frame)
+		view := nextView(t, viewer)
+		if condition(view) {
+			return view
+		}
+	}
+	t.Fatalf("timed out waiting for %s", what)
+	return View{}
+}
+
+// staysAt asserts a count has stopped moving, which is how a test says "and
+// then nothing else happened" about work that runs on its own goroutine.
+func staysAt(t *testing.T, what string, count func() int, want int) {
+	t.Helper()
+	deadline := time.Now().Add(100 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if got := count(); got != want {
+			t.Fatalf("%s reached %d, want it to stay at %d", what, got, want)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
 }
 
 func waitFor(t *testing.T, what string, condition func() bool) {
@@ -448,7 +549,7 @@ func TestStreamFailureReachesViewersAndAllowsReopening(t *testing.T) {
 // Closing the hub ends every relay and releases every viewer.
 func TestCloseEndsEveryRelay(t *testing.T) {
 	sessions := &fakeSessions{}
-	hub, err := New(Config{Sessions: sessions})
+	hub, err := New(Config{Sessions: sessions, Context: &fakeContext{}})
 	if err != nil {
 		t.Fatalf("new hub: %v", err)
 	}
@@ -468,4 +569,148 @@ func TestCloseEndsEveryRelay(t *testing.T) {
 	if _, err := hub.Subscribe(context.Background(), "agent-1"); !errors.Is(err, ErrClosed) {
 		t.Fatalf("subscribe after close returned %v, want ErrClosed", err)
 	}
+}
+
+// Project, service and image arrive from discovery, and a container discovery
+// does not know is still a row with its metrics on it. The Engine decides what
+// is running; discovery only says what is known about it.
+func TestUnmappedContainersKeepTheirMetrics(t *testing.T) {
+	sessions := &fakeSessions{}
+	hub, source, _ := newContextHub(t, sessions)
+	source.set(map[string]ContainerContext{
+		"a": {ProjectUID: "uid-1", ProjectName: "shop", Service: "web", Image: "nginx:1"},
+	})
+
+	viewer, err := hub.Subscribe(context.Background(), "agent-1")
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	frame := sampleFrame("a", "b")
+	frame.Containers[1].CPUPercent = 42
+	sessions.current().push(frame)
+
+	view := nextView(t, viewer)
+	mapped, unmapped := view.Containers[0], view.Containers[1]
+	if mapped.Unmapped || mapped.ProjectName != "shop" || mapped.Service != "web" || mapped.Image != "nginx:1" {
+		t.Fatalf("mapped row is %+v, want the discovery context joined on", mapped)
+	}
+	if mapped.ProjectUID != "uid-1" {
+		t.Fatalf("mapped row carries project UID %q", mapped.ProjectUID)
+	}
+	if !unmapped.Unmapped || unmapped.ProjectName != "" || unmapped.Service != "" {
+		t.Fatalf("unmapped row is %+v, want unknown project and service", unmapped)
+	}
+	if unmapped.Sample.CPUPercent != 42 {
+		t.Fatalf("the unmapped container lost its metrics: %+v", unmapped.Sample)
+	}
+	if view.ContextStale {
+		t.Fatal("context was reported stale after a successful lookup")
+	}
+}
+
+// Discovery failing is not the same as a container being unmanaged, and the
+// view says which one it is. The previous mapping stays rather than every row
+// losing its project name over one failed call.
+func TestFailedContextLookupIsSaidRatherThanShown(t *testing.T) {
+	sessions := &fakeSessions{}
+	hub, source, clock := newContextHub(t, sessions)
+	source.set(map[string]ContainerContext{"a": {ProjectName: "shop", Service: "web"}})
+
+	viewer, err := hub.Subscribe(context.Background(), "agent-1")
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	sessions.current().push(sampleFrame("a"))
+	if view := nextView(t, viewer); view.Containers[0].ProjectName != "shop" {
+		t.Fatalf("opening view lacked context: %+v", view.Containers[0])
+	}
+
+	source.fail(errors.New("agent is offline"))
+	before := source.callCount()
+	clock.advance(2 * time.Minute)
+	sessions.current().push(sampleFrame("a"))
+	waitFor(t, "the periodic context refresh to fail", func() bool { return source.callCount() > before })
+
+	view := viewUntil(t, viewer, sessions.current(), sampleFrame("a"), "the context failure to be reported",
+		func(view View) bool { return view.ContextStale })
+	if view.ContextReason != "agent is offline" {
+		t.Fatalf("context reason is %q, want the lookup failure", view.ContextReason)
+	}
+	if view.Containers[0].ProjectName != "shop" || view.Containers[0].Unmapped {
+		t.Fatalf("a failed lookup erased the last known context: %+v", view.Containers[0])
+	}
+}
+
+// A container discovery has never heard of is asked about once. Asking every
+// frame would turn one hand-started container into a discovery call every few
+// seconds, forever, for an answer that will not change.
+func TestAnUnknownContainerIsAskedAboutOnce(t *testing.T) {
+	sessions := &fakeSessions{}
+	hub, source, clock := newContextHub(t, sessions)
+
+	viewer, err := hub.Subscribe(context.Background(), "agent-1")
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	opening := source.callCount()
+	if opening != 1 {
+		t.Fatalf("subscribe made %d context lookups, want one before the first frame", opening)
+	}
+
+	// The first frame carries a container the opening lookup did not cover, so
+	// one early refresh is due once the retry floor has passed.
+	sessions.current().push(sampleFrame("a"))
+	nextView(t, viewer)
+	clock.advance(11 * time.Second)
+	sessions.current().push(sampleFrame("a"))
+	nextView(t, viewer)
+	waitFor(t, "the early refresh for a new container", func() bool { return source.callCount() == 2 })
+
+	// It is still unmapped, and now known to be. Further frames must not keep
+	// asking, however much time passes short of the periodic interval.
+	for round := 0; round < 3; round++ {
+		clock.advance(11 * time.Second)
+		sessions.current().push(sampleFrame("a"))
+		nextView(t, viewer)
+	}
+	staysAt(t, "context lookups for a container discovery does not manage", source.callCount, 2)
+
+	// A container that appears later is new, and is worth one ask of its own.
+	source.set(map[string]ContainerContext{"b": {ProjectName: "shop", Service: "api"}})
+	clock.advance(11 * time.Second)
+	sessions.current().push(sampleFrame("a", "b"))
+	nextView(t, viewer)
+	waitFor(t, "the newly deployed container to be looked up", func() bool { return source.callCount() == 3 })
+
+	view := viewUntil(t, viewer, sessions.current(), sampleFrame("a", "b"), "the new container to be mapped",
+		func(view View) bool { return !view.Containers[1].Unmapped })
+	if view.Containers[1].Service != "api" {
+		t.Fatalf("the new container did not pick up its context: %+v", view.Containers[1])
+	}
+}
+
+// Steady state costs nothing. Frames arrive every couple of seconds; discovery
+// is asked on its own far slower cadence.
+func TestSteadyStateDoesNotAskDiscoveryPerFrame(t *testing.T) {
+	sessions := &fakeSessions{}
+	hub, source, clock := newContextHub(t, sessions)
+	source.set(map[string]ContainerContext{"a": {ProjectName: "shop", Service: "web"}})
+
+	viewer, err := hub.Subscribe(context.Background(), "agent-1")
+	if err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	for round := 0; round < 10; round++ {
+		clock.advance(2 * time.Second)
+		sessions.current().push(sampleFrame("a"))
+		nextView(t, viewer)
+	}
+	if got := source.callCount(); got != 1 {
+		t.Fatalf("discovery was asked %d times across ten frames, want once", got)
+	}
+
+	clock.advance(time.Minute)
+	sessions.current().push(sampleFrame("a"))
+	nextView(t, viewer)
+	waitFor(t, "the periodic refresh", func() bool { return source.callCount() == 2 })
 }

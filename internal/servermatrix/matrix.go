@@ -46,6 +46,31 @@ type Sessions interface {
 	Open(ctx context.Context, agentID string) (FrameStream, error)
 }
 
+// ContainerContext is discovery's account of one container: which Compose
+// project and service it belongs to, and the image it was started from.
+//
+// It is context, not authority. The Docker Engine decides what is running; this
+// only says what Dockpilot knows about it, and knowing nothing is an ordinary
+// answer - a container started by hand is not part of any project and never
+// will be.
+type ContainerContext struct {
+	ProjectUID  string
+	ProjectName string
+	Service     string
+	Image       string
+}
+
+// ContextSource answers what discovery knows about the containers on one host,
+// keyed by container ID.
+//
+// The implementation owns where the answer comes from and bounds its own call.
+// It is asked on the relay's context, off the frame path, because a frame must
+// never wait for discovery: metrics are the live thing here and project names
+// are not.
+type ContextSource interface {
+	ContainerContext(ctx context.Context, agentID string) (map[string]ContainerContext, error)
+}
+
 // Filesystem is capacity for one path Dockpilot writes to, carried through from
 // the Agent. Unavailable is a fact about that path, not about the host.
 type Filesystem struct {
@@ -75,6 +100,13 @@ type ContainerRow struct {
 	ContainerID string
 	Pending     bool
 	Sample      producttransport.StatsSample
+	ContainerContext
+	// Unmapped says discovery has no entry for this container. The row is still
+	// here, with its metrics, because the Engine is the authority for what is
+	// running and a failed metadata join must not erase a running container.
+	// Hiding it would make the matrix quietly wrong exactly when something has
+	// just been deployed.
+	Unmapped bool
 }
 
 // View is one host at one instant, as a browser should see it.
@@ -95,11 +127,37 @@ type View struct {
 	MembershipReason string
 	WorkloadStale    bool
 	WorkloadReason   string
+	// ContextStale says the project and service names on these rows are the
+	// last ones discovery could confirm, or none at all, with ContextReason
+	// saying why. It matters because unmapped has two causes that look
+	// identical on a row: a container nothing manages, and a container we could
+	// not ask about. Only this tells them apart.
+	ContextStale  bool
+	ContextReason string
 }
 
 type Config struct {
 	Sessions Sessions
+	Context  ContextSource
+	// ContextRefresh is how often discovery is asked again for a host that is
+	// being watched. Project membership changes when something is deployed, not
+	// every frame, so this is far slower than the frame cadence.
+	ContextRefresh time.Duration
+	// ContextRetryInterval is the floor between refreshes triggered by a
+	// container ID discovery has never answered for. It exists so a newly
+	// deployed container gets its project name in seconds rather than at the
+	// next periodic refresh - and it is a floor rather than a rule because a
+	// container nothing manages would otherwise ask forever. Such an ID is
+	// asked about once and then left to the periodic cadence.
+	ContextRetryInterval time.Duration
+	Clock                Clock
 }
+
+type Clock interface{ Now() time.Time }
+
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now() }
 
 // Hub owns one relay per host. Every viewer of a host shares it: the Agent
 // stream exists exactly once, from the first viewer until the last one leaves.
@@ -130,11 +188,43 @@ type hostRelay struct {
 	openErr error
 	endErr  error
 	viewers map[uint64]*Subscription
+
+	// contextByID is replaced wholesale on every successful refresh and never
+	// mutated after publication, so a frame may carry the reference rather than
+	// a copy of it.
+	contextByID map[string]ContainerContext
+	haveContext bool
+	// contextTried is the last attempt, successful or not, and is what the
+	// refresh intervals are measured from: a discovery that keeps failing must
+	// not be asked once per frame.
+	contextTried  time.Time
+	contextReason string
+	refreshing    bool
+	lastFrameIDs  map[string]struct{}
+	// unmatchedIDs are the containers that were on the host and still absent
+	// from discovery when the last refresh finished. Asking again about them
+	// would produce the same answer, so they no longer trigger early refreshes.
+	unmatchedIDs map[string]struct{}
 }
 
 func New(config Config) (*Hub, error) {
 	if config.Sessions == nil {
 		return nil, errors.New("servermatrix: session source is required")
+	}
+	if config.Context == nil {
+		return nil, errors.New("servermatrix: container context source is required")
+	}
+	if config.ContextRefresh <= 0 {
+		config.ContextRefresh = time.Minute
+	}
+	if config.ContextRetryInterval <= 0 {
+		config.ContextRetryInterval = 10 * time.Second
+	}
+	if config.ContextRetryInterval > config.ContextRefresh {
+		config.ContextRetryInterval = config.ContextRefresh
+	}
+	if config.Clock == nil {
+		config.Clock = realClock{}
 	}
 	return &Hub{config: config, relays: make(map[string]*hostRelay)}, nil
 }
@@ -209,6 +299,13 @@ func (h *Hub) open(relay *hostRelay) {
 		h.stopRelay(relay, err)
 		return
 	}
+	// One context read before the first frame, so an opening view carries
+	// project names rather than showing every container as unmapped for a
+	// round. Its failure is not the stream's failure: metrics without project
+	// names are still metrics, and the view says why the names are missing.
+	if h.beginRefresh(relay) {
+		h.refreshContext(relay)
+	}
 	go h.run(relay)
 }
 
@@ -245,21 +342,123 @@ func (h *Hub) publish(relay *hostRelay, frame producttransport.MetricsMatrixFram
 	for _, viewer := range relay.viewers {
 		viewers = append(viewers, viewer)
 	}
+	unknown := h.noteFrameMembership(relay, frame)
+	mapping, haveContext, contextReason := relay.contextByID, relay.haveContext, relay.contextReason
 	h.mu.Unlock()
 
-	view := h.assemble(relay, frame)
+	view := h.assemble(relay, frame, mapping, haveContext, contextReason)
 	for _, viewer := range viewers {
 		viewer.put(view)
 	}
+	h.maybeRefreshContext(relay, unknown)
 }
 
-func (h *Hub) assemble(relay *hostRelay, frame producttransport.MetricsMatrixFrame) View {
-	containers := make([]ContainerRow, 0, len(frame.Containers)+len(frame.PendingContainerIDs))
+// noteFrameMembership records what this host is running, so a refresh that
+// finishes later can tell which containers discovery genuinely does not manage
+// from those that simply had not been asked about yet. It also answers whether
+// this frame holds a container worth asking about now.
+func (h *Hub) noteFrameMembership(relay *hostRelay, frame producttransport.MetricsMatrixFrame) bool {
+	ids := make(map[string]struct{}, len(frame.Containers)+len(frame.PendingContainerIDs))
 	for _, sample := range frame.Containers {
-		containers = append(containers, ContainerRow{ContainerID: sample.ContainerID, Sample: sample})
+		ids[sample.ContainerID] = struct{}{}
 	}
 	for _, id := range frame.PendingContainerIDs {
-		containers = append(containers, ContainerRow{ContainerID: id, Pending: true})
+		ids[id] = struct{}{}
+	}
+	relay.lastFrameIDs = ids
+	for id := range ids {
+		if _, known := relay.contextByID[id]; known {
+			continue
+		}
+		if _, asked := relay.unmatchedIDs[id]; asked {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// maybeRefreshContext decides whether to ask discovery again. It never waits
+// for the answer, so no frame is delayed by it, and only one refresh per host
+// is ever in flight.
+func (h *Hub) maybeRefreshContext(relay *hostRelay, unknown bool) {
+	interval := h.config.ContextRefresh
+	if unknown {
+		interval = h.config.ContextRetryInterval
+	}
+	h.mu.Lock()
+	due := h.relays[relay.agentID] == relay && !relay.refreshing &&
+		(relay.contextTried.IsZero() || h.config.Clock.Now().Sub(relay.contextTried) >= interval)
+	if due {
+		relay.refreshing = true
+	}
+	h.mu.Unlock()
+	if due {
+		go h.refreshContext(relay)
+	}
+}
+
+// beginRefresh claims the single in-flight refresh slot for a relay.
+func (h *Hub) beginRefresh(relay *hostRelay) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.relays[relay.agentID] != relay || relay.refreshing {
+		return false
+	}
+	relay.refreshing = true
+	return true
+}
+
+func (h *Hub) refreshContext(relay *hostRelay) {
+	mapping, err := h.config.Context.ContainerContext(relay.ctx, relay.agentID)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	relay.refreshing = false
+	if h.relays[relay.agentID] != relay {
+		return
+	}
+	relay.contextTried = h.config.Clock.Now()
+	if err != nil {
+		// The previous mapping stays. Dropping it would turn one failed
+		// discovery call into every container losing its project name, which
+		// is a worse answer than a slightly old one that says it is old.
+		relay.contextReason = boundedReason(err)
+		return
+	}
+	relay.contextByID, relay.haveContext, relay.contextReason = mapping, true, ""
+	unmatched := make(map[string]struct{})
+	for id := range relay.lastFrameIDs {
+		if _, known := mapping[id]; !known {
+			unmatched[id] = struct{}{}
+		}
+	}
+	relay.unmatchedIDs = unmatched
+}
+
+// boundedReason keeps a discovery error short enough to travel in every view.
+// It is a reason for an operator, not a payload.
+func boundedReason(err error) string {
+	const limit = 200
+	message := err.Error()
+	if message == "" {
+		message = "container context lookup failed"
+	}
+	if len(message) > limit {
+		message = message[:limit]
+	}
+	return message
+}
+
+func (h *Hub) assemble(
+	relay *hostRelay, frame producttransport.MetricsMatrixFrame,
+	mapping map[string]ContainerContext, haveContext bool, contextReason string,
+) View {
+	containers := make([]ContainerRow, 0, len(frame.Containers)+len(frame.PendingContainerIDs))
+	for _, sample := range frame.Containers {
+		containers = append(containers, containerRow(sample.ContainerID, false, sample, mapping))
+	}
+	for _, id := range frame.PendingContainerIDs {
+		containers = append(containers, containerRow(id, true, producttransport.StatsSample{}, mapping))
 	}
 	sortContainerRows(containers)
 
@@ -282,7 +481,21 @@ func (h *Hub) assemble(relay *hostRelay, frame producttransport.MetricsMatrixFra
 		AgentDropped:    frame.DroppedFrames,
 		MembershipStale: frame.MembershipStale, MembershipReason: frame.MembershipReason,
 		WorkloadStale: frame.WorkloadStale, WorkloadReason: frame.WorkloadReason,
+		ContextStale: !haveContext || contextReason != "", ContextReason: contextReason,
 	}
+}
+
+func containerRow(
+	id string, pending bool, sample producttransport.StatsSample, mapping map[string]ContainerContext,
+) ContainerRow {
+	row := ContainerRow{ContainerID: id, Pending: pending, Sample: sample}
+	context, known := mapping[id]
+	if !known {
+		row.Unmapped = true
+		return row
+	}
+	row.ContainerContext = context
+	return row
 }
 
 // sortContainerRows gives every view one order, by container ID. The Agent
