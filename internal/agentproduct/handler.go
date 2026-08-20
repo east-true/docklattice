@@ -280,15 +280,41 @@ func validCancelReason(reason operation.CancelReason) bool {
 	}
 }
 
+// The three stream methods below each check their handler before calling it.
+//
+// New cannot produce a Handler with any of them missing - it refuses the
+// configuration instead - so in a running Agent these checks never fire. They
+// are here because *Handler satisfies every stream handler interface
+// unconditionally, which means the transport's own "handler is not configured"
+// check can never fire for this type: the type assertion always succeeds, and
+// whatever is behind the field is called. That leaves the constructor as the
+// only thing standing between a Server's call and a nil dereference, and a
+// process boundary must not depend on an invariant held one layer away.
+//
+// Capability negotiation decides which Agents a Server should call. It is not
+// what keeps an Agent alive when something calls anyway - an older Server, a
+// replayed request, a future build that makes one of these optional. The answer
+// to a call that cannot be served is the same one every other unconfigured
+// handler gives, which the transport already renders as Unimplemented.
+
 func (h *Handler) StreamLogs(ctx context.Context, info producttransport.SessionInfo, request producttransport.LogRequest, sender producttransport.LogSender) error {
+	if h.logs == nil {
+		return fmt.Errorf("%w: logs", producttransport.ErrHandlerUnavailable)
+	}
 	return h.logs.StreamLogs(ctx, info, request, sender)
 }
 
 func (h *Handler) StreamStats(ctx context.Context, info producttransport.SessionInfo, request producttransport.StatsRequest, sender producttransport.StatsSender) error {
+	if h.stats == nil {
+		return fmt.Errorf("%w: stats", producttransport.ErrHandlerUnavailable)
+	}
 	return h.stats.StreamStats(ctx, info, request, sender)
 }
 
 func (h *Handler) StreamMetricsMatrix(ctx context.Context, info producttransport.SessionInfo, request producttransport.MetricsMatrixRequest, sender producttransport.MetricsMatrixSender) error {
+	if h.matrix == nil {
+		return fmt.Errorf("%w: metrics matrix", producttransport.ErrHandlerUnavailable)
+	}
 	return h.matrix.StreamMetricsMatrix(ctx, info, request, sender)
 }
 
