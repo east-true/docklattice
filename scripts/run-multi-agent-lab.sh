@@ -89,6 +89,30 @@ done
 [ -r /var/run/docker.sock ] && [ -w /var/run/docker.sock ] ||
     fail "preflight: readable and writable /var/run/docker.sock is required"
 
+# A privileged container is not isolated from the host kernel's module table.
+# The dockerd inside each dind host loads br_netfilter and sets
+# net.bridge.bridge-nf-call-iptables=1, and from that moment every bridge on
+# the *host* - the operator's Compose networks, docker0, libvirt's virbr0 -
+# has its traffic evaluated by the host FORWARD chain. On a host whose
+# firewall drops FORWARD by default and carries no Docker exception, that
+# takes container networking down across the whole machine, and it does not
+# come back when these containers are removed: the module stays loaded and the
+# sysctl stays set until the machine reboots.
+#
+# This happened. The lab refuses to start in that configuration rather than
+# doing it again. Changing the firewall to suit a test harness is the
+# operator's decision, not this script's.
+# `ufw status` needs root, and this harness does not have it. The unit state
+# and the config file are both world-readable, and they answer the same
+# question, so the check reads those instead of the command that would have
+# told it nothing.
+if [ "$(systemctl is-active ufw 2>/dev/null)" = active ]; then
+    forward_policy=$(awk -F'"' '/^DEFAULT_FORWARD_POLICY/ { print $2 }' /etc/default/ufw 2>/dev/null)
+    if [ "$forward_policy" = DROP ] && ! grep -q DOCKER /etc/ufw/after.rules 2>/dev/null; then
+        fail "preflight: ufw is active with DEFAULT_FORWARD_POLICY=DROP and no Docker exception. Privileged Docker-in-Docker hosts load br_netfilter into this kernel, and from then on every bridge on the machine has its traffic dropped by the host FORWARD chain, with no recovery short of a reboot. Use the VM lab on this host."
+    fi
+fi
+
 require_image_id_shape "$server_image" Server
 require_image_id_shape "$agent_image" Agent
 require_image_id_shape "$fixture_image" fixture
