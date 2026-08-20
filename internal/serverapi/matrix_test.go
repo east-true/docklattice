@@ -279,9 +279,16 @@ func TestMatrixAgentStreamEndsWithTheLastViewer(t *testing.T) {
 	}
 }
 
-// The Agent's drop count and the Server's reach the browser as two numbers. A
-// viewer that falls behind is told how many rounds this Server dropped for it,
-// without that being confused with what the Agent dropped for this Server.
+// The Agent's drop count and the Server's reach the browser as two numbers.
+//
+// What is asserted here is the accounting, not a particular amount of
+// coalescing: whether a given round is delivered or dropped depends on when the
+// reader arrives, and pinning that number would be testing the scheduler. The
+// invariant that must hold either way is that every round is accounted for
+// exactly once - delivered or counted as dropped, never both and never
+// neither - and that the Agent's own count is not folded into it. The
+// deterministic coalescing behaviour has its own test in internal/servermatrix,
+// where the pushes can be sequenced.
 func TestMatrixDropCountersReachTheFrameSeparately(t *testing.T) {
 	ctx, backend, store, registry := newTestBackend(t)
 	t.Cleanup(func() { _ = backend.Close() })
@@ -301,33 +308,35 @@ func TestMatrixDropCountersReachTheFrameSeparately(t *testing.T) {
 	}
 	defer viewer.Close()
 
-	// Three rounds arrive while nothing is reading, so two of them are
-	// coalesced away by the subscription rather than queued anywhere.
-	for round := 0; round < 3; round++ {
+	const rounds = 3
+	for round := 0; round < rounds; round++ {
 		stream.frames <- producttransport.MetricsMatrixFrame{
 			ObservedAt: time.Unix(int64(round), 0).UTC(), DroppedFrames: 4,
 			Workload: producttransport.WorkloadSummary{CPUCapacity: 2},
 		}
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
-	var frame webui.MatrixFrame
-	for time.Now().Before(deadline) {
+	delivered, dropped := 0, uint64(0)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && delivered+int(dropped) < rounds {
 		recvCtx, cancel := context.WithTimeout(ctx, time.Second)
-		frame, err = viewer.Recv(recvCtx)
+		frame, err := viewer.Recv(recvCtx)
 		cancel()
 		if err != nil {
 			t.Fatalf("recv frame: %v", err)
 		}
-		if frame.ServerDroppedFrames > 0 {
-			break
+		delivered++
+		dropped = frame.ServerDroppedFrames
+		// The Agent's own count travels on every frame and is never merged
+		// into the Server's; folding them together would hide which side of
+		// the stream is behind.
+		if frame.AgentDroppedFrames != 4 {
+			t.Fatalf("the Agent's drop count arrived as %d, want 4 kept separate", frame.AgentDroppedFrames)
 		}
 	}
-	if frame.ServerDroppedFrames != 2 {
-		t.Fatalf("server dropped %d rounds, want the two that were coalesced", frame.ServerDroppedFrames)
-	}
-	if frame.AgentDroppedFrames != 4 {
-		t.Fatalf("the Agent's own drop count arrived as %d, want 4 kept separate", frame.AgentDroppedFrames)
+	if delivered+int(dropped) != rounds {
+		t.Fatalf("%d rounds delivered and %d counted as dropped, which does not account for the %d sent",
+			delivered, dropped, rounds)
 	}
 }
 
@@ -463,4 +472,95 @@ func TestBackendCloseUnblocksStreamingHandlersBeforeShutdown(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("goroutines settled at %d, above the %d before the stream opened", runtime.NumGoroutine(), baseline)
+}
+
+// An Agent upgraded to a build that serves metrics becomes watchable when it
+// reconnects. The Server must not have cached "this host cannot do metrics"
+// from the session before it.
+func TestMatrixFollowsAnAgentUpgradeAcrossReconnect(t *testing.T) {
+	ctx, backend, store, registry := newTestBackend(t)
+	t.Cleanup(func() { _ = backend.Close() })
+	insertAgent(t, ctx, store, "agent-a", "Host A", "{}")
+
+	older := newFakeSession("agent-a")
+	older.queryPayload = []byte(`[]`)
+	older.matrixStream = newFakeMatrixStream()
+	if err := registry.Register(older); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.OpenMatrix(ctx, "agent-a"); !errors.Is(err, webui.ErrUnavailable) {
+		t.Fatalf("the pre-upgrade Agent answered %v, want unavailable", err)
+	}
+	if got := older.matrixOpenCalls(); got != 0 {
+		t.Fatalf("the older Agent was sent %d matrix RPCs", got)
+	}
+
+	upgraded := newFakeSession("agent-a")
+	upgraded.info.SessionID = "session-agent-a-upgraded"
+	upgraded.info.Incarnation = 2
+	upgraded.capability = producttransport.Capability{MetricsMatrix: true}
+	upgraded.queryPayload = []byte(`[]`)
+	upgraded.matrixStream = newFakeMatrixStream()
+	if err := registry.Register(upgraded); err != nil {
+		t.Fatal(err)
+	}
+
+	viewer, err := backend.OpenMatrix(ctx, "agent-a")
+	if err != nil {
+		t.Fatalf("open matrix after the upgrade: %v", err)
+	}
+	defer viewer.Close()
+	if got := upgraded.matrixOpenCalls(); got != 1 {
+		t.Fatalf("the upgraded Agent was sent %d matrix RPCs, want one", got)
+	}
+	if got := older.matrixOpenCalls(); got != 0 {
+		t.Fatalf("the replaced session was still being called %d times", got)
+	}
+}
+
+// A viewer watching a host when its Agent reconnects is released with the
+// failure rather than left holding a stream that will never produce another
+// frame. Reopening then lands on the new session.
+func TestMatrixViewerIsReleasedWhenTheAgentSessionIsReplaced(t *testing.T) {
+	ctx, backend, store, registry := newTestBackend(t)
+	t.Cleanup(func() { _ = backend.Close() })
+	insertAgent(t, ctx, store, "agent-a", "Host A", "{}")
+
+	first := newFakeSession("agent-a")
+	first.capability = producttransport.Capability{MetricsMatrix: true}
+	first.queryPayload = []byte(`[]`)
+	first.matrixStream = newFakeMatrixStream()
+	if err := registry.Register(first); err != nil {
+		t.Fatal(err)
+	}
+	viewer, err := backend.OpenMatrix(ctx, "agent-a")
+	if err != nil {
+		t.Fatalf("open matrix: %v", err)
+	}
+	defer viewer.Close()
+
+	replacement := newFakeSession("agent-a")
+	replacement.info.SessionID = "session-agent-a-second"
+	replacement.info.Incarnation = 2
+	replacement.capability = producttransport.Capability{MetricsMatrix: true}
+	replacement.queryPayload = []byte(`[]`)
+	replacement.matrixStream = newFakeMatrixStream()
+	if err := registry.Register(replacement); err != nil {
+		t.Fatal(err)
+	}
+
+	recvCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if _, err := viewer.Recv(recvCtx); err == nil {
+		t.Fatal("the viewer kept waiting on a stream whose session was replaced")
+	}
+
+	next, err := backend.OpenMatrix(ctx, "agent-a")
+	if err != nil {
+		t.Fatalf("reopen matrix on the new session: %v", err)
+	}
+	defer next.Close()
+	if got := replacement.matrixOpenCalls(); got != 1 {
+		t.Fatalf("the new session was sent %d matrix RPCs, want one", got)
+	}
 }

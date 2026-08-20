@@ -1479,7 +1479,14 @@ func (s *fakeSession) Close(error) error {
 		s.state = producttransport.StateClosed
 		close(s.done)
 	}
+	// A closed session takes its streams with it, exactly as the real
+	// transport does. Without this a replaced session would leave a stream that
+	// still answers, which is a state the Agent side cannot produce.
+	stream := s.matrixStream
 	s.mu.Unlock()
+	if stream != nil {
+		_ = stream.Close()
+	}
 	return nil
 }
 func (s *fakeSession) Heartbeat(ctx context.Context) (producttransport.Heartbeat, error) {
