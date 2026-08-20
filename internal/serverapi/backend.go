@@ -225,7 +225,7 @@ func (b *Backend) ProjectEnvironment(ctx context.Context, projectUID string) ([]
 	if projectUID == "" {
 		return nil, fmt.Errorf("%w: project UID is required", webui.ErrInvalidRequest)
 	}
-	access, err := b.projectAccess(ctx, projectUID)
+	access, err := b.projectAccess(ctx, projectUID, projectRead)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +292,7 @@ func (b *Backend) ProjectFile(ctx context.Context, projectUID, relativePath stri
 	if !validManagedPath(relativePath) {
 		return webui.ProjectFile{}, fmt.Errorf("%w: a managed project relative_path is required", webui.ErrInvalidRequest)
 	}
-	access, err := b.projectAccess(ctx, projectUID)
+	access, err := b.projectAccess(ctx, projectUID, projectRead)
 	if err != nil {
 		return webui.ProjectFile{}, err
 	}
@@ -343,7 +343,7 @@ func (b *Backend) ProjectFile(ctx context.Context, projectUID, relativePath stri
 }
 
 func (b *Backend) ProjectBackups(ctx context.Context, projectUID string) ([]webui.Backup, error) {
-	access, err := b.projectAccess(ctx, projectUID)
+	access, err := b.projectAccess(ctx, projectUID, projectRead)
 	if err != nil {
 		return nil, err
 	}
@@ -486,12 +486,9 @@ func (b *Backend) WriteProjectFile(ctx context.Context, request webui.FileWriteR
 	if !ok {
 		return webui.Operation{}, fmt.Errorf("%w: file is not writable by a v1 file operation", webui.ErrInvalidRequest)
 	}
-	access, err := b.projectAccess(ctx, request.ProjectUID)
+	access, err := b.projectAccess(ctx, request.ProjectUID, projectMutate)
 	if err != nil {
 		return webui.Operation{}, err
-	}
-	if access.flags.ReadOnly || access.flags.Collision {
-		return webui.Operation{}, fmt.Errorf("%w: project is read-only", webui.ErrConflict)
 	}
 	if !access.capabilities.FSWrite {
 		reason := access.capabilities.FSWriteReason
@@ -529,7 +526,7 @@ func (b *Backend) CreateBackup(ctx context.Context, request webui.BackupCreateRe
 		}
 		seen[path] = struct{}{}
 	}
-	access, err := b.projectAccess(ctx, request.ProjectUID)
+	access, err := b.projectAccess(ctx, request.ProjectUID, projectMutate)
 	if err != nil {
 		return webui.Operation{}, err
 	}
@@ -551,12 +548,9 @@ func (b *Backend) RestoreBackup(ctx context.Context, request webui.BackupRestore
 	if !validOperationID(request.ID) || !validOpaqueID(request.BackupID) {
 		return webui.Operation{}, fmt.Errorf("%w: valid operation_id and backup_id are required", webui.ErrInvalidRequest)
 	}
-	access, err := b.projectAccess(ctx, request.ProjectUID)
+	access, err := b.projectAccess(ctx, request.ProjectUID, projectMutate)
 	if err != nil {
 		return webui.Operation{}, err
-	}
-	if access.flags.ReadOnly || access.flags.Collision {
-		return webui.Operation{}, fmt.Errorf("%w: project is read-only", webui.ErrConflict)
 	}
 	if !access.capabilities.FSWrite {
 		return webui.Operation{}, fmt.Errorf("%w: filesystem write capability is unavailable", webui.ErrUnavailable)
@@ -1182,7 +1176,20 @@ type projectAccessState struct {
 	flags        projectFlags
 }
 
-func (b *Backend) projectAccess(ctx context.Context, projectUID string) (projectAccessState, error) {
+// projectIntent is what the caller is about to do with the project. It is a
+// required argument rather than a follow-up check because the follow-up check
+// is the thing that gets forgotten: the read-only guard was written out at
+// three endpoints by hand, and the fourth - backup creation - dispatched a
+// durable operation the Agent then refused. Every endpoint already passes
+// through projectAccess, so this is the one place that cannot be skipped.
+type projectIntent int
+
+const (
+	projectRead projectIntent = iota
+	projectMutate
+)
+
+func (b *Backend) projectAccess(ctx context.Context, projectUID string, intent projectIntent) (projectAccessState, error) {
 	if !validOpaqueID(projectUID) {
 		return projectAccessState{}, fmt.Errorf("%w: project UID is required", webui.ErrInvalidRequest)
 	}
@@ -1209,6 +1216,10 @@ func (b *Backend) projectAccess(ctx context.Context, projectUID string) (project
 		return projectAccessState{}, &corruptDataError{boundary: "projects.flags_json", cause: err}
 	}
 	state.applyLiveFilesystemCapability(ctx, b)
+	// The one place a mutating endpoint cannot skip.
+	if intent == projectMutate && (state.flags.ReadOnly || state.flags.Collision) {
+		return projectAccessState{}, fmt.Errorf("%w: project is read-only", webui.ErrConflict)
+	}
 	return state, nil
 }
 
@@ -1323,7 +1334,11 @@ func (b *Backend) authorizeOperationTarget(ctx context.Context, agentID, project
 			return fmt.Errorf("serverapi: authorize Agent: %w", err)
 		}
 	} else {
-		access, err := b.projectAccess(ctx, projectUID)
+		// projectRead, then the guard by hand, and the order is the point: a
+		// project belonging to a different Agent has to answer NOT_FOUND, not
+		// CONFLICT. Asking projectAccess to refuse a mutation here would report
+		// "read-only" for somebody else's project and confirm it exists.
+		access, err := b.projectAccess(ctx, projectUID, projectRead)
 		if errors.Is(err, webui.ErrNotFound) {
 			return fmt.Errorf("%w: operation target is not in the Server cache", webui.ErrNotFound)
 		}

@@ -52,7 +52,13 @@ func (s *Store) ACKEligibility(
 	if archiveID == "" || agentID == "" || !validCursor(proposed) {
 		return fmt.Errorf("%w: invalid ACK", ErrInvariant)
 	}
-	return s.withImmediate(ctx, func(tx *connectionTx) error {
+	// A read transaction, not an immediate one. This runs for every Audit
+	// record, and taking the write lock to answer a question that writes
+	// nothing would put the whole Audit stream in line behind every other
+	// writer. CheckAndAdvanceACK re-decides this under IMMEDIATE before it
+	// advances anything, so a snapshot that goes stale here can only cost an
+	// extra refusal - never a wrong acceptance.
+	return s.withRead(ctx, func(tx *connectionTx) error {
 		state, err := loadCursorState(ctx, tx, archiveID, agentID)
 		if err != nil {
 			return err

@@ -59,6 +59,28 @@ func (s *Store) withImmediate(ctx context.Context, fn func(*connectionTx) error)
 	return nil
 }
 
+// withRead runs a read-only body inside one deferred transaction, so several
+// queries see a single consistent snapshot without taking the write lock.
+//
+// A deferred transaction that later tries to write is refused without waiting
+// on busy_timeout - that is the contention defect the write path was changed
+// for - so this is only ever safe for a body that reads. Nothing it calls may
+// write; withImmediate is for that.
+func (s *Store) withRead(ctx context.Context, fn func(*connectionTx) error) (err error) {
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if _, err = conn.ExecContext(ctx, "BEGIN"); err != nil {
+		return err
+	}
+	defer func() {
+		_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+	}()
+	return fn(&connectionTx{conn: conn})
+}
+
 func (tx *connectionTx) exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return tx.conn.ExecContext(ctx, query, args...)
 }

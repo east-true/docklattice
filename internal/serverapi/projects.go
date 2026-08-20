@@ -657,7 +657,11 @@ func (b *Backend) mergeTargetedProjectSnapshotObserved(ctx context.Context, agen
 	} else {
 		flags.LastVerifiedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	}
-	flags.ReadOnly = projectReadOnly(flags, flags.Collision)
+	// Collision is not known here - reconcileTargetedProjectCollisions decides
+	// it for every project on this Agent a few lines below, in this same
+	// transaction, and recomputes read-only with the answer. Feeding it the
+	// stale value would only invite someone to trust it.
+	flags.ReadOnly = projectReadOnly(flags, false)
 	name := item.Name
 	if name == "" {
 		name = priorName
