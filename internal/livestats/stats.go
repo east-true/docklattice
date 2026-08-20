@@ -300,6 +300,7 @@ type Subscription struct {
 	mu      sync.Mutex
 	latest  Sample
 	has     bool
+	everHad bool
 	err     error
 	dropped atomic.Uint64
 }
@@ -311,6 +312,7 @@ func (s *Subscription) put(sample Sample) {
 	}
 	s.latest = sample
 	s.has = true
+	s.everHad = true
 	s.mu.Unlock()
 	select {
 	case s.notify <- struct{}{}:
@@ -345,6 +347,17 @@ func (s *Subscription) Next(ctx context.Context) (Sample, error) {
 		case <-s.notify:
 		}
 	}
+}
+
+// Latest reports the newest sample without consuming it, and says whether one
+// has arrived at all. Frame assembly needs this: a matrix frame is built from
+// every watched container at once, and a container whose first sample has not
+// arrived yet must leave its row pending rather than hold up the other two
+// hundred. Next stays the consuming read for single-container viewers.
+func (s *Subscription) Latest() (Sample, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.latest, s.has || s.everHad
 }
 
 func (s *Subscription) DroppedSamples() uint64 { return s.dropped.Load() }
