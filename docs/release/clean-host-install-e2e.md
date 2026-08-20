@@ -8,6 +8,21 @@ by the harness on the intended clean-host platform is attached. A source review
 or a successful image build does not change this status; re-running the release
 images on a different platform requires a new evidence directory.
 
+## What "clean host" means here
+
+This gate asserts that the Agent discovers **exactly one** project and that it
+is the fixture at the fixture's root, verified against the uid the Agent must
+derive for that root, `sha256(agent_id || NUL || working directory)`. That
+assertion is the contract, not an implementation detail: a fresh host is the
+platform this procedure is documented for.
+
+A host that already manages other Compose projects cannot satisfy it, and the
+assertion is not relaxed so that such a host can pass. The harness now
+distinguishes that case: when the dashboard shows projects besides the fixture,
+the run records `status=SKIPPED_NOT_CLEAN` with the count, instead of reporting
+a product failure for something the product did correctly. A development
+machine that is running other stacks is a skip, not a pass and not a bug.
+
 ## Recorded execution
 
     started_at              2026-08-19T12:15:53Z

@@ -27,6 +27,36 @@ fresh `mktemp` root that is scrubbed on every exit.
 
 Select a subset with `HARDENING_CASES`. The default is every case.
 
+## Fixture identity
+
+Every target this matrix touches is the fixture it created, and it proves that
+before each request rather than assuming it.
+
+The dashboard lists every Compose project the Agent can see. On a dedicated
+test host that is exactly one project - the fixture - so a target taken from
+the first entry was right by accident. On a host that is also running the
+operator's own projects it is wrong most of the time, and the matrix would
+drive its writes, backups, restores, and Compose runs into someone else's
+files.
+
+The fixture is therefore resolved by the Compose project name this run
+generated **and** the discovery root it created, and the uid that comes back is
+checked against the one the Agent must derive for that root:
+
+```text
+project uid = sha256(agent_id || NUL || canonical working directory)
+```
+
+No match and more than one match are both failures. The first entry is never
+assumed. A guard in the single place every request passes through re-proves the
+target immediately before the request is sent, for project-scoped URLs and for
+operation bodies alike, so a case added later cannot forget it.
+
+`./scripts/verify-fixture-selection.sh` exercises this logic directly against
+the functions extracted from the runner: no projects, one project, many
+projects, a fixture that sorts last, the same project name at a different root,
+a uid the root cannot derive, and the request guard.
+
 ## Cases
 
 | Case | Injected fault | Contract asserted |
