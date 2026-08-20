@@ -205,3 +205,57 @@ progress and stall) rather than by a fixed percentile. Appendix A A.9 items 1,
 `audit_synced_rate` vs `audit_generated_rate`, Stats latest-wins backlog, and
 per-stream log isolation throughput - are Appendix A transport-prototype
 acceptance items and are not re-derived from product images here.
+
+## Second recorded execution: at the current revision
+
+Re-run after the fixture-safety, write-transaction, dashboard-heartbeat and
+client-cancellation changes. Three trials, `status=PASS`.
+
+    started_at              2026-08-20T11:37:54Z
+    completed_at            2026-08-20T11:48:52Z
+    source_revision         8693bf1937f58d139b8629fcbf01cabfc470c026
+    kernel                  Linux 7.0.0-29-generic x86_64
+    docker_server_version   29.7.2
+    cgroup                  v2, systemd driver
+    case_seconds            600
+    repetitions             3
+    server_image_id         sha256:0c05818885eb56673b95608de83bb2b0ea7401ad8ed23c9018809ad87c4de6ee
+    agent_image_id          sha256:0d221f24ed5cb744e9b3b785bdbdf738cb3b950827951b4856e09acb9fda99f2
+
+| Trial | Agent peak RSS / limit | Agent first → last | Server peak RSS / limit | Server first → last | Drops accounted |
+|---|---|---|---|---|---|
+| 1 | 30.6 / 256 MiB | 29.2 → 25.4 MiB | 31.5 / 512 MiB | 29.9 → 30.4 MiB | 65,016 B |
+| 2 | 29.6 / 256 MiB | 28.6 → 25.2 MiB | 31.5 / 512 MiB | 29.4 → 29.4 MiB | 57,078 B |
+| 3 | 30.9 / 256 MiB | 29.2 → 25.2 MiB | 31.2 / 512 MiB | 29.7 → 29.6 MiB | 18,900 B |
+
+Every trial's `resource-trend.json` recorded `pass: true`, no cgroup OOM event
+occurred in either role, and neither role's `memory.peak` reached 80% of its
+limit. Peak RSS sits where the first execution put it - low tens of MiB against
+budgets two orders of magnitude larger.
+
+### One assertion was flaky, and is not any more
+
+The bounded-buffer case requires a deliberately slow SSE consumer
+(`--limit-rate 1k`) to *read* an event carrying an exact drop count. The stream
+is delivered in order, so whether the consumer had reached the first
+drop-carrying event by the time the driver finished its other work was a race
+between the emitters' start-up and the consumer's position in the byte stream.
+
+Across five trials observed before the fix, three reached that assertion with a
+capture holding no drop accounting at all and failed
+(`slow consumer produced no explicit bounded-buffer drop accounting`), while two
+recorded exact drops - 10,773 and 80,514 bytes. The product's accounting path
+was never in question: `internal/logrelay` counts every byte it drops, and the
+count is carried through `producttransport` and `serverapi` to the
+`dropped_bytes` field of the SSE event.
+
+The driver now holds the slow stream open until a drop-carrying event has
+actually been read, bounded by the case deadline. The assertion is unchanged: a
+drop must still be produced by the bounded queue and observed by a slow client.
+Three consecutive trials passed it afterwards.
+
+This is also the resolution of an earlier open question in the campaign record,
+which noted `dropped_bytes` never being observed and could not say whether that
+was the relay never dropping or a notification queued behind the stream it
+described. It was neither: the relay drops and reports, and the consumer had
+simply not read that far.

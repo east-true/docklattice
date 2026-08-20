@@ -24,7 +24,7 @@ All at revision `c6366b83dc31c712b58ace47fe384bffb15a2a32` unless noted.
 | [Multi-Agent lab](multi-agent-lab.md), 11 cases, 3 Agents | `dp-vm-lab` guest | PASS |
 | [Power cut](power-cut.md) | `dp-vm-clean` guest, `virsh destroy` | PASS |
 | [Soak](soak.md) stage 1 re-run | workstation | INCOMPLETE — stopped at 17.6 of 60 minutes |
-| [Resource matrix](resource-gate.md) re-run | — | not run at this revision |
+| [Resource matrix](resource-gate.md) re-run, 3 trials | workstation | PASS |
 
 ## Findings
 
@@ -64,6 +64,11 @@ each one meant a gate had been reporting a result it had not established.
   fixture and therefore no backlog at all.
 - **The lab ran privileged Docker-in-Docker on the workstation,** which cost the
   operator remote access twice. It now refuses outside a `dp-vm-*` guest.
+- **The resource gate's bounded-buffer assertion raced the consumer it was
+  measuring.** A 1 KiB/s SSE reader has to reach a drop-carrying event in an
+  in-order stream before the driver moves on; three of five observed trials did
+  not, and failed. The driver now waits for that evidence, bounded by the case
+  deadline.
 
 ## What is missing
 
@@ -77,14 +82,14 @@ each one meant a gate had been reporting a result it had not established.
    gaps, zero OOM events, zero HTTP errors, host ACTIVE in every sample — but
    17.6 minutes is not a soak, and this is not evidence of anything.
 2. **Stage 2 soak** (2–4 hours, mixed mode) has never run.
-3. **Resource matrix at this revision.** The recorded PASS is from `f1d4087`.
-   A separate open question sits inside it: with a deliberately slow SSE
-   consumer the harness never observed `dropped_bytes`, although the field is
-   mapped end to end (`internal/producttransport/live_bridge.go` →
-   `internal/serverapi/backend.go` → `internal/webui/types.go`) and
-   `internal/logrelay` accounts for every drop it makes. Whether that is the
-   relay never dropping, or a drop notification queued behind the same stream it
-   describes, is not established.
+The resource matrix has since been re-run at this revision: three trials,
+`status=PASS`, peak RSS in the low tens of MiB against 256/512 MiB budgets, no
+OOM. That run also resolved a question this record previously listed as open -
+whether the slow-consumer `dropped_bytes` accounting worked at all. It does; the
+gate's own assertion was racing the consumer's position in an in-order byte
+stream, failing three of five observed trials and passing two with exact counts
+of 10,773 and 80,514 bytes. The driver now holds the stream open until the
+evidence exists. See [resource-gate.md](resource-gate.md).
 
-Until 1 and 3 exist, the honest answer is NOT_READY — for want of evidence, not
-because anything found here is unresolved.
+Until the soak exists, the honest answer is NOT_READY — for want of evidence,
+not because anything found here is unresolved.

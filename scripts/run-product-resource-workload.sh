@@ -526,6 +526,31 @@ while [ "$i" -le 20 ]; do
     i=$((i + 1))
 done
 
+# The bounded-buffer assertion below requires the slow consumer to have *read*
+# an event carrying an exact drop count. It reads at 1 KiB/s and the stream is
+# delivered in order, so whether it has reached the first drop-carrying event
+# by the time the driver is ready to move on is a race between the emitters'
+# start-up and the consumer's position in the byte stream - not something the
+# assertion controls. Left as a race it decided trials: at 600-second cases,
+# three of five observed trials reached this point with a capture holding no
+# drop accounting at all, while the same code recorded 80514 exactly-counted
+# dropped bytes in another.
+#
+# So the stream is held open until the evidence the assertion is about to check
+# actually exists, bounded by the case deadline. This does not weaken the
+# assertion - a drop must still be produced by the bounded queue and read by a
+# slow client - it stops the assertion from depending on when the driver
+# happened to finish its other work.
+drop_deadline=$(( $(date +%s) + 120 ))
+[ "$drop_deadline" -le "$driver_finish_deadline" ] || drop_deadline=$driver_finish_deadline
+while [ "$(date +%s)" -lt "$drop_deadline" ]; do
+    observed=$(awk '/^data: / { sub(/^data: /, ""); print }' "$evidence/slow-log.sse" 2>/dev/null |
+        jq -R 'fromjson? // empty' | jq -s '[.[] | .dropped_bytes // 0] | add // 0' 2>/dev/null || printf 0)
+    case "$observed" in ''|*[!0-9]*) observed=0 ;; esac
+    [ "$observed" -gt 0 ] && break
+    sleep 2
+done
+
 # End initial streams, recreate the production Agent without a Join Token using
 # its same durable state, and require the identity to reconnect.
 for pid in $stream_pids; do kill -TERM "$pid" >/dev/null 2>&1 || true; done

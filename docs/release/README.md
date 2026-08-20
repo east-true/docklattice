@@ -16,7 +16,7 @@ did *not* measure.
 
 | Gate | Status | What it proves |
 |---|---|---|
-| [Production resource matrix](resource-gate.md) | PASS | Real Server and Agent containers under the Appendix A workload mix, measured through cgroup v2 across three trials. Peak RSS 27–31 MiB against 256/512 MiB budgets, zero OOM events. |
+| [Production resource matrix](resource-gate.md) | PASS | Real Server and Agent containers under the Appendix A workload mix, measured through cgroup v2 across three trials. Peak RSS 27–31 MiB against 256/512 MiB budgets, zero OOM events. Re-run at the current revision: three more trials, same picture. |
 | [Clean-host installation](clean-host-install-e2e.md) | PASS | The documented install procedure on a fresh Linux Docker host, including the host-driven Agent upgrade and identity reconnect. |
 | [Recovery matrix](recovery-matrix-e2e.md) | PASS | All three Server-side loss outcomes from architecture section 6.1, with real containers and a real reconnect. |
 | [Hardening matrix](hardening-matrix-e2e.md) | PASS | Injected failures the product claims to survive: Agent and Server kills, network partition, interrupted operation, cancelled Compose run, racing writes, rolled-back Server database, and a filesystem too small for the WAL. Every case closes with the same invariant check over locks, operations, journals, staging, Audit coverage, and secrets. |
