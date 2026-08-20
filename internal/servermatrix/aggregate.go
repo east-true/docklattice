@@ -16,14 +16,9 @@ const (
 	healthNone      = "none"
 )
 
-// healthRank orders the statuses by how much they should worry an operator.
-//
-// The ordering is not arbitrary and "none" sitting above "healthy" is the whole
-// point: healthy is the only claim that requires every member to make it. A
-// service of two containers where one is healthy and the other has no
-// healthcheck is not a healthy service - it is a service we cannot vouch for -
-// and reporting it as healthy would be the aggregate inventing confidence its
-// members never expressed.
+// healthRank orders the three statuses a container can actually report. It
+// deliberately has no entry for "no healthcheck", because that is not a
+// severity: see Aggregate.Health.
 func healthRank(status string) int {
 	switch status {
 	case healthUnhealthy:
@@ -31,18 +26,22 @@ func healthRank(status string) int {
 	case healthStarting:
 		return 2
 	case healthHealthy:
-		return 0
-	default:
 		return 1
+	default:
+		return 0
 	}
 }
 
-func normalizeHealth(status string) string {
+// reportsHealth says whether a container is answering the health question at
+// all. An unrecognised status counts as not answering: a Docker release that
+// adds a status must not have it silently ranked as a severity this code
+// invented.
+func reportsHealth(status string) bool {
 	switch status {
 	case healthUnhealthy, healthStarting, healthHealthy:
-		return status
+		return true
 	default:
-		return healthNone
+		return false
 	}
 }
 
@@ -79,8 +78,27 @@ type Aggregate struct {
 	MemoryPercent      float64
 	MemoryPercentKnown bool
 
-	// Health is the worst of the members; see healthRank.
+	// Health is the worst status the members actually reported, and is exactly
+	// one of: "unhealthy" if any member is unhealthy; "starting" if none is
+	// unhealthy and any is starting; "healthy" if every member that has a
+	// healthcheck reports healthy; "none" if the members exist and not one of
+	// them has a healthcheck; and empty when there is nothing to report at all,
+	// which is a row whose every member is still pending.
+	//
+	// A container without a healthcheck is not a bad health status - it is the
+	// absence of one, which is a difference in what can be observed rather than
+	// in how worrying the answer is. Ranking it against healthy on one scale
+	// would force the row to either overstate its confidence or understate a
+	// real healthy result, so it is counted instead, in HealthUnreported. A row
+	// reading "healthy" with HealthUnreported above zero is saying precisely
+	// what it knows: every container that answers is healthy, and this many did
+	// not answer.
 	Health string
+	// HealthUnreported counts members with no healthcheck, or with a status
+	// this build does not recognise. Pending members are not counted here; they
+	// are in PendingCount, because not having reported yet and not having a
+	// healthcheck are different states.
+	HealthUnreported uint32
 	// Uptime is the youngest member's, because a service is only as old as its
 	// newest container. UptimeKnown is false when no member has reported yet.
 	Uptime      time.Duration
@@ -94,11 +112,13 @@ type Aggregate struct {
 // ContainerCount and PendingCount, so the row says what it is missing.
 func aggregate(rows []ContainerRow) Aggregate {
 	total := Aggregate{ContainerCount: uint32(len(rows))}
+	sampled := 0
 	for _, row := range rows {
 		if row.Pending {
 			total.PendingCount++
 			continue
 		}
+		sampled++
 		sample := row.Sample
 		total.CPUPercent += sample.CPUPercent
 		total.MemoryUsage += sample.MemoryUsage
@@ -113,12 +133,22 @@ func aggregate(rows []ContainerRow) Aggregate {
 		} else {
 			total.MemoryLimit += sample.MemoryLimit
 		}
-		if healthRank(normalizeHealth(sample.Health)) > healthRank(total.Health) || total.Health == "" {
-			total.Health = normalizeHealth(sample.Health)
+		if reportsHealth(sample.Health) {
+			if healthRank(sample.Health) > healthRank(total.Health) {
+				total.Health = sample.Health
+			}
+		} else {
+			total.HealthUnreported++
 		}
 		if !total.UptimeKnown || sample.Uptime < total.Uptime {
 			total.Uptime, total.UptimeKnown = sample.Uptime, true
 		}
+	}
+	if sampled > 0 && total.Health == "" {
+		// Members exist and not one of them has a healthcheck. That is a real
+		// answer about the configuration, and a different one from a row that
+		// has nothing to report because nothing has reported yet.
+		total.Health = healthNone
 	}
 	if total.MemoryLimitUnbounded {
 		total.MemoryLimit = 0

@@ -168,7 +168,7 @@ Per metric, because they do not mean the same thing:
 | CPU percent, memory usage, network RX/TX, block I/O, restarts | sum |
 | memory limit | **unbounded** if any member is unlimited — not a number |
 | memory percent | **not computed** when the limit is unbounded |
-| health | worst of the members |
+| health | worst *answered* status, with unanswered counted separately - see below |
 | uptime | minimum — a service is only as old as its youngest container |
 
 ▲ Revision 1 summed memory limits and marked the result "partial". A number
@@ -176,6 +176,34 @@ labelled partial still gets read as a number and divided into. Unbounded is a
 different kind of answer and is presented as one.
 
 Every service row states how many containers it covers.
+
+### Health, frozen
+
+"Worst of the members" is not enough to implement from, because a container
+with no healthcheck is not a worse or better status than `healthy` - it is the
+absence of a status, a difference in what can be observed rather than in how
+worrying the answer is. Ranking the two on one scale forces the row to either
+overstate its confidence or bury a real `healthy` result.
+
+So a row reports two facts. The status is exactly one of:
+
+| Row health | When |
+|---|---|
+| `unhealthy` | any member reports unhealthy |
+| `starting` | no member is unhealthy and any member is starting |
+| `healthy` | every member that **has** a healthcheck reports healthy |
+| `none` | the row has members and not one of them has a healthcheck |
+| empty | there is nothing to report: every member is still pending |
+
+alongside a count of members that answered nothing - no healthcheck, or a
+status this build does not recognise. An unrecognised status counts as no
+answer rather than as a severity this code invented for it.
+
+A row reading `healthy` with that count above zero is therefore saying exactly
+what it knows: every container that answers is healthy, and this many did not
+answer. Pending members are not in that count; they are counted as pending,
+because not having reported yet and not having a healthcheck are different
+states.
 
 ## 9. Container membership while the stream is open
 

@@ -69,21 +69,29 @@ func TestOneUnlimitedMemberMakesTheRowUnbounded(t *testing.T) {
 	}
 }
 
-// Health is the worst of the members, and "no healthcheck" outranks "healthy":
-// healthy is the only claim that needs every member to make it.
-func TestHealthIsTheWorstOfTheMembers(t *testing.T) {
+// Health is frozen to exactly four answers, and "no healthcheck" is not one of
+// the severities. A container without a healthcheck is not a bad status; it is
+// the absence of one, so it is counted rather than ranked.
+func TestHealthReportsTheWorstAnsweredStatusAndCountsWhoDidNotAnswer(t *testing.T) {
 	for _, testCase := range []struct {
-		name    string
-		members []string
-		want    string
+		name           string
+		members        []string
+		want           string
+		wantUnreported uint32
 	}{
-		{"all healthy", []string{"healthy", "healthy"}, "healthy"},
-		{"one unhealthy", []string{"healthy", "unhealthy"}, "unhealthy"},
-		{"one starting", []string{"healthy", "starting"}, "starting"},
-		{"unhealthy beats starting", []string{"starting", "unhealthy"}, "unhealthy"},
-		{"one without a healthcheck", []string{"healthy", ""}, "none"},
-		{"unhealthy beats no healthcheck", []string{"", "unhealthy"}, "unhealthy"},
-		{"an unrecognised status is no information", []string{"healthy", "restarting-soon"}, "none"},
+		{"every member healthy", []string{"healthy", "healthy"}, "healthy", 0},
+		{"one unhealthy", []string{"healthy", "unhealthy"}, "unhealthy", 0},
+		{"one starting", []string{"healthy", "starting"}, "starting", 0},
+		{"unhealthy outranks starting", []string{"starting", "unhealthy"}, "unhealthy", 0},
+		// The case the ranking used to get wrong. Every container that answers
+		// is healthy, and the row says so while reporting that one did not.
+		{"a member without a healthcheck", []string{"healthy", ""}, "healthy", 1},
+		{"an unhealthy member still wins", []string{"", "unhealthy"}, "unhealthy", 1},
+		{"nobody has a healthcheck", []string{"", ""}, "none", 2},
+		{"Docker's own none is the same as no health section", []string{"none", ""}, "none", 2},
+		// A status this build does not know must not be ranked as a severity
+		// this build invented, so it counts as not answering.
+		{"an unrecognised status is not an answer", []string{"healthy", "restarting-soon"}, "healthy", 1},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			var rows []ContainerRow
@@ -91,10 +99,27 @@ func TestHealthIsTheWorstOfTheMembers(t *testing.T) {
 				rows = append(rows, bounded(string(rune('a'+index)),
 					producttransport.StatsSample{Health: status, MemoryLimit: 100}, ContainerContext{}))
 			}
-			if got := aggregate(rows).Health; got != testCase.want {
-				t.Fatalf("health is %q, want %q", got, testCase.want)
+			total := aggregate(rows)
+			if total.Health != testCase.want {
+				t.Fatalf("health is %q, want %q", total.Health, testCase.want)
+			}
+			if total.HealthUnreported != testCase.wantUnreported {
+				t.Fatalf("%d members reported as having no healthcheck, want %d", total.HealthUnreported, testCase.wantUnreported)
 			}
 		})
+	}
+}
+
+// Nothing reported at all is not the same as nobody having a healthcheck, and
+// the empty string is how a row says it has nothing to report.
+func TestARowWithNothingSampledReportsNoHealthAtAll(t *testing.T) {
+	total := aggregate([]ContainerRow{{ContainerID: "a", Pending: true}})
+	if total.Health != "" || total.HealthUnreported != 0 {
+		t.Fatalf("an all-pending row reported health %q with %d unreported, want neither",
+			total.Health, total.HealthUnreported)
+	}
+	if total.PendingCount != 1 {
+		t.Fatalf("the pending member was not counted as pending: %+v", total)
 	}
 }
 
