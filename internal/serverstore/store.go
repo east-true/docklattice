@@ -10,18 +10,44 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "modernc.org/sqlite"
+	sqlite "modernc.org/sqlite"
 )
+
+// ErrBusy reports SQLite write contention: the write lock was held by another
+// transaction for longer than busy_timeout allows. It is load, not a broken
+// invariant, and callers must be able to say so.
+var ErrBusy = errors.New("serverstore: database is busy")
+
+// Busy reports whether err is SQLite write contention in any of its forms,
+// including the extended busy codes.
+func Busy(err error) bool {
+	var sqliteErr *sqlite.Error
+	if errors.As(err, &sqliteErr) {
+		return sqliteErr.Code()&0xff == sqliteBusyCode
+	}
+	return errors.Is(err, ErrBusy)
+}
 
 const (
 	// CurrentSchemaVersion is the newest schema understood by this binary.
 	CurrentSchemaVersion = 6
 	busyTimeoutMillis    = 5000
+	sqliteBusyCode       = 5
 )
 
 // Store is the product Server's persistent SQLite store.
+//
+// It keeps two pools over the same file. db serves reads and single-statement
+// writes; writer serves transactions that are known to write. A transaction
+// that reads before it writes cannot be started DEFERRED: when another
+// connection commits in between, SQLite refuses the upgrade with SQLITE_BUSY
+// and does not consult busy_timeout, because the reader's snapshot is already
+// stale and waiting could never help. The writer pool therefore begins every
+// transaction IMMEDIATE. It is a separate pool rather than a global DSN option
+// so read-only work is never made to queue behind writers.
 type Store struct {
-	db *sql.DB
+	db     *sql.DB
+	writer *sql.DB
 }
 
 // Open opens (or creates) a file-backed Server database and applies all known
@@ -57,7 +83,18 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		return nil, err
 	}
 
-	return &Store{db: db}, nil
+	writer, err := sql.Open("sqlite", sqliteWriteDSN(absPath))
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("serverstore: open write pool: %w", err)
+	}
+	if err := writer.PingContext(ctx); err != nil {
+		writer.Close()
+		db.Close()
+		return nil, fmt.Errorf("serverstore: ping write pool: %w", err)
+	}
+
+	return &Store{db: db, writer: writer}, nil
 }
 
 func ensureSecureDatabaseFile(path string) error {
@@ -91,18 +128,46 @@ func sqliteDSN(path string) string {
 	return u.String()
 }
 
+// sqliteWriteDSN is the same connection with BEGIN IMMEDIATE as its
+// transaction mode. Only the write pool uses it.
+func sqliteWriteDSN(path string) string {
+	return sqliteDSN(path) + "&_txlock=immediate"
+}
+
+// BeginWrite starts a transaction that takes the write lock before its first
+// statement. Every transaction that will write - including one that reads to
+// decide what to write - must start here rather than with DB().BeginTx, whose
+// DEFERRED transactions cannot be upgraded once another writer has committed.
+func (s *Store) BeginWrite(ctx context.Context) (*sql.Tx, error) {
+	tx, err := s.writer.BeginTx(ctx, nil)
+	if err != nil {
+		if Busy(err) {
+			return nil, fmt.Errorf("%w: write lock unavailable", ErrBusy)
+		}
+		return nil, fmt.Errorf("serverstore: begin write transaction: %w", err)
+	}
+	return tx, nil
+}
+
 // DB exposes the connection pool to repository implementations in this
 // internal package tree. Callers must not change connection pragmas.
 func (s *Store) DB() *sql.DB {
 	return s.db
 }
 
-// Close closes the database connection pool.
+// Close closes both connection pools.
 func (s *Store) Close() error {
 	if s == nil || s.db == nil {
 		return nil
 	}
-	return s.db.Close()
+	var writerErr error
+	if s.writer != nil {
+		writerErr = s.writer.Close()
+	}
+	if err := s.db.Close(); err != nil {
+		return err
+	}
+	return writerErr
 }
 
 // SchemaVersion returns SQLite's transactional user_version marker.

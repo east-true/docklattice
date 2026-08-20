@@ -54,20 +54,21 @@ type agentProjectSnapshotResponse struct {
 }
 
 type agentProjectSnapshot struct {
-	UID                 string                 `json:"project_uid"`
-	Root                string                 `json:"root"`
-	WorkingDir          string                 `json:"working_dir"`
-	Files               []agentProjectFileFact `json:"files"`
-	Name                string                 `json:"name"`
-	Services            []string               `json:"services"`
-	IncludedWorkDirs    []string               `json:"included_work_dirs,omitempty"`
-	SourceReferences    []agentSourceReference `json:"source_references,omitempty"`
-	SourceGraphComplete bool                   `json:"source_graph_complete"`
-	CurrentFingerprint  string                 `json:"current_fingerprint"`
-	ComposeExecutable   bool                   `json:"compose_executable"`
-	FilesystemWritable  bool                   `json:"filesystem_writable"`
-	CapabilityReason    string                 `json:"capability_reason,omitempty"`
-	Stale               bool                   `json:"stale"`
+	UID                     string                 `json:"project_uid"`
+	Root                    string                 `json:"root"`
+	WorkingDir              string                 `json:"working_dir"`
+	Files                   []agentProjectFileFact `json:"files"`
+	Name                    string                 `json:"name"`
+	Services                []string               `json:"services"`
+	IncludedWorkDirs        []string               `json:"included_work_dirs,omitempty"`
+	SourceReferences        []agentSourceReference `json:"source_references,omitempty"`
+	SourceGraphComplete     bool                   `json:"source_graph_complete"`
+	CurrentFingerprint      string                 `json:"current_fingerprint"`
+	ComposeExecutable       bool                   `json:"compose_executable"`
+	FilesystemWritable      bool                   `json:"filesystem_writable"`
+	RestoreRecoveryRequired bool                   `json:"restore_recovery_required,omitempty"`
+	CapabilityReason        string                 `json:"capability_reason,omitempty"`
+	Stale                   bool                   `json:"stale"`
 }
 
 type agentSourceReference struct {
@@ -382,7 +383,8 @@ func (b *Backend) mergeProjectSnapshotObserved(ctx context.Context, agentID stri
 	return b.mergeProjectSnapshotWithDockerObserved(ctx, agentID, status, projects, nil, observedAt)
 }
 
-func (b *Backend) mergeProjectSnapshotWithDockerObserved(ctx context.Context, agentID string, status agentProjectScanStatus, projects []validatedProjectSnapshot, dockerFacts []projectmodel.DockerFact, observedAt time.Time) error {
+func (b *Backend) mergeProjectSnapshotWithDockerObserved(ctx context.Context, agentID string, status agentProjectScanStatus, projects []validatedProjectSnapshot, dockerFacts []projectmodel.DockerFact, observedAt time.Time) (err error) {
+	defer func() { err = classifyStoreBusy(err) }()
 	if observedAt.IsZero() {
 		return errors.New("serverapi: project snapshot observation time is required")
 	}
@@ -391,13 +393,14 @@ func (b *Backend) mergeProjectSnapshotWithDockerObserved(ctx context.Context, ag
 	if err != nil {
 		return &corruptDataError{boundary: "Agent project merge facts", cause: err}
 	}
-	// Serialize durable mirror transactions with operation recovery so SQLite
-	// never has to upgrade a read transaction behind another Agent's writer.
+	// Serialize durable mirror transactions with operation recovery. The write
+	// pool already makes the upgrade race impossible; this keeps unrelated
+	// Agents from queueing on each other inside SQLite.
 	if err := b.lockOperationMerge(ctx); err != nil {
 		return err
 	}
 	defer b.unlockOperationMerge()
-	tx, err := b.store.DB().BeginTx(ctx, nil)
+	tx, err := b.store.BeginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("serverapi: begin project reconciliation: %w", err)
 	}
@@ -500,6 +503,7 @@ func (b *Backend) mergeProjectSnapshotWithDockerObserved(ctx context.Context, ag
 			Stale:                   item.Stale,
 			ComposeExecutable:       item.ComposeExecutable,
 			FilesystemWritable:      item.FilesystemWritable,
+			RestoreRecoveryRequired: item.RestoreRecoveryRequired,
 			CapabilityReason:        item.CapabilityReason,
 			CurrentFingerprint:      item.CurrentFingerprint,
 			LastVerifiedFingerprint: item.CurrentFingerprint,
@@ -519,7 +523,7 @@ func (b *Backend) mergeProjectSnapshotWithDockerObserved(ctx context.Context, ag
 				name = prior.name
 			}
 		}
-		flags.ReadOnly = !managedProject(flags) || flags.Stale || !flags.ComposeExecutable || !flags.FilesystemWritable || flags.Collision
+		flags.ReadOnly = projectReadOnly(flags, flags.Collision)
 		rawFlags, err := json.Marshal(flags)
 		if err != nil {
 			return fmt.Errorf("serverapi: encode project flags: %w", err)
@@ -585,7 +589,8 @@ func (b *Backend) mergeTargetedProjectSnapshot(ctx context.Context, agentID stri
 	return b.mergeTargetedProjectSnapshotObserved(ctx, agentID, item, establishBaseline, time.Now().UTC())
 }
 
-func (b *Backend) mergeTargetedProjectSnapshotObserved(ctx context.Context, agentID string, item validatedProjectSnapshot, establishBaseline bool, observedAt time.Time) error {
+func (b *Backend) mergeTargetedProjectSnapshotObserved(ctx context.Context, agentID string, item validatedProjectSnapshot, establishBaseline bool, observedAt time.Time) (err error) {
+	defer func() { err = classifyStoreBusy(err) }()
 	if observedAt.IsZero() {
 		return errors.New("serverapi: targeted project observation time is required")
 	}
@@ -594,7 +599,7 @@ func (b *Backend) mergeTargetedProjectSnapshotObserved(ctx context.Context, agen
 		return err
 	}
 	defer b.unlockOperationMerge()
-	tx, err := b.store.DB().BeginTx(ctx, nil)
+	tx, err := b.store.BeginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("serverapi: begin targeted project reconciliation: %w", err)
 	}
@@ -652,7 +657,11 @@ func (b *Backend) mergeTargetedProjectSnapshotObserved(ctx context.Context, agen
 	} else {
 		flags.LastVerifiedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	}
-	flags.ReadOnly = !managedProject(flags) || flags.Stale || !flags.ComposeExecutable || !flags.FilesystemWritable
+	// Collision is not known here - reconcileTargetedProjectCollisions decides
+	// it for every project on this Agent a few lines below, in this same
+	// transaction, and recomputes read-only with the answer. Feeding it the
+	// stale value would only invite someone to trust it.
+	flags.ReadOnly = projectReadOnly(flags, false)
 	name := item.Name
 	if name == "" {
 		name = priorName
@@ -804,6 +813,16 @@ func equalProjectStrings(left, right []string) bool {
 	return true
 }
 
+// projectReadOnly is the single definition of "this project cannot be changed".
+// It had been written out at four call sites, and adding a reason to one of
+// them left the other three able to clear the bit again - which is how a
+// recovery-blocked project could be advertised as writable moments after being
+// reported as damaged.
+func projectReadOnly(flags projectFlags, collision bool) bool {
+	return !managedProject(flags) || flags.Stale || !flags.ComposeExecutable ||
+		!flags.FilesystemWritable || collision || flags.RestoreRecoveryRequired
+}
+
 func reconcileTargetedProjectCollisions(ctx context.Context, tx *sql.Tx, agentID, updatedAt string) error {
 	type entry struct {
 		uid, name string
@@ -835,11 +854,11 @@ func reconcileTargetedProjectCollisions(ctx context.Context, tx *sql.Tx, agentID
 	}
 	for _, value := range entries {
 		collision := !value.flags.Missing && value.name != "" && counts[value.name] > 1
-		if value.flags.Collision == collision && value.flags.ReadOnly == (!managedProject(value.flags) || value.flags.Stale || !value.flags.ComposeExecutable || !value.flags.FilesystemWritable || collision) {
+		if value.flags.Collision == collision && value.flags.ReadOnly == projectReadOnly(value.flags, collision) {
 			continue
 		}
 		value.flags.Collision = collision
-		value.flags.ReadOnly = !managedProject(value.flags) || value.flags.Stale || !value.flags.ComposeExecutable || !value.flags.FilesystemWritable || collision
+		value.flags.ReadOnly = projectReadOnly(value.flags, collision)
 		raw, err := json.Marshal(value.flags)
 		if err != nil {
 			return fmt.Errorf("serverapi: encode project collision flags: %w", err)

@@ -27,6 +27,36 @@ fresh `mktemp` root that is scrubbed on every exit.
 
 Select a subset with `HARDENING_CASES`. The default is every case.
 
+## Fixture identity
+
+Every target this matrix touches is the fixture it created, and it proves that
+before each request rather than assuming it.
+
+The dashboard lists every Compose project the Agent can see. On a dedicated
+test host that is exactly one project - the fixture - so a target taken from
+the first entry was right by accident. On a host that is also running the
+operator's own projects it is wrong most of the time, and the matrix would
+drive its writes, backups, restores, and Compose runs into someone else's
+files.
+
+The fixture is therefore resolved by the Compose project name this run
+generated **and** the discovery root it created, and the uid that comes back is
+checked against the one the Agent must derive for that root:
+
+```text
+project uid = sha256(agent_id || NUL || canonical working directory)
+```
+
+No match and more than one match are both failures. The first entry is never
+assumed. A guard in the single place every request passes through re-proves the
+target immediately before the request is sent, for project-scoped URLs and for
+operation bodies alike, so a case added later cannot forget it.
+
+`./scripts/verify-fixture-selection.sh` exercises this logic directly against
+the functions extracted from the runner: no projects, one project, many
+projects, a fixture that sorts last, the same project name at a different root,
+a uid the root cannot derive, and the request guard.
+
 ## Cases
 
 | Case | Injected fault | Contract asserted |
@@ -41,6 +71,7 @@ Select a subset with `HARDENING_CASES`. The default is every case.
 | `db-restore` | the Server database is replaced with an older snapshot | 6.4/6.5: identity and generation are untouched and the acknowledged cursor is not left below its pre-restore watermark |
 | `disk-pressure` | the Agent state is moved to an 8 MiB filesystem | 14.3: a degraded-storage reason is reported through capability reason, capabilities stay enabled, and allowed reads keep working |
 | `audit-gap` | the WAL loss caused by that pressure | 11.6: every reported gap carries its precision, a design-named source, and an ordered range - never a silent hole |
+| `join-token-restart` | a registered Agent restarts with `--join-token-file` still on its command line and the consumed token deleted | the Agent returns ACTIVE with its original identity, and no second host appears |
 | `docker-daemon-restart` | the host Engine is restarted | the Agent returns ACTIVE and the Docker capability recovers |
 
 ## The closing invariant check
@@ -72,7 +103,15 @@ re-proved.
 `docker-daemon-restart` stops every container on the machine, so it runs only
 with `HARDENING_ALLOW_DOCKER_DAEMON_RESTART=1` and a non-interactive
 `systemctl restart docker`. Without both it records an explicit skip reason
-rather than being silently dropped.
+rather than being silently dropped. It has since been executed, in a disposable
+VM rather than on a working machine - see the second recorded execution below.
+
+The case restarts the Agent the way every other restart case in this matrix
+does, without the `--join-token-file` the baseline deliberately deleted. It
+originally used `docker start`, which re-ran the container's whole argument
+list including that flag, and the Agent refused to start against a file the
+harness had removed on purpose. That was a harness defect and not a product
+one: nothing in the product deletes a consumed token.
 
 ## Recorded execution
 
@@ -119,7 +158,7 @@ Recorded assertion results:
 | `invariants_db_restore` | PASS |
 | `invariants_concurrent_operations` | PASS |
 | `invariants_degraded_storage` | PASS |
-| `docker_daemon_restart` | SKIPPED_NOT_AUTHORIZED |
+| `docker_daemon_restart` | SKIPPED_NOT_AUTHORIZED (executed separately, below) |
 
 Observed detail worth keeping:
 
@@ -142,8 +181,120 @@ Observed detail worth keeping:
 `STATUS` recorded `status=PASS`, and the run left no container, network, runtime
 root, or Join Token behind.
 
+`join-token-restart` is not in the default selection and is asked for by name.
+It has to run before any case that replaces the Agent container, since the flag
+still being on the argument list is the whole point. It was previously kept out
+of the default selection because it appeared to break `db-restore`; that turned
+out to be a timing shift rather than an interaction, and the defect behind it is
+fixed - see the [campaign record](v1-final-hardening.md).
+The case asserts both of its preconditions - the consumed token is gone, and the
+container still carries `--join-token-file` - before it does anything, so it
+cannot quietly degrade into a plain restart test.
+
+## Second recorded execution: the ten portable cases at the current revision
+
+The matrix was re-run after the fixture-safety, write-transaction, dashboard
+heartbeat and client-cancellation changes, on a developer workstation that was
+also running unrelated Compose projects - a host the original evidence never
+covered.
+
+    started_at              2026-08-20T10:30:10Z
+    finished_at             2026-08-20T10:38:34Z
+    docker_server_version   29.7.2
+    release_revision        c6366b83dc31c712b58ace47fe384bffb15a2a32
+    server_image_id         sha256:0c05818885eb56673b95608de83bb2b0ea7401ad8ed23c9018809ad87c4de6ee
+    agent_image_id          sha256:0d221f24ed5cb744e9b3b785bdbdf738cb3b950827951b4856e09acb9fda99f2
+    selected_cases          the ten cases above; docker-daemon-restart excluded
+
+`STATUS` recorded `status=PASS`. The fixture project was selected by the UID
+derived from this run's own Agent id and project root, with one unrelated
+Compose project on the host at the time.
+
+## Third recorded execution: `docker-daemon-restart` against a real service manager
+
+Run inside `dp-vm-clean`, a disposable Ubuntu 24.04 guest, so that
+`systemctl restart docker` acted on a machine nobody was using.
+
+    started_at              2026-08-20T10:31:58Z
+    finished_at             2026-08-20T10:32:10Z
+    docker_server_version   29.1.3
+    guest                   dp-vm-clean (libvirt)
+    release_revision        c6366b83dc31c712b58ace47fe384bffb15a2a32
+
+| Assertion | Result |
+| --- | --- |
+| `fixture_identity_verified` | PASS |
+| `docker_daemon_restart` | PASS |
+| `invariants_docker_daemon_restart` | PASS |
+
+The restart was real and the guest's own service manager is the proof:
+`systemctl show docker -p ActiveEnterTimestamp` moved to a time between the
+baseline dashboard and the post-restart dashboard. The Agent returned ACTIVE
+with its original identity and the Docker capability recovered.
+
 Validate the checked-in static contract without Docker:
 
 ```sh
 ./scripts/verify-hardening-matrix-harness.sh
 ```
+
+## Fourth recorded execution: with `join-token-restart`, after the bootstrap fix
+
+    docker_server_version   29.7.2
+    release_revision        eebfe3de574f2f27d1262340f04a4bc46687af23
+    server_image_id         sha256:f4425b262c75747768142cf0f609ad85f356836a712df14b3929d0531ff2d294
+    agent_image_id          sha256:43a7952dd353dec9733f61e080a771d2e642b1b0e5f0b6021702dbfda5a0c4c4
+    selected_cases          join-token-restart, run as its own invocation
+
+`STATUS` recorded `status=PASS`, including:
+
+| Assertion | Result |
+| --- | --- |
+| `join_token_restart_without_bootstrap_secret` | PASS |
+| `join_token_restart_identity_preserved` | PASS |
+| `invariants_join_token_restart` | PASS |
+
+The ten default cases were run separately at the same revision and recorded
+`status=PASS`.
+
+The case was written against the defect and checked in both directions. Run
+alone against the previous images it reproduces the report exactly:
+
+    status=FAIL
+    reason=join-token-restart: a registered Agent did not return ACTIVE after
+           restarting with a consumed Join Token file
+
+    dockpilot agent failed: configure agent runtime: inspect Join Token file:
+    lstat /var/lib/dockpilot/join-token: no such file or directory
+
+Against the images built from the fix it passes, and the Agent's log for the
+whole run is empty.
+
+## Fifth recorded execution: after the restore-recovery fix
+
+`db-restore` is deterministic from this revision on. It waits for Audit coverage
+to be established and acknowledged before taking its snapshot, and asserts
+afterwards that the restore actually stranded a range - so it exercises the
+Server cursor regression path every run rather than some runs.
+
+    docker_server_version   29.7.2
+    release_revision        98b5507730ea1fdfcd1457d42b72acadf8d4b111
+    server_image_id         sha256:7b5c5be6489e85d93dbe6d395fdae0a319eadbea697138b8646e7d1eadca988c
+    agent_image_id          sha256:315f1cfc77e0579398efe1bc00f083c10db1a9d88e788986ae7099a00dbacd41
+    selected_cases          join-token-restart plus the ten default cases
+
+Two runs of the full selection - the one that failed twice before the fix -
+recorded `status=PASS`, with the same figures both times:
+
+| Assertion | Result |
+| --- | --- |
+| `db_restore_snapshot_ack` | `1,4` — coverage established and acknowledged before the snapshot |
+| `db_restore_server_regression_ranges` | 1 — the restore stranded a range and the Server accounted for it |
+| `db_restore_coverage_start_after` | `1,1` — the archive's lower bound is unchanged |
+| `db_restore_ack_watermark_not_regressed` | PASS |
+| `db_restore_prior_operation_explained` | PASS |
+| `invariants_db_restore` | PASS |
+| `join_token_restart_*` | PASS |
+
+`db-restore` run on its own also passes, generating its own Audit activity so
+the coverage precondition is reachable outside the full sequence.

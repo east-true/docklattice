@@ -1422,6 +1422,7 @@ type fakeSession struct {
 	getOperationErr        error
 	cancelOperation        producttransport.CancelOperationResponse
 	cancelErr              error
+	heartbeatBlocks        bool
 	heartbeats             int
 	queries                int
 	operations             int
@@ -1477,11 +1478,21 @@ func (s *fakeSession) Close(error) error {
 	s.mu.Unlock()
 	return nil
 }
-func (s *fakeSession) Heartbeat(context.Context) (producttransport.Heartbeat, error) {
+func (s *fakeSession) Heartbeat(ctx context.Context) (producttransport.Heartbeat, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	blocks := s.heartbeatBlocks
 	s.heartbeats++
-	return producttransport.Heartbeat{Capability: s.capability}, nil
+	capability := s.capability
+	s.mu.Unlock()
+	// A partitioned Agent does not refuse a heartbeat; the packets are simply
+	// dropped and the call hangs until something above it gives up. That is
+	// what this models, so the block is on the caller's context rather than a
+	// returned error.
+	if blocks {
+		<-ctx.Done()
+		return producttransport.Heartbeat{}, ctx.Err()
+	}
+	return producttransport.Heartbeat{Capability: capability}, nil
 }
 func (s *fakeSession) Query(_ context.Context, request producttransport.QueryRequest) (producttransport.QueryResponse, error) {
 	s.mu.Lock()
@@ -1760,5 +1771,39 @@ func TestOperationRecordWithSplitRuneIsStillRefused(t *testing.T) {
 	})
 	if !errors.Is(err, ErrCorruptData) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+// TestARestoreBlockedProjectIsReadOnlyAndSaysWhy locks the Server half of the
+// contract. A project whose restore failed and could not be rolled back is not
+// writable whatever its filesystem says, and the reason has to survive to the
+// API - "not writable" and "damaged, needs an operator" are different things
+// for anyone deciding what to do next.
+func TestARestoreBlockedProjectIsReadOnlyAndSaysWhy(t *testing.T) {
+	ctx, backend, store, registry := newTestBackend(t)
+	agentID := "11111111-1111-4111-8111-111111111111"
+	insertAgent(t, ctx, store, agentID, "Agent", `{"fs_read":true,"fs_write":true}`)
+	at := time.Date(2026, 8, 15, 1, 2, 3, 0, time.UTC)
+	project := testAgentProject(t, agentID, "/srv", "/srv/app", "app", strings.Repeat("a", 64), []string{"web"})
+	project.RestoreRecoveryRequired = true
+	session := newFakeSession(agentID)
+	session.setProjectListPayload(projectListPayload(t, at, false, project))
+	if err := registry.Register(session); err != nil {
+		t.Fatal(err)
+	}
+
+	dashboard, err := backend.Dashboard(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dashboard.Projects) != 1 {
+		t.Fatalf("projects = %+v", dashboard.Projects)
+	}
+	got := dashboard.Projects[0]
+	if !got.RestoreRecoveryRequired {
+		t.Fatalf("project did not report restore recovery: %+v", got)
+	}
+	if !got.ReadOnly {
+		t.Fatalf("a project the Agent refuses to change was advertised as writable: %+v", got)
 	}
 }

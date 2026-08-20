@@ -146,6 +146,7 @@ network=
 compose_project=$(printf '%s' "$prefix-fixture" | tr '[:upper:]' '[:lower:]')
 completed=0
 failure_reason="harness did not complete"
+not_clean=0
 
 capture_log() {
     container=$1
@@ -203,7 +204,18 @@ cleanup() {
     runtime_cleaned=true
     scrub_runtime || runtime_cleaned=false
     if [ "$artifact_created" -eq 1 ]; then
-        if [ "$status" -eq 0 ] && [ "$completed" -eq 1 ] && [ "$runtime_cleaned" = true ]; then
+        if [ "$not_clean" -eq 1 ]; then
+            # This gate is defined for a fresh Docker host. On a host that
+            # already manages other Compose projects the assertion it makes is
+            # not true and must not be relaxed to make the run pass, so the
+            # outcome is recorded as neither PASS nor a product failure.
+            {
+                printf 'status=SKIPPED_NOT_CLEAN\n'
+                printf 'reason=%s\n' "$failure_reason" | tr '\r\n' '  '
+                printf '\n'
+                printf 'runtime_cleaned=%s\n' "$runtime_cleaned"
+            } >"$evidence_dir/STATUS"
+        elif [ "$status" -eq 0 ] && [ "$completed" -eq 1 ] && [ "$runtime_cleaned" = true ]; then
             printf 'status=PASS\n' >"$evidence_dir/STATUS"
         else
             [ "$status" -ne 0 ] || status=1
@@ -271,7 +283,19 @@ state_modes=$(docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
 [ "$(printf '%s\n' "$state_modes" | sed -n 3p)" = 65532:65532:600 ] || fail "TLS key ownership or mode is incorrect"
 
 network="$prefix-network"
-docker network create "$network" >"$evidence_dir/network.id"
+# harness_subnet pins the network this run creates to a range no real network
+# uses. Docker's default pool is 172.17.0.0/12, which on a host whose LAN sits
+# anywhere in 172.16-172.31 will eventually be handed a subnet that overlaps
+# the LAN itself - and a bridge route for the LAN's own prefix takes the host
+# off the network entirely. 198.18.0.0/15 is reserved for benchmarking by
+# RFC 2544 and is never routed, so a harness can claim it safely. The octet is
+# derived from the pid so two runs on one host do not collide; if they do,
+# Docker refuses the create and the run fails rather than guessing.
+harness_subnet() {
+    printf '198.18.%s.0/24' "$(( $$ % 250 + 1 ))"
+}
+
+docker network create --subnet "$(harness_subnet)" "$network" >"$evidence_dir/network.id"
 server="$prefix-server"
 docker run --pull never -d --name "$server" --network "$network" --network-alias server \
     --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
@@ -340,7 +364,8 @@ wait_dashboard() {
     while [ "$(date +%s)" -lt "$deadline" ]; do
         if curl --fail --silent --show-error --max-time 5 --cacert "$runtime/bootstrap/server-ca.crt" \
             "$base_url/api/v1/dashboard" >"$output.tmp" 2>/dev/null &&
-            jq -e --arg root "$runtime/projects" --arg expected "$expected_agent" '
+            jq -e --arg root "$runtime/projects" --arg expected "$expected_agent" \
+                --arg name "$compose_project" '
               (.hosts | length) == 1 and
               (.projects | length) == 1 and
               .hosts[0].state == "ACTIVE" and
@@ -350,6 +375,7 @@ wait_dashboard() {
               .hosts[0].capabilities.compose.enabled == true and
               .hosts[0].capabilities.discovery.enabled == true and
               ($expected == "" or .hosts[0].id == $expected) and
+              .projects[0].name == $name and
               .projects[0].working_dir == $root and
               .projects[0].present == true and .projects[0].stale == false and
               .projects[0].collision == false and .projects[0].read_only == false and
@@ -364,11 +390,29 @@ wait_dashboard() {
     [ "$ready" -eq 1 ]
 }
 
-wait_dashboard "" "$evidence_dir/dashboard.initial.json" || fail "Agent registration or exact project discovery assertion failed"
+if ! wait_dashboard "" "$evidence_dir/dashboard.initial.json"; then
+    # Distinguish a host that is simply not clean from a product failure. The
+    # last dashboard the wait saw is the evidence for that distinction.
+    other=$(jq -r --arg name "$compose_project" \
+        '[(.projects // [])[] | select(.name != $name)] | length' \
+        "$evidence_dir/dashboard.initial.json.tmp" 2>/dev/null || printf 0)
+    case "$other" in
+        ''|*[!0-9]*) other=0 ;;
+    esac
+    if [ "$other" -gt 0 ]; then
+        not_clean=1
+        fail "the host already manages $other Compose projects besides the fixture; this gate requires a clean host"
+    fi
+    fail "Agent registration or exact project discovery assertion failed"
+fi
 agent_id=$(jq -r '.hosts[0].id' "$evidence_dir/dashboard.initial.json")
 project_uid=$(jq -r '.projects[0].uid' "$evidence_dir/dashboard.initial.json")
 [ -n "$agent_id" ] && [ "$agent_id" != null ] && [ -n "$project_uid" ] && [ "$project_uid" != null ] ||
     fail "dashboard omitted Agent or project identity"
+# The Agent derives a project UID as sha256(agent_id || NUL || working dir), so
+# the harness can prove the project it is about to drive is the one it created.
+[ "$project_uid" = "$(printf '%s\000%s' "$agent_id" "$runtime/projects" | sha256sum | awk '{ print $1 }')" ] ||
+    fail "the discovered project uid does not match the uid derived from the fixture root"
 docker run --pull never --rm --user 0:0 --entrypoint /bin/sh -v "$runtime/agent:/agent" "$server_image" \
     -c 'rm -f /agent/join-token' >/dev/null
 rm -f "$runtime/bootstrap/join-token"

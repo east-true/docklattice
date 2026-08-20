@@ -32,6 +32,10 @@ for literal in \
     'chmod 0700 /clean-host/server /clean-host/agent' \
     'chmod 0600 /clean-host/server/tls/server.crt /clean-host/server/tls/server.key' \
     'capabilities.discovery.enabled == true' \
+    'SKIPPED_NOT_CLEAN' \
+    'this gate requires a clean host' \
+    '.projects[0].name == $name' \
+    'does not match the uid derived from the fixture root' \
     'kind:"compose.up"' \
     '/backups' \
     'start_agent false' \

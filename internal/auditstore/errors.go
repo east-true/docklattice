@@ -29,8 +29,20 @@ type ACKIneligibleError struct {
 	Unexplained  []Range
 }
 
+// Error names the cursors an operator needs to tell the two recoverable shapes
+// apart: a restored archive whose delivery cursor sits far below what the Agent
+// is offering, and an ordinary hole in what is arriving now. Cursors are
+// positions, not content, so none of this discloses Audit payload.
 func (e *ACKIneligibleError) Error() string {
-	return fmt.Sprintf("%s: proposed (%d,%d), %d unexplained ranges",
-		ErrACKIneligible, e.Proposed.Incarnation, e.Proposed.Seq, len(e.Unexplained))
+	if len(e.Unexplained) == 0 {
+		return fmt.Sprintf("%s: proposed (%d,%d), delivery next (%d,%d)",
+			ErrACKIneligible, e.Proposed.Incarnation, e.Proposed.Seq,
+			e.DeliveryNext.Incarnation, e.DeliveryNext.Seq)
+	}
+	first := e.Unexplained[0]
+	return fmt.Sprintf("%s: proposed (%d,%d), delivery next (%d,%d), %d unexplained ranges from [(%d,%d),(%d,%d))",
+		ErrACKIneligible, e.Proposed.Incarnation, e.Proposed.Seq,
+		e.DeliveryNext.Incarnation, e.DeliveryNext.Seq, len(e.Unexplained),
+		first.From.Incarnation, first.From.Seq, first.Until.Incarnation, first.Until.Seq)
 }
 func (e *ACKIneligibleError) Unwrap() error { return ErrACKIneligible }

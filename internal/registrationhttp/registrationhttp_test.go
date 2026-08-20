@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -91,7 +92,7 @@ func TestRegisterRenewSaveActivateOrdering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	credentialPath := filepath.Join(t.TempDir(), "credential.json")
+	credentialPath := filepath.Join(secureStateDir(t), "credential.json")
 	if err := identity.SaveCredential(credentialPath, renewed.Credential); err != nil {
 		t.Fatal(err)
 	}
@@ -194,4 +195,17 @@ func TestTLSIdentityIsVerifiedByConfiguredHTTPClient(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "certificate") {
 		t.Fatalf("untrusted TLS error = %v", err)
 	}
+}
+
+// secureStateDir returns a temporary directory the Server may adopt. t.TempDir
+// inherits the umask the suite was launched with, and a state directory that
+// is group- or other-writable is refused by design, so the mode is made
+// explicit here rather than depending on how the suite was invoked.
+func secureStateDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }

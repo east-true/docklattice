@@ -77,3 +77,32 @@ The following still require the release-gate real-container matrix:
   TLS reverse-gRPC endpoints;
 - restart/crash timing around SQLite, Identity State, Agent state, and WAL
   fsync boundaries.
+
+## Restoring the Server database
+
+Restoring a Server database backup is a supported recovery. Two consequences are
+worth knowing before you do it.
+
+**The archive generation moves forward, never back.** It is minted from the
+Server Identity State, which is a separate durability boundary and is not part
+of the Audit database backup. A restored database therefore cannot lower it, and
+Agents are never offered a generation they have already seen under a different
+archive id.
+
+**Audit coverage can be lost, and it is recorded as the Server's loss.** The
+restored archive remembers acknowledging less than it had. Agents were not
+restored, and released the records they saw acknowledged after the backup was
+taken. The range between exists nowhere. The Server records it in the coverage
+ledger as `SERVER_CURSOR_REGRESSION`, the Agents reconnect normally, and Audit
+continues from there. The reason is recorded as `UNKNOWN`, because from the
+Server's side a restore looks the same as other ways a cursor can end up behind
+the Agent - it will not claim a cause it cannot establish.
+
+That entry is **not** an Agent gap. The Agents lost nothing; the archive went
+backwards. Any view that presents coverage loss should say which of the two it
+is - see [`../interface-freeze.md`](../interface-freeze.md) §10 and §11.
+
+Restoring the Server Identity State as well is a different case: the Server then
+presents an archive generation below what Agents hold, which they refuse as
+`ARCHIVE_ROLLBACK_DETECTED`. Recovering from that needs the generation walked
+past what the Agents already hold.

@@ -90,8 +90,15 @@ type FileReader interface {
 
 // BackupMetadataLister is intentionally metadata-only. Archive paths,
 // manifests, and configuration bytes never cross this boundary.
+//
+// RecoveryBlocked reports a project whose changes the Agent is refusing because
+// a restore failed and its rollback failed too. It belongs here rather than in
+// the project catalog because the restore journal owns that state, and it is
+// reported because a Server that does not know about it advertises a project as
+// writable that every mutation will refuse.
 type BackupMetadataLister interface {
 	List(context.Context, string) ([]backup.Metadata, error)
+	RecoveryBlocked(projectUID string) bool
 }
 
 var _ BackupMetadataLister = (*backup.Manager)(nil)
@@ -218,6 +225,10 @@ type Project struct {
 	FilesystemWritable  bool              `json:"filesystem_writable"`
 	CapabilityReason    string            `json:"capability_reason,omitempty"`
 	Stale               bool              `json:"stale"`
+	// RestoreRecoveryRequired is set when a failed restore could not be rolled
+	// back. The project's files are in an unknown state, the Agent refuses to
+	// change them, and an operator has to resolve it by hand.
+	RestoreRecoveryRequired bool `json:"restore_recovery_required,omitempty"`
 }
 
 // SourceReference is content-free Compose include/extends provenance. It is
@@ -308,7 +319,7 @@ func (s *Service) Query(ctx context.Context, _ producttransport.SessionInfo, req
 			var containers []dockeradapter.Container
 			containers, err = s.config.Docker.List(ctx)
 			if err == nil {
-				value, err = projectListResponse(projects, status, containers)
+				value, err = projectListResponse(projects, status, containers, s.config.Backups.RecoveryBlocked)
 			}
 		}
 	case QueryProjectSnapshot:
@@ -322,7 +333,7 @@ func (s *Service) Query(ctx context.Context, _ producttransport.SessionInfo, req
 			if !found {
 				err = ErrProjectUnavailable
 			} else {
-				value = ProjectSnapshotResponse{Project: projectResponse(project)}
+				value = ProjectSnapshotResponse{Project: projectResponse(project, s.config.Backups.RecoveryBlocked(project.UID))}
 			}
 		}
 	case QueryProjectStatus:
@@ -676,7 +687,7 @@ func containerResponse(value dockeradapter.Container) Container {
 	return result
 }
 
-func projectListResponse(projects []agentprojects.Project, status agentprojects.ScanStatus, containers []dockeradapter.Container) (ProjectListResponse, error) {
+func projectListResponse(projects []agentprojects.Project, status agentprojects.ScanStatus, containers []dockeradapter.Container, recoveryBlocked func(string) bool) (ProjectListResponse, error) {
 	dockerFacts, err := composeDockerFacts(containers)
 	if err != nil {
 		return ProjectListResponse{}, err
@@ -686,7 +697,7 @@ func projectListResponse(projects []agentprojects.Project, status agentprojects.
 		if len(project.SourceReferences) > maxProjectSourceRefs {
 			return ProjectListResponse{}, ErrResponseTooLarge
 		}
-		result.Projects[index] = projectResponse(project)
+		result.Projects[index] = projectResponse(project, recoveryBlocked(project.UID))
 	}
 	sort.Slice(result.Projects, func(i, j int) bool { return result.Projects[i].UID < result.Projects[j].UID })
 	return result, nil
@@ -718,7 +729,7 @@ func composeDockerFacts(containers []dockeradapter.Container) ([]DockerProjectFa
 	return result, nil
 }
 
-func projectResponse(project agentprojects.Project) Project {
+func projectResponse(project agentprojects.Project, recoveryBlocked bool) Project {
 	files := make([]FileFact, len(project.Files))
 	for index, file := range project.Files {
 		files[index] = FileFact{Path: file.Path, Size: file.Size, SHA256: file.SHA256}
@@ -729,6 +740,7 @@ func projectResponse(project agentprojects.Project) Project {
 		IncludedWorkDirs: append([]string(nil), project.IncludedWorkDirs...), SourceGraphComplete: project.SourceGraphComplete,
 		CurrentFingerprint: project.CurrentFingerprint, ComposeExecutable: project.ComposeExecutable,
 		FilesystemWritable: project.FilesystemWritable, CapabilityReason: project.CapabilityReason, Stale: project.Stale,
+		RestoreRecoveryRequired: recoveryBlocked,
 	}
 	result.SourceReferences = make([]SourceReference, len(project.SourceReferences))
 	for index, reference := range project.SourceReferences {

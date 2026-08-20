@@ -50,6 +50,12 @@ for literal in \
     'SKIPPED_NOT_AUTHORIZED' \
     'rm -f /state/join-token' \
     'check_invariants ' \
+    'guard_project_target' \
+    'is_fixture_uid' \
+    'allow_fixture_uid' \
+    'which this harness did not create' \
+    'select_fixture_project' \
+    'dashboard projects claim the fixture identity' \
     'invariant: operation ' \
     'invariant: the project lock is still held by nothing' \
     'invariant: a restore journal survived a settled scenario' \

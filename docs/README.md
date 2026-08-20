@@ -21,6 +21,7 @@ is a bug.
 | [Installation](operations/install.md) | How to prepare state directories, issue a Join Token, and run both containers with the correct privilege boundary. |
 | [Configuration](operations/configuration.md) | Every command-line flag, and every operational default with the value it is compiled with. |
 | [HTTP API](operations/api.md) | The Server's read and write endpoints, their error shape, and their secret-handling rules. |
+| [Interface freeze](interface-freeze.md) | The frozen external semantics anything built on Core may depend on: identifiers, operation states, error codes, capabilities, audit coverage, credentials, and what may change afterwards. |
 | [Identity recovery](operations/recovery.md) | What to do after losing Server identity state, the Server database, or an Agent state directory. |
 | [Degraded storage](operations/degraded-storage.md) | What `DEGRADED_STORAGE` means, what Dockpilot evicts on its own, and how to leave the state. |
 

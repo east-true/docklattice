@@ -18,3 +18,16 @@ artifacts/transport-prototype/release/
 
 # Local-only notes; never published.
 /docs/local/
+
+# AI assistant working files (Claude Code, Codex). These are personal to
+# whoever ran the tool and are not part of the source of record.
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+AGENT.md
+AGENT.local.md
+AGENTS.md
+AGENTS.local.md
+.agent/
+.agents/
+.codex/

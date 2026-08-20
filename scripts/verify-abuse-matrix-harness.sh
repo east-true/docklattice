@@ -43,6 +43,12 @@ for literal in \
     'were not both marked as colliding' \
     'a mutation on a colliding project answered HTTP' \
     'PROJECT_BUSY' \
+    'guard_project_target' \
+    'is_fixture_uid' \
+    'allow_fixture_uid' \
+    'which this harness did not create' \
+    'select_fixture_project' \
+    'dashboard projects claim the fixture identity' \
     'a second mutation ran while the project was locked' \
     'an evicted record must be reported as gone' \
     'DENY_PROTECTED_PROJECT' \

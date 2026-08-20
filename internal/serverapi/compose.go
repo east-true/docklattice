@@ -49,7 +49,7 @@ func (b *Backend) OpenProjectLogs(ctx context.Context, projectUID string, reques
 	if err := validateComposeQuery(webui.ComposeQuery{Services: request.Services}); err != nil {
 		return nil, err
 	}
-	access, err := b.projectAccess(ctx, projectUID)
+	access, err := b.projectAccess(ctx, projectUID, projectRead)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func validateComposeQuery(request webui.ComposeQuery) error {
 }
 
 func (b *Backend) projectComposeQuery(ctx context.Context, projectUID, kind string, request webui.ComposeQuery) (webui.ComposeOutput, error) {
-	access, err := b.projectAccess(ctx, projectUID)
+	access, err := b.projectAccess(ctx, projectUID, projectRead)
 	if err != nil {
 		return webui.ComposeOutput{}, err
 	}

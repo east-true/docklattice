@@ -24,7 +24,7 @@ func TestServerStateDirectoryHoldsOnlyIdentityAndDatabase(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	stateDir := t.TempDir()
+	stateDir := secureStateDir(t)
 
 	components, err := Open(ctx, stateDir)
 	if err != nil {
@@ -97,4 +97,17 @@ func slicesContains(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// secureStateDir returns a temporary directory the Server may adopt. t.TempDir
+// inherits the umask the suite was launched with, and a state directory that
+// is group- or other-writable is refused by design, so the mode is made
+// explicit here rather than depending on how the suite was invoked.
+func secureStateDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }

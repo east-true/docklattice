@@ -17,7 +17,7 @@ import (
 var testNow = time.Date(2026, 8, 15, 12, 30, 0, 123456789, time.FixedZone("KST", 9*60*60))
 
 func TestOpenCreatesSecureStableServerIdentity(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state", "server-identity.json")
+	path := filepath.Join(secureTempDir(t), "state", "server-identity.json")
 	manager, err := openAt(path, testNow, persistenceHooks{})
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +135,7 @@ func TestRenewalUsesHalfLifeAndKeepsOldCredentialValid(t *testing.T) {
 }
 
 func TestCredentialFileAtomicRoundTripAndFault(t *testing.T) {
-	dir := t.TempDir()
+	dir := secureTempDir(t)
 	path := filepath.Join(dir, "agent", "credential.json")
 	manager := newTestManager(t)
 	first, err := manager.IssueCredential("agent", testNow)
@@ -241,7 +241,7 @@ func TestVerifyRejectsCredentialFromOtherServer(t *testing.T) {
 }
 
 func TestRevokeIsDurableIdempotentAndCompactable(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "identity.json")
+	path := filepath.Join(secureTempDir(t), "identity.json")
 	manager, err := openAt(path, testNow, persistenceHooks{})
 	if err != nil {
 		t.Fatal(err)
@@ -285,7 +285,7 @@ func TestRevokeIsDurableIdempotentAndCompactable(t *testing.T) {
 }
 
 func TestRevokePreRenameFaultPreservesOldState(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "identity.json")
+	path := filepath.Join(secureTempDir(t), "identity.json")
 	manager, err := openAt(path, testNow, persistenceHooks{})
 	if err != nil {
 		t.Fatal(err)
@@ -313,7 +313,7 @@ func TestRevokePreRenameFaultPreservesOldState(t *testing.T) {
 }
 
 func TestRevokePostRenameFaultAdoptsStricterState(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "identity.json")
+	path := filepath.Join(secureTempDir(t), "identity.json")
 	manager, err := openAt(path, testNow, persistenceHooks{})
 	if err != nil {
 		t.Fatal(err)
@@ -347,7 +347,7 @@ func TestEveryPreRenameStageFailureCleansTemp(t *testing.T) {
 		"rename":    func(h *persistenceHooks, err error) { h.beforeRename = func() error { return err } },
 	} {
 		t.Run(name, func(t *testing.T) {
-			dir := t.TempDir()
+			dir := secureTempDir(t)
 			path := filepath.Join(dir, "identity.json")
 			injected := errors.New("injected " + name)
 			hooks := persistenceHooks{}
@@ -364,7 +364,7 @@ func TestEveryPreRenameStageFailureCleansTemp(t *testing.T) {
 }
 
 func TestAdvanceArchiveGenerationDurabilityAndFaultBoundary(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "identity.json")
+	path := filepath.Join(secureTempDir(t), "identity.json")
 	manager, err := openAt(path, testNow, persistenceHooks{})
 	if err != nil {
 		t.Fatal(err)
@@ -392,7 +392,7 @@ func TestAdvanceArchiveGenerationDurabilityAndFaultBoundary(t *testing.T) {
 
 func TestLoadRejectsInsecureCorruptAndSymlinkState(t *testing.T) {
 	t.Run("permissions", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "identity.json")
+		path := filepath.Join(secureTempDir(t), "identity.json")
 		manager, err := openAt(path, testNow, persistenceHooks{})
 		if err != nil {
 			t.Fatal(err)
@@ -406,7 +406,7 @@ func TestLoadRejectsInsecureCorruptAndSymlinkState(t *testing.T) {
 		}
 	})
 	t.Run("corrupt key", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "identity.json")
+		path := filepath.Join(secureTempDir(t), "identity.json")
 		manager, err := openAt(path, testNow, persistenceHooks{})
 		if err != nil {
 			t.Fatal(err)
@@ -424,7 +424,7 @@ func TestLoadRejectsInsecureCorruptAndSymlinkState(t *testing.T) {
 		}
 	})
 	t.Run("symlink", func(t *testing.T) {
-		dir := t.TempDir()
+		dir := secureTempDir(t)
 		realPath := filepath.Join(dir, "real.json")
 		if _, err := openAt(realPath, testNow, persistenceHooks{}); err != nil {
 			t.Fatal(err)
@@ -441,7 +441,7 @@ func TestLoadRejectsInsecureCorruptAndSymlinkState(t *testing.T) {
 
 func TestAtomicStateRejectsWritableOrSymlinkDirectory(t *testing.T) {
 	t.Run("writable directory", func(t *testing.T) {
-		dir := t.TempDir()
+		dir := secureTempDir(t)
 		if err := os.Chmod(dir, 0o777); err != nil {
 			t.Fatal(err)
 		}
@@ -451,7 +451,7 @@ func TestAtomicStateRejectsWritableOrSymlinkDirectory(t *testing.T) {
 	})
 
 	t.Run("symlink directory", func(t *testing.T) {
-		parent := t.TempDir()
+		parent := secureTempDir(t)
 		realDir := filepath.Join(parent, "real")
 		if err := os.Mkdir(realDir, 0o700); err != nil {
 			t.Fatal(err)
@@ -492,7 +492,7 @@ func TestConcurrentIssueAndVerify(t *testing.T) {
 
 func newTestManager(t *testing.T) *Manager {
 	t.Helper()
-	manager, err := openAt(filepath.Join(t.TempDir(), "identity.json"), testNow, persistenceHooks{})
+	manager, err := openAt(filepath.Join(secureTempDir(t), "identity.json"), testNow, persistenceHooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -514,4 +514,17 @@ func assertNoTemps(t *testing.T, dir string) {
 	if len(matches) != 0 {
 		t.Fatalf("temporary files leaked: %v", matches)
 	}
+}
+
+// secureTempDir returns a temporary directory the identity manager may adopt.
+// t.TempDir inherits the umask the suite was launched with, and identity state
+// that is group- or other-writable is refused by design, so the mode is made
+// explicit here rather than depending on how the suite was invoked.
+func secureTempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }

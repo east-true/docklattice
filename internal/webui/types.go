@@ -15,6 +15,7 @@ var (
 	ErrNotFound       = errors.New("resource not found")
 	ErrConflict       = errors.New("operation conflicts with current state")
 	ErrUnavailable    = errors.New("capability unavailable")
+	ErrBusy           = errors.New("server is busy")
 	ErrInvalidRequest = errors.New("invalid request")
 	ErrTooLarge       = errors.New("request or response exceeds a safe transport limit")
 )
@@ -88,29 +89,35 @@ type ProjectScan struct {
 }
 
 type Project struct {
-	UID                     string            `json:"uid"`
-	AgentID                 string            `json:"agent_id"`
-	WorkingDir              string            `json:"working_dir"`
-	Name                    string            `json:"name"`
-	Managed                 bool              `json:"managed"`
-	UnmanagedReason         string            `json:"unmanaged_reason,omitempty"`
-	ContainerIDs            []string          `json:"container_ids,omitempty"`
-	Services                []string          `json:"services,omitempty"`
-	IncludedBy              []string          `json:"included_by,omitempty"`
-	SourceReferences        []SourceReference `json:"source_references,omitempty"`
-	SourceGraphComplete     bool              `json:"source_graph_complete"`
-	Present                 bool              `json:"present"`
-	Stale                   bool              `json:"stale"`
-	ReadOnly                bool              `json:"read_only"`
-	Collision               bool              `json:"collision"`
-	ComposeExecutable       bool              `json:"compose_executable"`
-	FilesystemWritable      bool              `json:"filesystem_writable"`
-	CapabilityReason        string            `json:"capability_reason,omitempty"`
-	CurrentFingerprint      string            `json:"current_fingerprint,omitempty"`
-	AppliedFingerprint      string            `json:"applied_fingerprint,omitempty"`
-	LastVerifiedFingerprint string            `json:"last_verified_fingerprint,omitempty"`
-	LastVerifiedAt          *time.Time        `json:"last_verified_at,omitempty"`
-	Drift                   string            `json:"drift"`
+	UID                 string            `json:"uid"`
+	AgentID             string            `json:"agent_id"`
+	WorkingDir          string            `json:"working_dir"`
+	Name                string            `json:"name"`
+	Managed             bool              `json:"managed"`
+	UnmanagedReason     string            `json:"unmanaged_reason,omitempty"`
+	ContainerIDs        []string          `json:"container_ids,omitempty"`
+	Services            []string          `json:"services,omitempty"`
+	IncludedBy          []string          `json:"included_by,omitempty"`
+	SourceReferences    []SourceReference `json:"source_references,omitempty"`
+	SourceGraphComplete bool              `json:"source_graph_complete"`
+	Present             bool              `json:"present"`
+	Stale               bool              `json:"stale"`
+	ReadOnly            bool              `json:"read_only"`
+	Collision           bool              `json:"collision"`
+	ComposeExecutable   bool              `json:"compose_executable"`
+	FilesystemWritable  bool              `json:"filesystem_writable"`
+	// RestoreRecoveryRequired means a restore failed and its rollback failed
+	// too. The project files are in an unknown state and every mutation is
+	// refused until an operator resolves it. read_only is true as well; this
+	// field says why, because "not writable" and "damaged" are different
+	// things for anyone deciding what to do next.
+	RestoreRecoveryRequired bool       `json:"restore_recovery_required"`
+	CapabilityReason        string     `json:"capability_reason,omitempty"`
+	CurrentFingerprint      string     `json:"current_fingerprint,omitempty"`
+	AppliedFingerprint      string     `json:"applied_fingerprint,omitempty"`
+	LastVerifiedFingerprint string     `json:"last_verified_fingerprint,omitempty"`
+	LastVerifiedAt          *time.Time `json:"last_verified_at,omitempty"`
+	Drift                   string     `json:"drift"`
 }
 
 // SourceReference is content-free Compose include/extends provenance. It

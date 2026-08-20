@@ -2,6 +2,7 @@ package webui
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -50,6 +51,12 @@ func NewWithDiagnostics(backend Backend, diagnostics io.Writer) (*Handler, error
 // internalErrorLogLimit bounds one diagnostic line so an error carrying
 // Agent-provided text cannot turn the Server's output into unbounded logging.
 const internalErrorLogLimit = 512
+
+// statusClientClosedRequest is nginx's 499. Go has no constant for it and no
+// RFC defines one, but a real code is still better than reusing 500 for a
+// client that hung up: the difference matters in an access log even though the
+// response itself has nowhere to go.
+const statusClientClosedRequest = 499
 
 func (h *Handler) logInternalError(err error) {
 	if h.diagnostics == nil || err == nil {
@@ -697,10 +704,23 @@ func (h *Handler) respond(w http.ResponseWriter, value any, err error) {
 		writeProblem(w, http.StatusConflict, "CONFLICT", err.Error())
 	case errors.Is(err, ErrUnavailable):
 		writeProblem(w, http.StatusServiceUnavailable, "CAPABILITY_UNAVAILABLE", err.Error())
+	// Contention for the Server database is load, not a broken invariant. It
+	// is a transient answer the caller may retry, so it must not be reported
+	// as an internal failure.
+	case errors.Is(err, ErrBusy):
+		writeProblem(w, http.StatusServiceUnavailable, "SERVER_BUSY", err.Error())
 	case errors.Is(err, ErrInvalidRequest):
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
 	case errors.Is(err, ErrTooLarge):
 		writeProblem(w, http.StatusRequestEntityTooLarge, "TOO_LARGE", err.Error())
+	// A caller that hangs up cancels its own request context: a closed browser
+	// tab, a log stream the reader walked away from, a curl that hit its
+	// --max-time. Nothing reaches a connection that is already gone, so the
+	// status written here is never read; what does survive is the diagnostic
+	// line, and calling a client's own disconnect an internal Server failure
+	// buries real failures under stream-teardown noise.
+	case errors.Is(err, context.Canceled):
+		writeProblem(w, statusClientClosedRequest, "CLIENT_CLOSED_REQUEST", "the client closed the request")
 	default:
 		// ErrCorruptData and anything else unmapped is a genuine Server-side
 		// invariant failure, so 500 is the correct answer. It is recorded here

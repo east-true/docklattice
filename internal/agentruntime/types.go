@@ -51,8 +51,18 @@ type Config struct {
 
 	Registration *registrationhttp.Client
 	JoinToken    string
-	DisplayName  string
-	Metadata     map[string]string
+	// JoinTokenSource resolves a bootstrap Join Token that is not already in
+	// hand - a file on disk, a mounted secret. It is consulted only on the
+	// enrollment path, never when a usable runtime credential already exists,
+	// because a Join Token is what gets an Agent registered and not what keeps
+	// a registered Agent running. Resolving it eagerly made a consumed
+	// bootstrap secret into a permanent restart dependency.
+	//
+	// JoinToken takes precedence when both are set. Both being absent is not an
+	// error until something actually needs to enroll.
+	JoinTokenSource func(context.Context) (string, error)
+	DisplayName     string
+	Metadata        map[string]string
 
 	ServerAddress string
 	TLSConfig     *tls.Config

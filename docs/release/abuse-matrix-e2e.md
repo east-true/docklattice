@@ -23,6 +23,42 @@ built or pulled, an absolute evidence directory that must not already exist, and
 a separate `mktemp` runtime root scrubbed on every exit. Select a subset with
 `ABUSE_CASES`.
 
+## Fixture identity
+
+Every target this matrix touches is the fixture it created, and it proves that
+before each request rather than assuming it.
+
+The dashboard lists every Compose project the Agent can see. On a dedicated
+test host that is exactly one project - the fixture - so a target taken from
+the first entry was right by accident. On a host that is also running the
+operator's own projects it is wrong most of the time, and the matrix would
+drive its writes, backups, restores, and Compose runs into someone else's
+files.
+
+The fixture is therefore resolved by the Compose project name this run
+generated **and** the discovery root it created, and the uid that comes back is
+checked against the one the Agent must derive for that root:
+
+```text
+project uid = sha256(agent_id || NUL || canonical working directory)
+```
+
+No match and more than one match are both failures. The first entry is never
+assumed. A guard in the single place every request passes through re-proves the
+target immediately before the request is sent, for project-scoped URLs and for
+operation bodies alike, so a case added later cannot forget it.
+
+`./scripts/verify-fixture-selection.sh` exercises this logic directly against
+the functions extracted from the runner: no projects, one project, many
+projects, a fixture that sorts last, the same project name at a different root,
+a uid the root cannot derive, and the request guard.
+
+Two cases in this matrix create a second project of their own - the name
+collision case and the protected Compose project case - and both are registered
+as fixtures the same way. The protected-project case previously searched the
+dashboard for any readable project to use as its "unrelated" control and ran a
+real `compose.up` against it; it now uses this run's own baseline fixture.
+
 ## Cases
 
 | Case | What is sent | Contract asserted |
@@ -121,6 +157,25 @@ environment routes silently ignored unrecognised query parameters while their
 sibling routes refused them. The environment route was the consequential one,
 because a caller passing `reveal=1` or misspelling the key received masked
 values while believing it had asked for revealed ones.
+
+## Second recorded execution: at the current revision
+
+Re-run after the fixture-safety, write-transaction, dashboard heartbeat and
+client-cancellation changes, on a developer workstation that was also running
+unrelated Compose projects.
+
+    started_at              2026-08-20T10:39:38Z
+    docker_server_version   29.7.2
+    release_version         1.0.0
+    release_revision        c6366b83dc31c712b58ace47fe384bffb15a2a32
+    server_image_id         sha256:0c05818885eb56673b95608de83bb2b0ea7401ad8ed23c9018809ad87c4de6ee
+    agent_image_id          sha256:0d221f24ed5cb744e9b3b785bdbdf738cb3b950827951b4856e09acb9fda99f2
+
+All thirteen cases ran and `STATUS` recorded `status=PASS`. Two of them -
+`protected-compose-project` and `name-collision` - are the ones that used to
+pick their target by list position; on this host that would have aimed a real
+`compose.up` at somebody else's project. Both now resolve their target from the
+UID derived from this run's own Agent id and project root.
 
 Validate the checked-in static contract without Docker:
 

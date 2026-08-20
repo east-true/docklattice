@@ -342,10 +342,13 @@ func (r *Runtime) loadOrRegisterCredential(ctx context.Context) error {
 		}
 		r.credential, r.credentialState = credential, snapshot.Credential
 		r.heartbeat.setCredentialIdentity(credential.CredentialID, credential.ServerIdentityID)
+		// The credential is present, its identity matches, and it has not
+		// expired: this Agent is registered, and registered is the whole
+		// question. Nothing below this point may consult a bootstrap Join
+		// Token - not to check that one exists, not to read the file it lives
+		// in. Doing so is what turned a one-time enrollment secret into a
+		// dependency of every restart.
 		if !r.config.Now().Before(credential.ExpiresAt) {
-			if r.config.JoinToken == "" {
-				return fmt.Errorf("%w: existing credential expired", ErrCredentialRequired)
-			}
 			return r.register(ctx, &credential)
 		}
 		return nil
@@ -353,18 +356,53 @@ func (r *Runtime) loadOrRegisterCredential(ctx context.Context) error {
 	return r.register(ctx, nil)
 }
 
+// register is the enrollment path, and the only caller of the bootstrap Join
+// Token. Reaching it means the durable state cannot authenticate this Agent:
+// either there is no credential material at all, or the credential there has
+// expired. A credential the Server *rejects* does not reach here - that is an
+// authentication failure against a credential this Agent still holds, and
+// falling back to enrollment would let a Join Token walk around a revocation.
 func (r *Runtime) register(ctx context.Context, expired *identity.Credential) error {
-	if r.config.Registration == nil || r.config.JoinToken == "" || r.config.DisplayName == "" {
+	token, err := r.bootstrapToken(ctx)
+	if err != nil {
+		return err
+	}
+	if r.config.Registration == nil || token == "" || r.config.DisplayName == "" {
+		if expired != nil {
+			return fmt.Errorf("%w: existing credential expired", ErrCredentialRequired)
+		}
 		return ErrCredentialRequired
 	}
 	response, err := r.config.Registration.Register(ctx, registrationhttp.RegisterRequest{
-		JoinToken: r.config.JoinToken, AgentID: r.startup.AgentID, DisplayName: r.config.DisplayName,
+		JoinToken: token, AgentID: r.startup.AgentID, DisplayName: r.config.DisplayName,
 		Metadata: cloneMetadata(r.config.Metadata), ExpiredCredential: expired,
 	})
 	if err != nil {
 		return fmt.Errorf("agentruntime: register: %w", err)
 	}
 	return r.installCredentialAndArchive(ctx, response)
+}
+
+// bootstrapToken resolves the Join Token for an enrollment that is about to
+// happen. A token already in hand wins; otherwise the configured source is
+// asked, and a source that reports a problem - a missing file, a bad mode -
+// fails the enrollment rather than being swallowed, because an Agent that
+// genuinely needs to enrol and cannot read its bootstrap secret must say so.
+func (r *Runtime) bootstrapToken(ctx context.Context) (string, error) {
+	if r.config.JoinToken != "" {
+		return r.config.JoinToken, nil
+	}
+	if r.config.JoinTokenSource == nil {
+		return "", nil
+	}
+	token, err := r.config.JoinTokenSource(ctx)
+	if err != nil {
+		// The source's own error names what could not be read. It must not
+		// carry the token, and it does not: this path is reached only when
+		// there is no token to carry.
+		return "", fmt.Errorf("agentruntime: resolve Join Token: %w", err)
+	}
+	return token, nil
 }
 
 func (r *Runtime) recoverPendingActivation(ctx context.Context) error {

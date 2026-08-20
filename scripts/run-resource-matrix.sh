@@ -516,7 +516,19 @@ for trial in 1 2 3; do
         'chown -R 65532:65532 /resource/server /resource/projects; chmod 0700 /resource/server; chmod 0600 /resource/server/tls/server.crt /resource/server/tls/server.key; chmod 0755 /resource/projects; chmod 0644 /resource/projects/compose.yaml' \
         >/dev/null
 
-    docker network create "$network" >"$evidence/network.id"
+# harness_subnet pins the network this run creates to a range no real network
+# uses. Docker's default pool is 172.17.0.0/12, which on a host whose LAN sits
+# anywhere in 172.16-172.31 will eventually be handed a subnet that overlaps
+# the LAN itself - and a bridge route for the LAN's own prefix takes the host
+# off the network entirely. 198.18.0.0/15 is reserved for benchmarking by
+# RFC 2544 and is never routed, so a harness can claim it safely. The octet is
+# derived from the pid so two runs on one host do not collide; if they do,
+# Docker refuses the create and the run fails rather than guessing.
+harness_subnet() {
+    printf '198.18.%s.0/24' "$(( $$ % 250 + 1 ))"
+}
+
+    docker network create --subnet "$(harness_subnet)" "$network" >"$evidence/network.id"
     docker run -d --name "$server" --network "$network" --network-alias server \
         --memory 1g --memory-swap 1g --cpus 1 --pids-limit 512 --ulimit nofile=4096:4096 \
         --log-driver local --log-opt max-size=5m --log-opt max-file=1 --log-opt compress=false \

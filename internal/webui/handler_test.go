@@ -250,6 +250,18 @@ func TestTypedHostInventoryRoutesAreStrictAndCurated(t *testing.T) {
 	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "CAPABILITY_UNAVAILABLE") {
 		t.Fatalf("unavailable response = %d %q", response.Code, response.Body.String())
 	}
+
+	// Database contention is transient load. It must not reach the browser as
+	// an internal failure, which is what an unmapped error would produce.
+	backend.err = fmt.Errorf("%w: the Server database is busy", ErrBusy)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/hosts/agent-a/networks", nil))
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "SERVER_BUSY") {
+		t.Fatalf("busy response = %d %q", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "INTERNAL") {
+		t.Fatalf("busy response was reported as an internal failure: %q", response.Body.String())
+	}
 }
 
 func TestEmbeddedInventoryClientIsExplicitAndFailClosed(t *testing.T) {
@@ -869,5 +881,38 @@ func TestEnvironmentRevealControlsMasking(t *testing.T) {
 	handler.ServeHTTP(revealed, httptest.NewRequest(http.MethodGet, "/api/v1/projects/project-a/environment?reveal=true", nil))
 	if strings.Contains(revealed.Body.String(), "********") {
 		t.Fatalf("an explicitly revealed listing must not mask: %s", revealed.Body.String())
+	}
+}
+
+type canceledBackend struct{ Backend }
+
+func (canceledBackend) Dashboard(ctx context.Context) (Dashboard, error) {
+	return Dashboard{}, fmt.Errorf("serverapi: dashboard: %w", ctx.Err())
+}
+
+// A client hanging up is the client's decision. It has to stay out of the
+// Server's failure diagnostics: every SSE stream ends this way, and a log that
+// calls each of those an internal Server failure cannot be used to find a real
+// one.
+func TestAClientHangingUpIsNotRecordedAsAServerFailure(t *testing.T) {
+	var diagnostics strings.Builder
+	handler, err := NewWithDiagnostics(canceledBackend{}, &diagnostics)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard", nil).WithContext(ctx)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code == http.StatusInternalServerError {
+		t.Fatalf("a client disconnect answered %d, which is the Server accusing itself", recorder.Code)
+	}
+	if recorder.Code != statusClientClosedRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, statusClientClosedRequest)
+	}
+	if recorded := diagnostics.String(); recorded != "" {
+		t.Fatalf("a client disconnect was recorded as a Server failure: %q", recorded)
 	}
 }

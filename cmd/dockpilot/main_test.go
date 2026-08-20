@@ -49,7 +49,7 @@ func TestHelp(t *testing.T) {
 }
 
 func TestServerIssueTokenPrintsOneUsablePlaintextCopy(t *testing.T) {
-	stateDir := t.TempDir()
+	stateDir := secureStateDir(t)
 	var stdout, stderr bytes.Buffer
 	if code := run(context.Background(), []string{
 		"server", "issue-token", "--state-dir", stateDir, "--ttl", "1h",
@@ -195,4 +195,17 @@ func TestAgentStateDirRebasesDefaultCAAndJoinTokenFileIsPrivate(t *testing.T) {
 	if _, err := readJoinToken(secret); err == nil {
 		t.Fatal("owner-executable Join Token was accepted")
 	}
+}
+
+// secureStateDir returns a temporary directory the Server may adopt. t.TempDir
+// inherits the umask the suite was launched with, and a Server state directory
+// that is group- or other-writable is refused by design, so the mode is made
+// explicit here rather than depending on how the suite was invoked.
+func secureStateDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }

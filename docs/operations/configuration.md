@@ -64,7 +64,7 @@ dockpilot agent [options]
 | `--server` | `127.0.0.1:8443` | Server Agent transport address. |
 | `--registration-url` | `https://127.0.0.1:8080` | HTTPS registration base URL. |
 | `--server-ca` | none | PEM CA or certificate used to authenticate the Server. |
-| `--join-token-file` | none | Mode 0600 file containing the one-time Join Token. |
+| `--join-token-file` | none | Mode 0600 file containing the one-time Join Token. Read only when an enrollment is required; a registered Agent reconnects with its stored runtime credential and never opens this path, so the file may be removed after registration while the flag stays on the command line. |
 | `--display-name` | none | Name shown for this host in the UI. |
 | `--self-container-id` | detected | Explicit Agent container ID, used as a self-protection fallback. |
 | `--self-container-name` | detected | Explicit Agent container name, used as a self-protection fallback. |

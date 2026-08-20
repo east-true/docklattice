@@ -93,6 +93,7 @@ func (s *Server) Run(ctx context.Context, session producttransport.AuditControlS
 
 	var pending *producttransport.AuditCoverageSnapshot
 	var revision uint64
+	var resumedAt *auditstore.Cursor
 	for {
 		message, err := stream.Recv(ctx)
 		if err != nil {
@@ -138,6 +139,13 @@ func (s *Server) Run(ctx context.Context, session producttransport.AuditControlS
 			pending = nil
 		case message.Record != nil:
 			record := *message.Record
+			// The first record of a session is where the Agent resumed, which
+			// it derives from its own record of what this Server acknowledged.
+			// Nothing below it will arrive on this stream, and that is the only
+			// thing that makes a Server-side cursor regression provable.
+			if resumedAt == nil {
+				resumedAt = &auditstore.Cursor{Incarnation: record.Incarnation, Seq: record.Sequence}
+			}
 			if !established {
 				start := producttransport.AuditCursor{Incarnation: record.Incarnation, Sequence: record.Sequence}
 				if pending != nil {
@@ -157,7 +165,7 @@ func (s *Server) Run(ctx context.Context, session producttransport.AuditControlS
 				}
 				pending = nil
 			}
-			if err := s.ingestAndACK(ctx, info, stream, record, &revision); err != nil {
+			if err := s.ingestAndACK(ctx, info, stream, record, &revision, resumedAt); err != nil {
 				return err
 			}
 		default:
@@ -166,7 +174,14 @@ func (s *Server) Run(ctx context.Context, session producttransport.AuditControlS
 	}
 }
 
-func (s *Server) ingestAndACK(ctx context.Context, info producttransport.SessionInfo, stream producttransport.AuditReceiveStream, record producttransport.AuditRecord, revision *uint64) error {
+func (s *Server) ingestAndACK(
+	ctx context.Context,
+	info producttransport.SessionInfo,
+	stream producttransport.AuditReceiveStream,
+	record producttransport.AuditRecord,
+	revision *uint64,
+	resumedAt *auditstore.Cursor,
+) error {
 	event, err := s.config.Decoder.Decode(ctx, info, record)
 	if err != nil {
 		return fmt.Errorf("auditsync: decode event: %w", err)
@@ -182,6 +197,15 @@ func (s *Server) ingestAndACK(ctx context.Context, info producttransport.Session
 		return err
 	}
 	proposed := auditstore.Cursor{Incarnation: record.Incarnation, Seq: record.Sequence}
+	// Eligibility is decided before the acknowledgement is offered, not after.
+	// The Agent persists the proposed cursor and only then reports acceptance,
+	// so an ACK that is offered and then refused still moves where that Agent
+	// resumes next time - and a hole that was above the resume position becomes
+	// one below it, which the recovery below would then treat as evidence. An
+	// ACK this Server will not honour is therefore never sent.
+	if err := s.settleACKEligibility(ctx, info.AgentID, proposed, *revision, resumedAt); err != nil {
+		return err
+	}
 	for {
 		if err := stream.SendAck(producttransport.AuditAck{AuditArchiveID: s.config.ArchiveID,
 			Incarnation: proposed.Incarnation, Sequence: proposed.Seq, CoverageRevisionSeen: *revision}); err != nil {
@@ -197,6 +221,9 @@ func (s *Server) ingestAndACK(ctx context.Context, info producttransport.Session
 			return errors.New("auditsync: missing or mismatched ACK result")
 		}
 		if response.AckResult.Accepted {
+			// No recovery attempt here. Eligibility was settled before the
+			// acknowledgement was offered; anything refusing it now is a change
+			// this Server did not sanction, and it fails closed.
 			_, err := s.config.Store.CheckAndAdvanceACK(ctx, s.config.ArchiveID, info.AgentID, proposed, *revision, s.now())
 			return err
 		}
@@ -208,6 +235,50 @@ func (s *Server) ingestAndACK(ctx context.Context, info producttransport.Session
 			return err
 		}
 	}
+}
+
+// settleACKEligibility decides whether the acknowledgement about to be offered
+// can be honoured, and recovers the one blocked case that is recoverable
+// without an operator: this archive went backwards - a restored database -
+// while the Agent did not, so it is resuming from an acknowledgement this
+// Server issued and no longer remembers.
+//
+// Everything below the point the Agent resumed from is unobtainable. The Server
+// does not hold it, and the Agent will not offer it, because the Agent believes
+// it was already acknowledged. Recording that as Server-side coverage loss is
+// what lets the ACK proceed - and the loss stays in the ledger, attributed to
+// the Server rather than to the Agent.
+//
+// Every other reason an ACK is blocked stays blocked, and the session ends
+// without an acknowledgement being sent. That matters more than it looks: an
+// offered-then-refused ACK is persisted by the Agent before it answers, so
+// sending one would hand the next session a resume position built on a refusal,
+// and the hole this declined to cover would sit below it and be covered then.
+func (s *Server) settleACKEligibility(
+	ctx context.Context,
+	agentID string,
+	proposed auditstore.Cursor,
+	revision uint64,
+	resumedAt *auditstore.Cursor,
+) error {
+	blocked := s.config.Store.ACKEligibility(ctx, s.config.ArchiveID, agentID, proposed, revision)
+	if !errors.Is(blocked, auditstore.ErrACKIneligible) {
+		return blocked
+	}
+	if resumedAt == nil {
+		return blocked
+	}
+	recovery, err := s.config.Store.RecordCursorRegression(ctx, s.config.ArchiveID, agentID,
+		proposed, *resumedAt, auditstore.RegressionUnknown, s.now())
+	if err != nil {
+		return err
+	}
+	if len(recovery.Recorded) == 0 {
+		return blocked
+	}
+	// Re-checked once. Still blocked means something other than the regression
+	// is in the way, and that error is the honest one to return.
+	return s.config.Store.ACKEligibility(ctx, s.config.ArchiveID, agentID, proposed, revision)
 }
 
 func (s *Server) establish(ctx context.Context, agentID string, start producttransport.AuditCursor) error {

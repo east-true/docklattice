@@ -47,6 +47,29 @@ never restarted, holding no Join Token — must return to ACTIVE under its origi
 Agent ID. That can only happen through automatic credential authentication plus
 an automatic Archive Rebind.
 
+**Case 1b — the rebind is recorded, and a rollback is refused.** Two things
+follow from section 6 that no dashboard state shows. An Agent that adopts a new
+Archive must leave a trace, or the gap it just crossed becomes unattributable
+afterwards; and an Agent presented with a generation *below* the one it holds
+must refuse, because adopting it would write newer history into an older archive
+under the same identity. The first is asserted from the Agent's own audit
+stream. The second is produced the way an operator produces it: the Server's
+Identity State and database are snapshotted together while it is stopped, the
+Agent is moved past that generation, and then the consistent old backup is
+restored.
+
+The refusal is observed where it has an effect rather than in a log line - the
+Agent process writes no diagnostics at all, only the Server has a diagnostics
+writer - so what is checked is that the restored archive's cursor does not move
+however much the Agent goes on observing.
+
+Recovering afterwards takes two generation advances rather than one. The Agent
+holds generation N; losing the restored database once mints generation N again
+with a *new* archive id, which the Agent refuses just as firmly as it refused
+the rollback. Only a generation strictly past the one it holds is adoptable.
+That is an operational fact about restoring a Server backup, not a harness
+detail.
+
 **Case 2 — Identity State lost, Audit database preserved.** The Server would
 present a different `server_identity_id` over an Archive belonging to the old
 one, so it must fail closed. The assertion requires a non-zero exit and output
@@ -92,6 +115,35 @@ Recorded assertion results:
 
 `STATUS` recorded `status=PASS`, and the run left no container, network, runtime
 root, or Join Token behind.
+
+## Second recorded execution: with case 1b, at the current revision
+
+    started_at              2026-08-20T10:43:22Z
+    finished_at             2026-08-20T10:55:43Z
+    docker_server_version   29.7.2
+    release_revision        c6366b83dc31c712b58ace47fe384bffb15a2a32
+    server_image_id         sha256:0c05818885eb56673b95608de83bb2b0ea7401ad8ed23c9018809ad87c4de6ee
+    agent_image_id          sha256:0d221f24ed5cb744e9b3b785bdbdf738cb3b950827951b4856e09acb9fda99f2
+
+| Fact | Value |
+| --- | --- |
+| baseline `archive_generation` | 1 |
+| case 1 `archive_generation` | 2 (advanced, identity unchanged) |
+| generation the Agent was moved to | 3 |
+| generation presented after the rollback | 2 |
+| restored archive head before the settle window | cursor 63 |
+| restored archive head after it | cursor 63 — nothing delivered |
+| last rebind cursor at generation 3 | 92 |
+| generation advances needed to recover | 2 (to generation 4) |
+
+| Assertion | Result |
+| --- | --- |
+| `archive_rebind_recorded` | PASS |
+| `archive_rollback_not_adopted` | PASS |
+| `archive_rollback_no_downward_rebind` | PASS |
+| every case 1, 2 and 3 assertion above | PASS |
+
+`STATUS` recorded `status=PASS`.
 
 Validate the checked-in static contract without Docker:
 

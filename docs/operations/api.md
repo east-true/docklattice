@@ -29,6 +29,7 @@ Errors are a uniform JSON object:
 | 409 | `CONFLICT` | Project lock contention, concurrent edit, name collision, or a refused mutation. |
 | 413 | `TOO_LARGE` | Body exceeds the endpoint's limit. |
 | 503 | `CAPABILITY_UNAVAILABLE` | Agent offline, or the capability is disabled for this host or root. |
+| 503 | `SERVER_BUSY` | The Server database could not take its write lock within the busy timeout. Transient contention, safe to retry. |
 | 500 | `INTERNAL` | Server-side invariant failure. The response body carries no detail by design; the Server logs it. |
 
 Refusals carry a specific reason where one exists — `PROJECT_BUSY`,

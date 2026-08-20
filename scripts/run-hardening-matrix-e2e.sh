@@ -39,6 +39,10 @@ usage() {
 fail() {
     printf 'hardening matrix failed: %s\n' "$*" >&2
     failure_reason=$*
+    # fail is also reached from command substitutions, whose exit only leaves
+    # the subshell. set -e still aborts the run, but the reason would be lost,
+    # so it is recorded where cleanup can read it back.
+    [ -z "${failure_reason_file:-}" ] || printf '%s\n' "$*" >"$failure_reason_file" 2>/dev/null || true
     exit 1
 }
 
@@ -141,6 +145,7 @@ compose_project=$(printf '%s' "$prefix-fixture" | tr '[:upper:]' '[:lower:]')
 secret_marker="hardening-secret-must-never-be-recorded-$$"
 completed=0
 failure_reason="harness did not complete"
+failure_reason_file=
 
 capture_log() {
     docker inspect "$1" >/dev/null 2>&1 || return 0
@@ -194,6 +199,8 @@ cleanup() {
             printf 'status=PASS\n' >"$evidence_dir/STATUS"
         else
             [ "$status" -ne 0 ] || status=1
+            [ ! -s "${failure_reason_file:-/nonexistent}" ] ||
+                failure_reason=$(head -c 4096 "$failure_reason_file")
             [ "$runtime_cleaned" = true ] || failure_reason="runtime cleanup failed"
             {
                 printf 'status=FAIL\n'
@@ -215,6 +222,7 @@ chmod 0700 "$runtime"
 mkdir "$evidence_dir"
 chmod 0700 "$evidence_dir"
 artifact_created=1
+failure_reason_file="$evidence_dir/failure-reason.txt"
 {
     printf 'started_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'docker_server_version=%s\n' "$(docker info --format '{{.ServerVersion}}')"
@@ -227,6 +235,7 @@ artifact_created=1
 } >"$evidence_dir/environment.env"
 
 mkdir "$runtime/server" "$runtime/server/tls" "$runtime/agent" "$runtime/bootstrap" "$runtime/projects"
+fixture_root="$runtime/projects"
 socket_gid=$(stat -c '%g' /var/run/docker.sock)
 openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
     -subj '/CN=server' -addext 'subjectAltName=DNS:server,IP:127.0.0.1' \
@@ -262,7 +271,19 @@ read_identity_field() {
     server_state_sh "cat /state/identity/server-identity.json" | jq -r ".$1"
 }
 
-docker network create "$network" >"$evidence_dir/network.id"
+# harness_subnet pins the network this run creates to a range no real network
+# uses. Docker's default pool is 172.17.0.0/12, which on a host whose LAN sits
+# anywhere in 172.16-172.31 will eventually be handed a subnet that overlaps
+# the LAN itself - and a bridge route for the LAN's own prefix takes the host
+# off the network entirely. 198.18.0.0/15 is reserved for benchmarking by
+# RFC 2544 and is never routed, so a harness can claim it safely. The octet is
+# derived from the pid so two runs on one host do not collide; if they do,
+# Docker refuses the create and the run fails rather than guessing.
+harness_subnet() {
+    printf '198.18.%s.0/24' "$(( $$ % 250 + 1 ))"
+}
+
+docker network create --subnet "$(harness_subnet)" "$network" >"$evidence_dir/network.id"
 
 start_server() {
     docker run --pull never -d --name "$server" --network "$network" --network-alias server \
@@ -287,8 +308,50 @@ wait_server_ready() {
     fail "Server did not become HTTPS-ready"
 }
 
+# fixture_uids is the set of project identities this harness created. Nothing
+# else may ever be the target of a request. allow_fixture_uid is the only way
+# into that set, and every entry is a UID this harness derived itself.
+fixture_uids=
+
+allow_fixture_uid() {
+    fixture_uids="$fixture_uids $1"
+}
+
+is_fixture_uid() {
+    for known_fixture_uid in $fixture_uids; do
+        [ "$known_fixture_uid" = "$1" ] && return 0
+    done
+    return 1
+}
+
+# guard_project_target sits in the one place every request passes through, so
+# a call site cannot forget it and a new one cannot be added without it. It
+# refuses both a project-scoped URL and an operation body that names a project
+# this harness does not own.
+guard_project_target() {
+    guarded_url=$1
+    guarded_body=$2
+    case "$guarded_url" in
+        */api/v1/projects/*)
+            guarded_target=${guarded_url#*/api/v1/projects/}
+            guarded_target=${guarded_target%%/*}
+            guarded_target=${guarded_target%%\?*}
+            is_fixture_uid "$guarded_target" ||
+                fail "fixture guard: request targets project $guarded_target, which this harness did not create"
+            ;;
+    esac
+    case "$guarded_body" in
+        *project_uid*)
+            guarded_target=$(printf '%s' "$guarded_body" | jq -r '.project_uid // empty' 2>/dev/null || true)
+            [ -z "$guarded_target" ] || is_fixture_uid "$guarded_target" ||
+                fail "fixture guard: request body targets project $guarded_target, which this harness did not create"
+            ;;
+    esac
+}
+
 api() {
     method=$1; url=$2; body=$3; output=$4
+    guard_project_target "$url" "$body"
     if [ "$method" = GET ]; then
         curl --fail --silent --show-error --max-time 15 --cacert "$runtime/bootstrap/server-ca.crt" "$url" >"$output.tmp"
     else
@@ -302,6 +365,7 @@ api() {
 # api_status writes the numeric HTTP status to stdout and the body to a file.
 api_status() {
     method=$1; url=$2; body=$3; output=$4
+    guard_project_target "$url" "$body"
     if [ "$method" = GET ]; then
         curl --silent --show-error --max-time 15 --output "$output" --write-out '%{http_code}' \
             --cacert "$runtime/bootstrap/server-ca.crt" "$url"
@@ -392,6 +456,54 @@ record() {
     printf '%s=%s\n' "$1" "$2" >>"$evidence_dir/assertions.env"
 }
 
+# ------------------------------------------------------- fixture identity
+# A dashboard on a working host also lists the operator's own Compose
+# projects. Choosing a target by list position would point this matrix's
+# writes, backups, and Compose runs at somebody else's files, so every
+# target is resolved from the identity this harness created and nothing else.
+# The Agent derives a project UID as sha256(agent_id || NUL || canonical
+# working directory), so the harness can compute the UID it expects instead of
+# trusting the answer it is checking.
+expected_fixture_uid() {
+    printf '%s\000%s' "$1" "$2" | sha256sum | awk '{ print $1 }'
+}
+
+# find_fixture_project prints the UID of the one project carrying the fixture
+# name at the fixture root given in $2, or nothing when the dashboard does not
+# list it. It never falls back to a list position: more than one match, or a
+# UID that does not match the derivation above, is a failure rather than a
+# guess. Only genuine absence yields an empty answer.
+find_fixture_project() {
+    dashboard=$1
+    root=$2
+    # Some cases create a second root under a name of their own; both are still
+    # identities this harness made.
+    expect_name=${3:-$compose_project}
+    matched=$(jq -r --arg name "$expect_name" --arg root "$root" \
+        '[.projects[]? | select(.name == $name and .working_dir == $root)] | length' "$dashboard")
+    case "$matched" in
+        0) return 0 ;;
+        1) ;;
+        *) fail "fixture: $matched dashboard projects claim the fixture identity $expect_name at $root" ;;
+    esac
+    selected_uid=$(jq -r --arg name "$expect_name" --arg root "$root" \
+        '[.projects[] | select(.name == $name and .working_dir == $root)][0].uid' "$dashboard")
+    [ -n "$selected_uid" ] && [ "$selected_uid" != null ] ||
+        fail "fixture: the dashboard omitted the uid of the fixture project at $root"
+    [ "$selected_uid" = "$(expected_fixture_uid "$agent_id" "$root")" ] ||
+        fail "fixture: dashboard uid $selected_uid does not match the uid derived from $root"
+    printf '%s' "$selected_uid"
+}
+
+# select_fixture_project is the same lookup where absence is also a failure.
+select_fixture_project() {
+    resolved=$(find_fixture_project "$1" "$2" "${3:-$compose_project}")
+    [ -n "$resolved" ] ||
+        fail "fixture: no dashboard project is named ${3:-$compose_project} at $2"
+    printf '%s' "$resolved"
+}
+
+
 # ------------------------------------------------------------------ baseline
 start_server >"$evidence_dir/server.container-id"
 resolve_base_url
@@ -401,19 +513,63 @@ start_agent true >"$evidence_dir/agent.container-id"
 wait_active_host "" "$evidence_dir/dashboard.baseline.json" 180 ||
     fail "baseline registration did not produce exactly one ACTIVE host"
 agent_id=$(jq -r '.hosts[0].id' "$evidence_dir/dashboard.baseline.json")
-project_uid=$(jq -r '.projects[0].uid' "$evidence_dir/dashboard.baseline.json")
 [ -n "$agent_id" ] && [ "$agent_id" != null ] || fail "baseline dashboard omitted the Agent id"
-[ -n "$project_uid" ] && [ "$project_uid" != null ] || fail "baseline dashboard omitted the project uid"
+project_uid=$(select_fixture_project "$evidence_dir/dashboard.baseline.json" "$fixture_root")
+allow_fixture_uid "$project_uid"
 agent_state_sh 'rm -f /state/join-token' >/dev/null
 identity_baseline=$(read_identity_field server_identity_id)
 generation_baseline=$(read_identity_field archive_generation)
 record baseline_agent_id "$agent_id"
 record baseline_project_uid "$project_uid"
+record fixture_root "$fixture_root"
+record fixture_identity_verified PASS
+record other_projects_on_host "$(jq -r --arg uid "$project_uid" '[.projects[]? | select(.uid != $uid)] | length' "$evidence_dir/dashboard.baseline.json")"
 
 # The database snapshot for the restore case is taken here, while the Server is
 # stopped, so that later cases can advance the canonical Audit past it and the
 # restore is genuinely backwards rather than a no-op.
+#
+# It is taken only once Audit coverage is established and acknowledged, and that
+# is the difference between this case testing one thing or another. A snapshot
+# taken before the Agent's first Audit sync restores to a database with no
+# coverage row at all, and the Server then establishes coverage fresh at
+# wherever the Agent resumes - a real path, but the easy one. A snapshot taken
+# after coverage exists restores an archive that believes it acknowledged far
+# less than it had, while the Agent resumes from the acknowledgement this Server
+# issued and has now forgotten. That is the case 6.4 is about, and waiting for
+# the precondition is what makes it happen every run instead of some runs.
 if selected db-restore; then
+    # Coverage is established by the Agent's first Audit sync, and that needs
+    # something to have happened. When this case runs inside the full matrix the
+    # earlier cases supply it; run on its own it would wait for events nobody is
+    # producing. These containers are created by this harness, carry its own
+    # label, and remove themselves.
+    activity=1
+    while [ "$activity" -le 6 ]; do
+        docker run --pull never --rm --name "$prefix-audit-activity-$activity" \
+            --label io.dockpilot.role=hardening-fixture --entrypoint /bin/sh \
+            "$fixture_image" -c 'exit 0' >/dev/null 2>&1 || true
+        activity=$((activity + 1))
+    done
+    snapshot_ready=0
+    deadline=$(( $(date +%s) + 180 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        # The request is made inline rather than through audit_page, which is
+        # defined further down the file and does not exist yet at this point.
+        if curl --fail --silent --show-error --max-time 10 --cacert "$runtime/bootstrap/server-ca.crt" \
+            "$base_url/api/v1/hosts/$agent_id/audit?limit=1" \
+            >"$evidence_dir/db-restore.snapshot-precondition.json" 2>/dev/null &&
+            jq -e '.coverage.established == true and .coverage.ack != null and (.coverage.ack.seq // 0) > 0' \
+                "$evidence_dir/db-restore.snapshot-precondition.json" >/dev/null 2>&1; then
+            snapshot_ready=1
+            break
+        fi
+        sleep 2
+    done
+    [ "$snapshot_ready" -eq 1 ] ||
+        fail "db-restore: Audit coverage was never established, so a snapshot would not exercise a backwards restore"
+    record db_restore_snapshot_ack "$(jq -r '"\(.coverage.ack.incarnation),\(.coverage.ack.seq)"' \
+        "$evidence_dir/db-restore.snapshot-precondition.json")"
     docker stop "$server" >/dev/null
     # The helper runs as root, so the copy has to be handed back to the Server's UID.
     server_state_sh 'cp /state/server.db /state/server.db.snapshot && chown 65532:65532 /state/server.db.snapshot && chmod 0600 /state/server.db.snapshot' >/dev/null
@@ -555,6 +711,67 @@ read_incarnation() {
 audit_page() {
     api GET "$base_url/api/v1/hosts/$agent_id/audit?limit=200" '' "$1"
 }
+
+# ------------------------------------------ case: restart without the Join Token
+# A Join Token is a bootstrap secret: single-use, and reasonable to delete once
+# it has been consumed. The baseline deleted this run's token above, which is
+# what makes this case possible at all.
+#
+# A container's argument list does not change between restarts, so the Agent
+# still carries --join-token-file pointing at a file that is deliberately gone.
+# `docker start` re-runs exactly that argument list, which is the operational
+# shape of a `restart: unless-stopped` policy acting after a reboot or a daemon
+# restart. A registered Agent has to come back from it: it holds a runtime
+# credential, and a consumed bootstrap secret is not a dependency of running.
+#
+# This case is not in the default selection, and has to be asked for by name:
+#
+#     HARDENING_CASES=join-token-restart ./scripts/run-hardening-matrix-e2e.sh ...
+#
+# It has to run before any case that replaces the Agent container, because the
+# flag still being on the container's argument list is the whole point. But an
+# extra Agent restart at the head of the full sequence changes what `db-restore`
+# is measuring: the database snapshot that case restores is taken once, right
+# after the baseline, and one more incarnation between the snapshot and the
+# restore leaves the restored Server with a range it cannot explain. It then
+# refuses the session with AUDIT_ACK_INELIGIBLE, repeatedly, and the Agent never
+# returns.
+#
+# Whether that is a defect is an open question - see the campaign record - and
+# it is not this case's question. Running this case in its own invocation keeps
+# both gates measuring what they were written to measure, and keeps the
+# interaction visible instead of averaged away.
+if selected join-token-restart; then
+    agent_state_sh '[ -e /state/join-token ] && echo present || echo absent' \
+        >"$evidence_dir/join-token-restart.token-state"
+    grep -q absent "$evidence_dir/join-token-restart.token-state" ||
+        fail "join-token-restart: the consumed Join Token is still present, so this case would prove nothing"
+    docker inspect --format '{{range .Args}}{{println .}}{{end}}' "$agent" \
+        >"$evidence_dir/join-token-restart.args.txt"
+    grep -q -- '--join-token-file' "$evidence_dir/join-token-restart.args.txt" ||
+        fail "join-token-restart: the Agent container does not carry --join-token-file, so a restart would not exercise the defect"
+
+    docker stop "$agent" >/dev/null
+    docker start "$agent" >"$evidence_dir/join-token-restart.restart"
+    if ! wait_active_host "$agent_id" "$evidence_dir/join-token-restart.dashboard.json" 240; then
+        capture_log "$agent" "$evidence_dir/join-token-restart.agent.log"
+        fail "join-token-restart: a registered Agent did not return ACTIVE after restarting with a consumed Join Token file"
+    fi
+    # Same host, one host: an Agent that re-enrolled would appear as a second.
+    jq -e --arg id "$agent_id" '(.hosts | length) == 1 and .hosts[0].id == $id' \
+        "$evidence_dir/join-token-restart.dashboard.json" >/dev/null ||
+        fail "join-token-restart: the restarted Agent did not keep its identity"
+    jq -e --arg uid "$project_uid" '[.projects[]? | select(.uid == $uid)] | length == 1' \
+        "$evidence_dir/join-token-restart.dashboard.json" >/dev/null ||
+        fail "join-token-restart: the fixture project did not survive the restart under its original uid"
+    agent_state_sh '[ -e /state/join-token ] && echo present || echo absent' \
+        >"$evidence_dir/join-token-restart.token-state.after"
+    grep -q absent "$evidence_dir/join-token-restart.token-state.after" ||
+        fail "join-token-restart: the Agent recreated a Join Token file"
+    record join_token_restart_without_bootstrap_secret PASS
+    record join_token_restart_identity_preserved PASS
+    check_invariants join-token-restart
+fi
 
 # ------------------------------------------------- case: agent SIGKILL
 # 11.5 requires every unclean shutdown to advance the incarnation and to leave
@@ -866,8 +1083,22 @@ if selected db-restore; then
         fail "db-restore: server_identity_id changed although only the database was restored"
     [ "$(read_identity_field archive_generation)" = "$generation_baseline" ] ||
         fail "db-restore: archive_generation advanced although the Identity State was untouched"
-    wait_active_host "$agent_id" "$evidence_dir/db-restore.dashboard.json" 300 ||
+    if ! wait_active_host "$agent_id" "$evidence_dir/db-restore.dashboard.json" 300; then
+        # A reconnect that never happens is decided by cursor state, and the
+        # dashboard shows only that the host is OFFLINE. Capture what the two
+        # sides believe about coverage before the run is torn down, or the
+        # failure is unactionable.
+        audit_page "$evidence_dir/db-restore.audit.stuck.json" 2>/dev/null || true
+        jq -r '[.coverage.gaps[]? | select(.source == "SERVER_CURSOR_REGRESSION")]' \
+            "$evidence_dir/db-restore.audit.stuck.json" >"$evidence_dir/db-restore.regression.json" 2>/dev/null || true
+        agent_state_sh 'cat /state/identity/agent-state.json 2>/dev/null || true' \
+            >"$evidence_dir/db-restore.agent-state.stuck.json" 2>/dev/null || true
+        agent_state_sh 'ls -l /state/audit-wal 2>/dev/null || true' \
+            >"$evidence_dir/db-restore.agent-wal.stuck.txt" 2>/dev/null || true
+        capture_log "$agent" "$evidence_dir/db-restore.agent.stuck.log"
+        capture_log "$server" "$evidence_dir/db-restore.server.stuck.log"
         fail "db-restore: the Agent did not reconnect to the restored Server"
+    fi
     settled=0
     deadline=$(( $(date +%s) + 180 ))
     while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -892,6 +1123,24 @@ if selected db-restore; then
         fail "db-restore: the acknowledged cursor stayed below its pre-restore watermark ($ack_before -> ${ack_after:-0})"
     jq -e '.coverage.established == true' "$evidence_dir/db-restore.audit.after.json" >/dev/null ||
         fail "db-restore: coverage was not re-established after the restore"
+    # Whether the restore stranded a range depends on how far the Agent's own
+    # acknowledgement had moved past the snapshot, which this harness does not
+    # control. Record which path was taken so the evidence says what was
+    # exercised rather than leaving it to be inferred from a pass.
+    regression_ranges=$(jq -r '
+        [.coverage.gaps[]? | select(.source == "SERVER_CURSOR_REGRESSION")] | length
+      ' "$evidence_dir/db-restore.audit.after.json" 2>/dev/null || echo 0)
+    case "$regression_ranges" in ''|*[!0-9]*) regression_ranges=0 ;; esac
+    record db_restore_server_regression_ranges "$regression_ranges"
+    restored_start=$(jq -r '.coverage.start.cursor | "\(.incarnation),\(.seq)"' \
+        "$evidence_dir/db-restore.audit.after.json" 2>/dev/null || echo unknown)
+    record db_restore_coverage_start_after "$restored_start"
+    # The snapshot carried an established coverage row, so the restore had to
+    # strand a range and the Server had to account for it. Recovering by
+    # establishing coverage afresh would mean the precondition above did not
+    # hold and this case is measuring the easy path again.
+    [ "$regression_ranges" -ge 1 ] ||
+        fail "db-restore: the restore stranded no range; the snapshot precondition did not hold and the recovery path was not exercised"
     record db_restore_identity_preserved PASS
     record db_restore_ack_watermark_not_regressed PASS
     # The Server's own record of everything requested after the snapshot is
@@ -1001,14 +1250,20 @@ if selected docker-daemon-restart; then
         docker start "$server" >/dev/null
         resolve_base_url
         wait_server_ready
-        docker start "$agent" >/dev/null
+        # The baseline deleted the consumed Join Token to prove it is
+        # single-use, so the Agent cannot be restarted with the original
+        # argument list: it still carries --join-token-file. A registered
+        # Agent does not need one, which is how every other restart case in
+        # this matrix brings it back.
+        docker rm -f "$agent" >/dev/null
+        start_agent false >"$evidence_dir/docker-daemon-restart.agent.container-id"
         wait_active_host "$agent_id" "$evidence_dir/docker-daemon-restart.dashboard.json" 300 ||
             fail "docker-daemon-restart: the Agent did not return ACTIVE after the Engine restarted"
         jq -e '.hosts[0].capabilities.docker.enabled == true' \
             "$evidence_dir/docker-daemon-restart.dashboard.json" >/dev/null ||
             fail "docker-daemon-restart: the Docker capability did not recover"
         record docker_daemon_restart PASS
-    check_invariants docker-daemon-restart
+        check_invariants docker-daemon-restart
     fi
 fi
 

@@ -64,7 +64,7 @@ func (s *Store) Observe(
 			SELECT COALESCE(SUM(until_seq - from_seq), 0)
 			FROM server_archive_coverage
 			WHERE audit_archive_id = ? AND agent_id = ?
-			  AND entry_type = 'GAP' AND effective = 1 AND resolved_at IS NULL
+			  AND entry_type IN ('GAP', 'REGRESSION') AND effective = 1 AND resolved_at IS NULL
 			  AND from_seq IS NOT NULL AND until_seq IS NOT NULL
 		`, archiveID, agentID).Scan(&observation.EffectiveGapRecords); err != nil {
 			return err
