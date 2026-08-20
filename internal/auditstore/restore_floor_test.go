@@ -6,25 +6,19 @@ import (
 	"time"
 )
 
-// TestARestoreBehindTheAgentWALFloorLeavesAnUnexplainableHole characterises an
-// open defect. It asserts what the code does today, not what it should do, and
-// exists so that the state is described precisely rather than rediscovered from
-// a flaky end-to-end failure.
+// TestARestoreBehindTheAgentWALFloorIsRefusedUntilItIsExplained pins the
+// safety half of the restore recovery: the ACK is refused, and stays refused,
+// until the loss is actually recorded. Nothing about the recovery makes
+// AUDIT_ACK_INELIGIBLE softer - it only gives the one case that has a truthful
+// explanation a way to record it. See regression_test.go for the recovery
+// itself.
 //
 // The situation is an operator restoring a Server database backup. The restored
 // database knows it acknowledged records through some cursor. The Agent, which
-// was never restored, released everything it had seen acknowledged *since* that
-// backup was taken, so its WAL floor now sits above the restored delivery
-// cursor. The two sides disagree about a range that no longer exists anywhere:
-// the Server does not have it, and the Agent cannot resend it.
-//
-// Nothing in the current code closes that. The ACK is refused, the session ends,
-// the Agent reconnects and is refused again, and the host stays OFFLINE - with
-// no Agent-side diagnostics to say why. The end-to-end symptom is the hardening
-// matrix's db-restore case failing with
-// "the Agent did not reconnect to the restored Server", intermittently, because
-// it depends on whether the Agent's floor happened to advance past the snapshot.
-func TestARestoreBehindTheAgentWALFloorLeavesAnUnexplainableHole(t *testing.T) {
+// was never restored, released everything it saw acknowledged since that backup
+// was taken, so it resumes above the restored cursor. The range between exists
+// nowhere: the Server does not have it, and the Agent will not send it.
+func TestARestoreBehindTheAgentWALFloorIsRefusedUntilItIsExplained(t *testing.T) {
 	ctx, store, _ := openAuditStore(t)
 	establish(t, ctx, store)
 
@@ -69,10 +63,9 @@ func TestARestoreBehindTheAgentWALFloorLeavesAnUnexplainableHole(t *testing.T) {
 		t.Fatalf("ACK after the attempted repair = %v, want it still refused", err)
 	}
 
-	// A gap entry does resolve it. That is the shape of the fix, and the whole
-	// difficulty: only the Agent can claim a gap today, and it has no basis to
-	// claim one for records it delivered and saw acknowledged. The Server is the
-	// side that knows it will never hold this range.
+	// A gap entry resolves it. RecordCursorRegression is what writes one, on the
+	// Server's own account rather than the Agent's; this asserts the underlying
+	// eligibility rule that makes that work.
 	applySnapshot(t, ctx, store, CoverageSnapshot{
 		AgentID: testAgent, Revision: 1, GeneratedAt: testEpoch.Add(7 * time.Second),
 		Gaps: []GapClaim{{Incarnation: 1, FromSeq: 4, UntilSeq: 20, Reason: "SERVER_RESTORE", Precision: PrecisionExact}},

@@ -93,6 +93,7 @@ func (s *Server) Run(ctx context.Context, session producttransport.AuditControlS
 
 	var pending *producttransport.AuditCoverageSnapshot
 	var revision uint64
+	var resumedAt *auditstore.Cursor
 	for {
 		message, err := stream.Recv(ctx)
 		if err != nil {
@@ -138,6 +139,13 @@ func (s *Server) Run(ctx context.Context, session producttransport.AuditControlS
 			pending = nil
 		case message.Record != nil:
 			record := *message.Record
+			// The first record of a session is where the Agent resumed, which
+			// it derives from its own record of what this Server acknowledged.
+			// Nothing below it will arrive on this stream, and that is the only
+			// thing that makes a Server-side cursor regression provable.
+			if resumedAt == nil {
+				resumedAt = &auditstore.Cursor{Incarnation: record.Incarnation, Seq: record.Sequence}
+			}
 			if !established {
 				start := producttransport.AuditCursor{Incarnation: record.Incarnation, Sequence: record.Sequence}
 				if pending != nil {
@@ -157,7 +165,7 @@ func (s *Server) Run(ctx context.Context, session producttransport.AuditControlS
 				}
 				pending = nil
 			}
-			if err := s.ingestAndACK(ctx, info, stream, record, &revision); err != nil {
+			if err := s.ingestAndACK(ctx, info, stream, record, &revision, resumedAt); err != nil {
 				return err
 			}
 		default:
@@ -166,7 +174,14 @@ func (s *Server) Run(ctx context.Context, session producttransport.AuditControlS
 	}
 }
 
-func (s *Server) ingestAndACK(ctx context.Context, info producttransport.SessionInfo, stream producttransport.AuditReceiveStream, record producttransport.AuditRecord, revision *uint64) error {
+func (s *Server) ingestAndACK(
+	ctx context.Context,
+	info producttransport.SessionInfo,
+	stream producttransport.AuditReceiveStream,
+	record producttransport.AuditRecord,
+	revision *uint64,
+	resumedAt *auditstore.Cursor,
+) error {
 	event, err := s.config.Decoder.Decode(ctx, info, record)
 	if err != nil {
 		return fmt.Errorf("auditsync: decode event: %w", err)
@@ -198,6 +213,9 @@ func (s *Server) ingestAndACK(ctx context.Context, info producttransport.Session
 		}
 		if response.AckResult.Accepted {
 			_, err := s.config.Store.CheckAndAdvanceACK(ctx, s.config.ArchiveID, info.AgentID, proposed, *revision, s.now())
+			if errors.Is(err, auditstore.ErrACKIneligible) {
+				return s.recoverCursorRegression(ctx, info.AgentID, proposed, resumedAt, *revision, err)
+			}
 			return err
 		}
 		if response.AckResult.Error != "STALE_COVERAGE" || response.AckResult.StaleCoverage == nil {
@@ -208,6 +226,45 @@ func (s *Server) ingestAndACK(ctx context.Context, info producttransport.Session
 			return err
 		}
 	}
+}
+
+// recoverCursorRegression handles the one blocked-ACK case that is recoverable
+// without an operator: this archive went backwards - a restored database - while
+// the Agent did not, so it is resuming from an acknowledgement this Server
+// issued and no longer remembers.
+//
+// Everything below the point the Agent resumed from is unobtainable. The Server
+// does not hold it, and the Agent will not offer it, because the Agent believes
+// it was already acknowledged. Recording that as Server-side coverage loss is
+// what lets the ACK proceed - and the loss stays in the ledger, attributed to
+// the Server rather than to the Agent.
+//
+// Every other reason an ACK is refused is left refused. A blocked range that is
+// not entirely behind the resume point records nothing and the original error
+// is returned, because the Agent may still be about to send it.
+func (s *Server) recoverCursorRegression(
+	ctx context.Context,
+	agentID string,
+	proposed auditstore.Cursor,
+	resumedAt *auditstore.Cursor,
+	revision uint64,
+	blocked error,
+) error {
+	if resumedAt == nil {
+		return blocked
+	}
+	recovery, err := s.config.Store.RecordCursorRegression(ctx, s.config.ArchiveID, agentID,
+		proposed, *resumedAt, auditstore.RegressionDatabaseRestore, s.now())
+	if err != nil {
+		return err
+	}
+	if len(recovery.Recorded) == 0 {
+		return blocked
+	}
+	// Retried once. If the ACK is still refused, something other than the
+	// regression is blocking it and that error is the honest one to return.
+	_, err = s.config.Store.CheckAndAdvanceACK(ctx, s.config.ArchiveID, agentID, proposed, revision, s.now())
+	return err
 }
 
 func (s *Server) establish(ctx context.Context, agentID string, start producttransport.AuditCursor) error {

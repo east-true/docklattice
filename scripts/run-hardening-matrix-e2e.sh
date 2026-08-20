@@ -1048,6 +1048,8 @@ if selected db-restore; then
         # sides believe about coverage before the run is torn down, or the
         # failure is unactionable.
         audit_page "$evidence_dir/db-restore.audit.stuck.json" 2>/dev/null || true
+        jq -r '[.coverage.gaps[]? | select(.source == "SERVER_CURSOR_REGRESSION")]' \
+            "$evidence_dir/db-restore.audit.stuck.json" >"$evidence_dir/db-restore.regression.json" 2>/dev/null || true
         agent_state_sh 'cat /state/identity/agent-state.json 2>/dev/null || true' \
             >"$evidence_dir/db-restore.agent-state.stuck.json" 2>/dev/null || true
         agent_state_sh 'ls -l /state/audit-wal 2>/dev/null || true' \
@@ -1080,6 +1082,13 @@ if selected db-restore; then
         fail "db-restore: the acknowledged cursor stayed below its pre-restore watermark ($ack_before -> ${ack_after:-0})"
     jq -e '.coverage.established == true' "$evidence_dir/db-restore.audit.after.json" >/dev/null ||
         fail "db-restore: coverage was not re-established after the restore"
+    # Whether the restore stranded a range depends on how far the Agent's own
+    # acknowledgement had moved past the snapshot, which this harness does not
+    # control. Record which path was taken so the evidence says what was
+    # exercised rather than leaving it to be inferred from a pass.
+    record db_restore_server_regression_ranges "$(jq -r '
+        [.coverage.gaps[]? | select(.source == "SERVER_CURSOR_REGRESSION")] | length
+      ' "$evidence_dir/db-restore.audit.after.json" 2>/dev/null || echo 0)"
     record db_restore_identity_preserved PASS
     record db_restore_ack_watermark_not_regressed PASS
     # The Server's own record of everything requested after the snapshot is
