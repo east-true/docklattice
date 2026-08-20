@@ -57,7 +57,7 @@ agent_image=$3
 fixture_image=$4
 evidence_max_bytes=${HARDENING_EVIDENCE_MAX_BYTES:-16777216}
 log_max_bytes=${HARDENING_LOG_MAX_BYTES:-1048576}
-selected_cases=${HARDENING_CASES:-agent-sigkill operation-interrupt server-sigkill network-partition compose-interrupt concurrent-edit disk-pressure audit-gap db-restore concurrent-operations docker-daemon-restart}
+selected_cases=${HARDENING_CASES:-join-token-restart agent-sigkill operation-interrupt server-sigkill network-partition compose-interrupt concurrent-edit disk-pressure audit-gap db-restore concurrent-operations docker-daemon-restart}
 
 case "$evidence_dir" in
     /*) ;;
@@ -670,6 +670,53 @@ read_incarnation() {
 audit_page() {
     api GET "$base_url/api/v1/hosts/$agent_id/audit?limit=200" '' "$1"
 }
+
+# ------------------------------------------ case: restart without the Join Token
+# A Join Token is a bootstrap secret: single-use, and reasonable to delete once
+# it has been consumed. The baseline deleted this run's token above, which is
+# what makes this case possible at all.
+#
+# A container's argument list does not change between restarts, so the Agent
+# still carries --join-token-file pointing at a file that is deliberately gone.
+# `docker start` re-runs exactly that argument list, which is the operational
+# shape of a `restart: unless-stopped` policy acting after a reboot or a daemon
+# restart. A registered Agent has to come back from it: it holds a runtime
+# credential, and a consumed bootstrap secret is not a dependency of running.
+#
+# This case is first on purpose. Later cases replace the Agent container with
+# one started without the token flag, and the flag still being present is the
+# whole point here.
+if selected join-token-restart; then
+    agent_state_sh '[ -e /state/join-token ] && echo present || echo absent' \
+        >"$evidence_dir/join-token-restart.token-state"
+    grep -q absent "$evidence_dir/join-token-restart.token-state" ||
+        fail "join-token-restart: the consumed Join Token is still present, so this case would prove nothing"
+    docker inspect --format '{{range .Args}}{{println .}}{{end}}' "$agent" \
+        >"$evidence_dir/join-token-restart.args.txt"
+    grep -q -- '--join-token-file' "$evidence_dir/join-token-restart.args.txt" ||
+        fail "join-token-restart: the Agent container does not carry --join-token-file, so a restart would not exercise the defect"
+
+    docker stop "$agent" >/dev/null
+    docker start "$agent" >"$evidence_dir/join-token-restart.restart"
+    if ! wait_active_host "$agent_id" "$evidence_dir/join-token-restart.dashboard.json" 240; then
+        capture_log "$agent" "$evidence_dir/join-token-restart.agent.log"
+        fail "join-token-restart: a registered Agent did not return ACTIVE after restarting with a consumed Join Token file"
+    fi
+    # Same host, one host: an Agent that re-enrolled would appear as a second.
+    jq -e --arg id "$agent_id" '(.hosts | length) == 1 and .hosts[0].id == $id' \
+        "$evidence_dir/join-token-restart.dashboard.json" >/dev/null ||
+        fail "join-token-restart: the restarted Agent did not keep its identity"
+    jq -e --arg uid "$project_uid" '[.projects[]? | select(.uid == $uid)] | length == 1' \
+        "$evidence_dir/join-token-restart.dashboard.json" >/dev/null ||
+        fail "join-token-restart: the fixture project did not survive the restart under its original uid"
+    agent_state_sh '[ -e /state/join-token ] && echo present || echo absent' \
+        >"$evidence_dir/join-token-restart.token-state.after"
+    grep -q absent "$evidence_dir/join-token-restart.token-state.after" ||
+        fail "join-token-restart: the Agent recreated a Join Token file"
+    record join_token_restart_without_bootstrap_secret PASS
+    record join_token_restart_identity_preserved PASS
+    check_invariants join-token-restart
+fi
 
 # ------------------------------------------------- case: agent SIGKILL
 # 11.5 requires every unclean shutdown to advance the incarnation and to leave

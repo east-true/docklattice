@@ -80,16 +80,20 @@ func newAgentProcess(cfg app.Config) (app.Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	joinToken := ""
+	// The Join Token file is not read here. A registered Agent restarting with
+	// this flag still set - which is what a container's argument list does -
+	// must not depend on a bootstrap secret that was legitimately consumed and
+	// removed. The runtime asks for the token only when it is about to enrol,
+	// so a deleted or unmounted file is invisible to a restart that does not
+	// need one, and is still a clear failure for one that does.
+	var joinTokenSource func(context.Context) (string, error)
 	if cfg.Agent.JoinTokenFile != "" {
-		joinToken, err = readJoinToken(cfg.Agent.JoinTokenFile)
-		if err != nil {
-			return nil, err
-		}
+		joinTokenFile := cfg.Agent.JoinTokenFile
+		joinTokenSource = func(context.Context) (string, error) { return readJoinToken(joinTokenFile) }
 	}
 	return &agentProcess{config: agentruntime.Config{
 		StateDir: filepath.Join(cfg.Agent.StateDir, "identity"), WALDir: filepath.Join(cfg.Agent.StateDir, "audit-wal"),
-		Registration: registration, JoinToken: joinToken, DisplayName: cfg.Agent.DisplayName,
+		Registration: registration, JoinTokenSource: joinTokenSource, DisplayName: cfg.Agent.DisplayName,
 		ServerAddress: cfg.Agent.ServerAddress, TLSConfig: tlsConfig,
 		Self:                  agentsafety.SelfConfig{ContainerID: cfg.Agent.SelfContainerID, ContainerName: cfg.Agent.SelfContainerName},
 		ProjectRoots:          append([]string(nil), cfg.Agent.ProjectRoots...),
