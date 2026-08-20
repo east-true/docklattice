@@ -382,7 +382,8 @@ func (b *Backend) mergeProjectSnapshotObserved(ctx context.Context, agentID stri
 	return b.mergeProjectSnapshotWithDockerObserved(ctx, agentID, status, projects, nil, observedAt)
 }
 
-func (b *Backend) mergeProjectSnapshotWithDockerObserved(ctx context.Context, agentID string, status agentProjectScanStatus, projects []validatedProjectSnapshot, dockerFacts []projectmodel.DockerFact, observedAt time.Time) error {
+func (b *Backend) mergeProjectSnapshotWithDockerObserved(ctx context.Context, agentID string, status agentProjectScanStatus, projects []validatedProjectSnapshot, dockerFacts []projectmodel.DockerFact, observedAt time.Time) (err error) {
+	defer func() { err = classifyStoreBusy(err) }()
 	if observedAt.IsZero() {
 		return errors.New("serverapi: project snapshot observation time is required")
 	}
@@ -391,13 +392,14 @@ func (b *Backend) mergeProjectSnapshotWithDockerObserved(ctx context.Context, ag
 	if err != nil {
 		return &corruptDataError{boundary: "Agent project merge facts", cause: err}
 	}
-	// Serialize durable mirror transactions with operation recovery so SQLite
-	// never has to upgrade a read transaction behind another Agent's writer.
+	// Serialize durable mirror transactions with operation recovery. The write
+	// pool already makes the upgrade race impossible; this keeps unrelated
+	// Agents from queueing on each other inside SQLite.
 	if err := b.lockOperationMerge(ctx); err != nil {
 		return err
 	}
 	defer b.unlockOperationMerge()
-	tx, err := b.store.DB().BeginTx(ctx, nil)
+	tx, err := b.store.BeginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("serverapi: begin project reconciliation: %w", err)
 	}
@@ -585,7 +587,8 @@ func (b *Backend) mergeTargetedProjectSnapshot(ctx context.Context, agentID stri
 	return b.mergeTargetedProjectSnapshotObserved(ctx, agentID, item, establishBaseline, time.Now().UTC())
 }
 
-func (b *Backend) mergeTargetedProjectSnapshotObserved(ctx context.Context, agentID string, item validatedProjectSnapshot, establishBaseline bool, observedAt time.Time) error {
+func (b *Backend) mergeTargetedProjectSnapshotObserved(ctx context.Context, agentID string, item validatedProjectSnapshot, establishBaseline bool, observedAt time.Time) (err error) {
+	defer func() { err = classifyStoreBusy(err) }()
 	if observedAt.IsZero() {
 		return errors.New("serverapi: targeted project observation time is required")
 	}
@@ -594,7 +597,7 @@ func (b *Backend) mergeTargetedProjectSnapshotObserved(ctx context.Context, agen
 		return err
 	}
 	defer b.unlockOperationMerge()
-	tx, err := b.store.DB().BeginTx(ctx, nil)
+	tx, err := b.store.BeginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("serverapi: begin targeted project reconciliation: %w", err)
 	}

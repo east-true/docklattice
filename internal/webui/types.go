@@ -15,6 +15,7 @@ var (
 	ErrNotFound       = errors.New("resource not found")
 	ErrConflict       = errors.New("operation conflicts with current state")
 	ErrUnavailable    = errors.New("capability unavailable")
+	ErrBusy           = errors.New("server is busy")
 	ErrInvalidRequest = errors.New("invalid request")
 	ErrTooLarge       = errors.New("request or response exceeds a safe transport limit")
 )

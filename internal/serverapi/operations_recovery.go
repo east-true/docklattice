@@ -58,12 +58,13 @@ func (b *Backend) reconcileAgentOperations(ctx context.Context, agentID string, 
 	return b.mergeRecoveredOperations(ctx, validated)
 }
 
-func (b *Backend) mergeRecoveredOperations(ctx context.Context, recovered []recoveredOperation) error {
-	if err := b.lockOperationMerge(ctx); err != nil {
-		return err
+func (b *Backend) mergeRecoveredOperations(ctx context.Context, recovered []recoveredOperation) (err error) {
+	defer func() { err = classifyStoreBusy(err) }()
+	if lockErr := b.lockOperationMerge(ctx); lockErr != nil {
+		return lockErr
 	}
 	defer b.unlockOperationMerge()
-	tx, err := b.store.DB().BeginTx(ctx, nil)
+	tx, err := b.store.BeginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("serverapi: begin active operation recovery: %w", err)
 	}

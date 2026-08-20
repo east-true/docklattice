@@ -389,8 +389,21 @@ func (b *Backend) ProjectBackups(ctx context.Context, projectUID string) ([]webu
 	return result, nil
 }
 
-func (b *Backend) syncBackupIndex(ctx context.Context, agentID, projectUID string, backups []webui.Backup) error {
-	tx, err := b.store.DB().BeginTx(ctx, nil)
+// classifyStoreBusy maps SQLite write contention onto the transient answer the
+// API contract already has. A write transaction that waited out busy_timeout
+// and still could not take the lock is load; reporting it as a Server
+// invariant failure would be wrong, and the browser would be told to treat a
+// retryable condition as a bug.
+func classifyStoreBusy(err error) error {
+	if err == nil || !serverstore.Busy(err) {
+		return err
+	}
+	return fmt.Errorf("%w: the Server database is busy", webui.ErrBusy)
+}
+
+func (b *Backend) syncBackupIndex(ctx context.Context, agentID, projectUID string, backups []webui.Backup) (err error) {
+	defer func() { err = classifyStoreBusy(err) }()
+	tx, err := b.store.BeginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("serverapi: begin backup metadata sync: %w", err)
 	}

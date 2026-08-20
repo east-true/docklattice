@@ -250,6 +250,18 @@ func TestTypedHostInventoryRoutesAreStrictAndCurated(t *testing.T) {
 	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "CAPABILITY_UNAVAILABLE") {
 		t.Fatalf("unavailable response = %d %q", response.Code, response.Body.String())
 	}
+
+	// Database contention is transient load. It must not reach the browser as
+	// an internal failure, which is what an unmapped error would produce.
+	backend.err = fmt.Errorf("%w: the Server database is busy", ErrBusy)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/hosts/agent-a/networks", nil))
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "SERVER_BUSY") {
+		t.Fatalf("busy response = %d %q", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "INTERNAL") {
+		t.Fatalf("busy response was reported as an internal failure: %q", response.Body.String())
+	}
 }
 
 func TestEmbeddedInventoryClientIsExplicitAndFailClosed(t *testing.T) {

@@ -697,6 +697,11 @@ func (h *Handler) respond(w http.ResponseWriter, value any, err error) {
 		writeProblem(w, http.StatusConflict, "CONFLICT", err.Error())
 	case errors.Is(err, ErrUnavailable):
 		writeProblem(w, http.StatusServiceUnavailable, "CAPABILITY_UNAVAILABLE", err.Error())
+	// Contention for the Server database is load, not a broken invariant. It
+	// is a transient answer the caller may retry, so it must not be reported
+	// as an internal failure.
+	case errors.Is(err, ErrBusy):
+		writeProblem(w, http.StatusServiceUnavailable, "SERVER_BUSY", err.Error())
 	case errors.Is(err, ErrInvalidRequest):
 		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
 	case errors.Is(err, ErrTooLarge):
