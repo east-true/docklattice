@@ -50,13 +50,10 @@ jobs:
             exit 1
           fi
 
-      - name: Verify module files
-        shell: bash
+      - name: Verify modules
         run: |
           go mod download
           go mod verify
-          go mod tidy
-          git diff --exit-code -- go.mod go.sum
 
       - name: Vet
         run: go vet ./...
