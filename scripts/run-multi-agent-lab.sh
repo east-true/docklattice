@@ -26,6 +26,7 @@ set -eu
 #   daemon-restart      one host's dockerd is restarted under a live Agent
 #   host-poweroff       one host is killed outright and brought back
 #   bulk-isolation      one Agent floods logs while others do durable work
+#   identity-crossover  an operation naming one Agent and another's project
 #   operation-flood     parallel operations per Agent, locks independent
 #   catchup-fairness    unequal backlogs reconnect together
 #   disk-pressure       one host fills up; the others stay healthy
@@ -69,7 +70,7 @@ fixture_image=$4
 agents=${LAB_AGENTS:-3}
 case "$agents" in ''|*[!0-9]*) fail "preflight: LAB_AGENTS must be an integer" ;; esac
 [ "$agents" -ge 2 ] && [ "$agents" -le 10 ] || fail "preflight: LAB_AGENTS must be 2..10"
-selected_cases=${LAB_CASES:-registration reconnect-storm server-restart partition-one daemon-restart host-poweroff bulk-isolation operation-flood catchup-fairness disk-pressure}
+selected_cases=${LAB_CASES:-registration reconnect-storm server-restart partition-one daemon-restart host-poweroff bulk-isolation identity-crossover operation-flood catchup-fairness disk-pressure}
 dind_image=${LAB_DIND_IMAGE:-sha256:12e683a161823b2a839aeea999b9d960e6e1f9a97b1679ad6b441982e2d9cf07}
 evidence_max_bytes=${LAB_EVIDENCE_MAX_BYTES:-33554432}
 log_max_bytes=${LAB_LOG_MAX_BYTES:-524288}
@@ -89,29 +90,29 @@ done
 [ -r /var/run/docker.sock ] && [ -w /var/run/docker.sock ] ||
     fail "preflight: readable and writable /var/run/docker.sock is required"
 
-# A privileged container is not isolated from the host kernel's module table.
-# The dockerd inside each dind host loads br_netfilter and sets
-# net.bridge.bridge-nf-call-iptables=1, and from that moment every bridge on
-# the *host* - the operator's Compose networks, docker0, libvirt's virbr0 -
-# has its traffic evaluated by the host FORWARD chain. On a host whose
-# firewall drops FORWARD by default and carries no Docker exception, that
-# takes container networking down across the whole machine, and it does not
-# come back when these containers are removed: the module stays loaded and the
-# sysctl stays set until the machine reboots.
+# This lab runs privileged Docker-in-Docker, and privileged is not isolated
+# from the host kernel. The dockerd inside each dind host loads kernel modules
+# (br_netfilter among them) into the *host* module table, sets bridge sysctls
+# that apply to every bridge on the machine - the operator's Compose networks,
+# docker0, libvirt's virbr0 - and rewrites host-visible netfilter state. None
+# of that is undone when these containers are removed.
 #
-# This happened. The lab refuses to start in that configuration rather than
-# doing it again. Changing the firewall to suit a test harness is the
-# operator's decision, not this script's.
-# `ufw status` needs root, and this harness does not have it. The unit state
-# and the config file are both world-readable, and they answer the same
-# question, so the check reads those instead of the command that would have
-# told it nothing.
-if [ "$(systemctl is-active ufw 2>/dev/null)" = active ]; then
-    forward_policy=$(awk -F'"' '/^DEFAULT_FORWARD_POLICY/ { print $2 }' /etc/default/ufw 2>/dev/null)
-    if [ "$forward_policy" = DROP ] && ! grep -q DOCKER /etc/ufw/after.rules 2>/dev/null; then
-        fail "preflight: ufw is active with DEFAULT_FORWARD_POLICY=DROP and no Docker exception. Privileged Docker-in-Docker hosts load br_netfilter into this kernel, and from then on every bridge on the machine has its traffic dropped by the host FORWARD chain, with no recovery short of a reboot. Use the VM lab on this host."
-    fi
-fi
+# On this project's own workstation that cost the operator remote access
+# twice, and a reboot each time. The exact mechanism was never proved, and
+# this guard deliberately does not encode a theory about it: a harness that
+# has twice taken a working machine off the network does not get to argue
+# about why. It runs on a disposable machine, or it does not run.
+#
+# "Disposable" is a name, not an inference: the VM lab creates guests called
+# dp-vm-*, and those are the hosts this is allowed on. An operator who wants
+# it somewhere else says so explicitly and owns the outcome.
+lab_hostname=$(hostname 2>/dev/null || cat /proc/sys/kernel/hostname 2>/dev/null || echo unknown)
+case "${LAB_ALLOW_DIND_ON_THIS_HOST:-0}$lab_hostname" in
+    1*|0dp-vm-*) ;;
+    *)
+        fail "preflight: refusing to run privileged Docker-in-Docker on \"$lab_hostname\". This lab mutates host kernel and netfilter state that outlives its containers, and it has taken this project's workstation off the network twice. Provision a guest with ./scripts/vm-lab-provision.sh create dp-vm-lab and run it there, or set LAB_ALLOW_DIND_ON_THIS_HOST=1 to override on a machine you are willing to lose."
+        ;;
+esac
 
 require_image_id_shape "$server_image" Server
 require_image_id_shape "$agent_image" Agent
@@ -133,7 +134,11 @@ server_revision=$(docker image inspect --format '{{index .Config.Labels "org.ope
 runtime_base=${TMPDIR:-/tmp}
 [ -d "$runtime_base" ] || fail "preflight: TMPDIR does not exist"
 
-prefix="dockpilot-lab-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+# Compose lowercases project names, and this prefix is used both as a Compose
+# project name and as the label value the harness filters on. Lowercasing it
+# here keeps those two the same string; a mixed-case prefix silently matches
+# nothing.
+prefix=$(printf 'dockpilot-lab-%s-%s' "$(date -u +%Y%m%dT%H%M%SZ)" "$$" | tr '[:upper:]' '[:lower:]')
 lab_label="io.dockpilot.lab=$prefix"
 umask 077
 artifact_created=0
@@ -941,6 +946,87 @@ if selected bulk-isolation; then
         fail "bulk-isolation: Agent $durable's acknowledged cursor went backwards under load"
     record bulk_isolation_control_ops_completed PASS
     record bulk_isolation_durable_cursor "$durable_before->$durable_after"
+fi
+
+# ------------------------------------------ case: identity crossover
+# A project UID is sha256(agent_id || NUL || canonical working directory), so
+# it already names the Agent that owns it. That makes a crossed pair - Agent
+# A's id with Agent B's project - a misconfiguration the Server can detect
+# without asking anyone: an orchestrator templating the wrong host, an
+# operator pasting a UID from the wrong dashboard row, a client that cached a
+# project across a re-registration.
+#
+# The requirement is that the pair is refused. Executing it against whichever
+# half the Server happened to trust would either write A's content into B's
+# directory or run Compose on a host that does not own the project. Both are
+# silent cross-host damage, which is the failure mode this lab exists to rule
+# out.
+if selected identity-crossover; then
+    [ "$agents" -ge 2 ] || fail "identity-crossover needs at least two Agents"
+    first_aid=$(agent_var agent_id 1)
+    second_aid=$(agent_var agent_id 2)
+    second_uid=$(agent_var project_uid 2)
+    [ "$first_aid" != "$second_aid" ] || fail "identity-crossover: the two Agents share an id"
+
+    # What the victim's project looked like before anything was attempted.
+    api GET "$base_url/api/v1/projects/$second_uid/files?path=compose.yaml" '' \
+        "$evidence_dir/crossover.victim-before.json"
+    victim_before=$(jq -r '.sha256' "$evidence_dir/crossover.victim-before.json")
+    [ -n "$victim_before" ] && [ "$victim_before" != null ] ||
+        fail "identity-crossover: could not read the victim project's digest"
+
+    crossed_op="lab-crossover-$$"
+    crossed_code=$(api_status POST "$base_url/api/v1/operations" \
+        "$(jq -cn --arg id "$crossed_op" --arg agent "$first_aid" --arg project "$second_uid" \
+            '{operation_id:$id,agent_id:$agent,project_uid:$project,kind:"compose.up"}')" \
+        "$evidence_dir/crossover.accepted.json")
+    printf 'crossed_dispatch_status=%s\n' "$crossed_code" >"$evidence_dir/crossover.env"
+    case "$crossed_code" in
+        400|403|404|409|422)
+            record identity_crossover_refused_at_dispatch "$crossed_code"
+            ;;
+        202)
+            # Accepting the dispatch is allowed only if the operation then
+            # terminates without doing the work.
+            poll_operation "$first_aid" "$crossed_op" "$evidence_dir/crossover.final.json" 120 ||
+                fail "identity-crossover: a crossed operation was accepted and never terminated"
+            jq -e '.status != "success"' "$evidence_dir/crossover.final.json" >/dev/null ||
+                fail "identity-crossover: an operation naming Agent 1 and Agent 2's project succeeded"
+            jq -e '.partial_effects_possible == false' "$evidence_dir/crossover.final.json" >/dev/null ||
+                fail "identity-crossover: a refused crossed operation reported possible partial effects"
+            record identity_crossover_refused_terminally PASS
+            ;;
+        *)
+            fail "identity-crossover: a crossed operation answered HTTP $crossed_code"
+            ;;
+    esac
+
+    # A UID with the right shape and no owner is the same class of mistake,
+    # arriving from a client that kept a project across a re-registration.
+    orphan_uid=$(printf '%s\000%s' "$first_aid" /nonexistent/project/root | sha256sum | awk '{ print $1 }')
+    allow_fixture_uid "$orphan_uid"
+    orphan_code=$(api_status POST "$base_url/api/v1/operations" \
+        "$(jq -cn --arg id "lab-orphan-$$" --arg agent "$first_aid" --arg project "$orphan_uid" \
+            '{operation_id:$id,agent_id:$agent,project_uid:$project,kind:"compose.up"}')" \
+        "$evidence_dir/crossover.orphan.json")
+    printf 'orphan_dispatch_status=%s\n' "$orphan_code" >>"$evidence_dir/crossover.env"
+    case "$orphan_code" in
+        400|403|404|409|422) ;;
+        *) fail "identity-crossover: an unowned project uid answered HTTP $orphan_code instead of a refusal" ;;
+    esac
+    record identity_crossover_orphan_refused "$orphan_code"
+
+    # Whatever the Server answered, the victim's files must be untouched and
+    # the victim must still be its own healthy host.
+    api GET "$base_url/api/v1/projects/$second_uid/files?path=compose.yaml" '' \
+        "$evidence_dir/crossover.victim-after.json"
+    victim_after=$(jq -r '.sha256' "$evidence_dir/crossover.victim-after.json")
+    [ "$victim_after" = "$victim_before" ] ||
+        fail "identity-crossover: the victim project changed across a crossed operation"
+    record identity_crossover_victim_untouched PASS
+    wait_hosts_active "$agents" "$evidence_dir/crossover.dashboard.json" 120 ||
+        fail "identity-crossover: the fleet did not stay ACTIVE across a crossed operation"
+    record identity_crossover_fleet_healthy PASS
 fi
 
 # ------------------------------------------------- case: operation flood

@@ -1116,14 +1116,20 @@ if selected docker-daemon-restart; then
         docker start "$server" >/dev/null
         resolve_base_url
         wait_server_ready
-        docker start "$agent" >/dev/null
+        # The baseline deleted the consumed Join Token to prove it is
+        # single-use, so the Agent cannot be restarted with the original
+        # argument list: it still carries --join-token-file. A registered
+        # Agent does not need one, which is how every other restart case in
+        # this matrix brings it back.
+        docker rm -f "$agent" >/dev/null
+        start_agent false >"$evidence_dir/docker-daemon-restart.agent.container-id"
         wait_active_host "$agent_id" "$evidence_dir/docker-daemon-restart.dashboard.json" 300 ||
             fail "docker-daemon-restart: the Agent did not return ACTIVE after the Engine restarted"
         jq -e '.hosts[0].capabilities.docker.enabled == true' \
             "$evidence_dir/docker-daemon-restart.dashboard.json" >/dev/null ||
             fail "docker-daemon-restart: the Docker capability did not recover"
         record docker_daemon_restart PASS
-    check_invariants docker-daemon-restart
+        check_invariants docker-daemon-restart
     fi
 fi
 
