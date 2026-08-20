@@ -945,7 +945,10 @@ if selected bulk-isolation; then
     [ "$durable_after" -ge "$durable_before" ] ||
         fail "bulk-isolation: Agent $durable's acknowledged cursor went backwards under load"
     record bulk_isolation_control_ops_completed PASS
-    record bulk_isolation_durable_cursor "$durable_before->$durable_after"
+    # Agent 2 does no work in this case on purpose - it is the bystander - so
+    # its cursor is expected to sit still. The claim is that the flood did not
+    # drag it backwards, and the record says only that.
+    record bulk_isolation_durable_cursor_not_regressed "$durable_before->$durable_after"
 fi
 
 # ------------------------------------------ case: identity crossover
@@ -1060,6 +1063,18 @@ fi
 
 # ------------------------------------------- case: audit catch-up fairness
 if selected catchup-fairness; then
+    # Every Agent needs something to observe before it is cut off, or its
+    # "backlog" is empty and the case proves nothing about fairness. Which
+    # Agents happen to have a running fixture depends on which cases ran
+    # before this one, so this case starts its own.
+    i=1
+    while [ "$i" -le "$agents" ]; do
+        compose_op "$i" compose.up "catchup-up" 240 ||
+            fail "catchup-fairness: Agent $i has no running fixture to generate a backlog from"
+        [ -n "$(fixture_container "$i")" ] ||
+            fail "catchup-fairness: Agent $i reported compose.up success with no running container"
+        i=$((i + 1))
+    done
     i=1
     while [ "$i" -le "$agents" ]; do
         docker network disconnect "$network" "$(host_name "$i")" >/dev/null 2>&1 || true
@@ -1079,29 +1094,59 @@ if selected catchup-fairness; then
     done
     wait_hosts_active "$agents" "$evidence_dir/catchup.dashboard.json" 420 ||
         fail "catchup-fairness: not every Agent returned after the unequal backlog"
-    # Every Agent's cursor has to move, not just the smallest backlog's.
-    stalled=
+    # Fairness is about the *end state*, not about motion inside an arbitrary
+    # window: by the time three Agents have all come back, the smallest backlog
+    # is usually already delivered, and sampling twice would then record a
+    # cursor that "did not advance" for the healthiest host in the run. What
+    # has to be true is that every Agent's backlog arrives - the largest one
+    # too - so each Agent's acknowledged cursor has to reach the last event its
+    # own archive holds, and none may regress.
     i=1
     while [ "$i" -le "$agents" ]; do
         aid=$(agent_var agent_id "$i")
         audit_page "$aid" "$evidence_dir/catchup.audit-$i-first.json"
-        first=$(audit_ack_seq "$evidence_dir/catchup.audit-$i-first.json")
-        eval "catchup_first_$i=\$first"
+        eval "catchup_first_$i=$(audit_ack_seq "$evidence_dir/catchup.audit-$i-first.json")"
         i=$((i + 1))
     done
-    sleep 45
+
+    behind=
+    regressed=
+    deadline=$(( $(date +%s) + 300 ))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        behind=
+        i=1
+        while [ "$i" -le "$agents" ]; do
+            aid=$(agent_var agent_id "$i")
+            audit_page "$aid" "$evidence_dir/catchup.audit-$i-second.json"
+            acked=$(audit_ack_seq "$evidence_dir/catchup.audit-$i-second.json")
+            latest=$(jq -r '[.events[].cursor.seq] | max // 0' "$evidence_dir/catchup.audit-$i-second.json")
+            case "$latest" in ''|null|*[!0-9]*) latest=0 ;; esac
+            # An empty archive would satisfy any "caught up" test, so a host
+            # that produced a backlog and delivered nothing counts as behind.
+            [ "$latest" -gt 0 ] || behind="$behind $i"
+            [ "$acked" -ge "$latest" ] || behind="$behind $i"
+            i=$((i + 1))
+        done
+        [ -z "$behind" ] && break
+        sleep 10
+    done
+
     i=1
     while [ "$i" -le "$agents" ]; do
         aid=$(agent_var agent_id "$i")
-        audit_page "$aid" "$evidence_dir/catchup.audit-$i-second.json"
-        second=$(audit_ack_seq "$evidence_dir/catchup.audit-$i-second.json")
+        acked=$(audit_ack_seq "$evidence_dir/catchup.audit-$i-second.json")
+        latest=$(jq -r '[.events[].cursor.seq] | max // 0' "$evidence_dir/catchup.audit-$i-second.json")
+        case "$latest" in ''|null|*[!0-9]*) latest=0 ;; esac
         first=$(agent_var catchup_first "$i")
-        [ "$second" -ge "$first" ] || stalled="$stalled $i"
-        record "catchup_agent_${i}_ack" "$first->$second"
+        [ "$acked" -ge "$first" ] || regressed="$regressed $i"
+        record "catchup_agent_${i}_ack" "$first->$acked (archive head $latest, backlog $((i * 6)) restarts)"
         i=$((i + 1))
     done
-    [ -z "$stalled" ] || fail "catchup-fairness: acknowledged cursors went backwards for agents:$stalled"
-    record catchup_all_cursors_advanced PASS
+    [ -z "$regressed" ] || fail "catchup-fairness: acknowledged cursors went backwards for agents:$regressed"
+    [ -z "$behind" ] ||
+        fail "catchup-fairness: agents$behind never caught up to their own archive head; a larger backlog must not be starved"
+    record catchup_no_cursor_regression PASS
+    record catchup_every_backlog_delivered PASS
 fi
 
 # ------------------------------------------ case: per-agent disk pressure
