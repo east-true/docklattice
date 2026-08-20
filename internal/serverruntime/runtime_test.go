@@ -35,7 +35,7 @@ import (
 func TestRuntimeServesEmbeddedUIAndStopsWithContext(t *testing.T) {
 	certFile, keyFile, roots := testCertificate(t)
 	runtime, err := New(Config{
-		StateDir: t.TempDir(), HTTPListenAddress: "127.0.0.1:0", AgentListenAddress: "127.0.0.1:0",
+		StateDir: secureStateDir(t), HTTPListenAddress: "127.0.0.1:0", AgentListenAddress: "127.0.0.1:0",
 		TLSCertificateFile: certFile, TLSPrivateKeyFile: keyFile,
 		HeartbeatInterval: 20 * time.Millisecond, OfflineAfter: 100 * time.Millisecond,
 	})
@@ -72,7 +72,7 @@ func TestRuntimeServesEmbeddedUIAndStopsWithContext(t *testing.T) {
 
 func TestReadyRejectsMissingTLSAndConflictingListener(t *testing.T) {
 	runtime, err := New(Config{
-		StateDir: t.TempDir(), HTTPListenAddress: "127.0.0.1:0", AgentListenAddress: "127.0.0.1:0",
+		StateDir: secureStateDir(t), HTTPListenAddress: "127.0.0.1:0", AgentListenAddress: "127.0.0.1:0",
 		TLSCertificateFile: "/missing/cert", TLSPrivateKeyFile: "/missing/key",
 	})
 	if err != nil {
@@ -260,7 +260,7 @@ func (h *auditRuntimeHandler) SyncAudit(ctx context.Context, info producttranspo
 func TestRuntimeIngestsAuditOverAuthenticatedReverseGRPC(t *testing.T) {
 	certFile, keyFile, roots := testCertificate(t)
 	runtime, err := New(Config{
-		StateDir: t.TempDir(), HTTPListenAddress: "127.0.0.1:0", AgentListenAddress: "127.0.0.1:0",
+		StateDir: secureStateDir(t), HTTPListenAddress: "127.0.0.1:0", AgentListenAddress: "127.0.0.1:0",
 		TLSCertificateFile: certFile, TLSPrivateKeyFile: keyFile,
 		HeartbeatInterval: time.Hour, OfflineAfter: 2 * time.Hour,
 		AuditRetentionInterval: time.Hour, AuditRetentionTimeout: time.Hour,
@@ -410,4 +410,17 @@ func testCertificate(t *testing.T) (string, string, *x509.CertPool) {
 		t.Fatal("append certificate")
 	}
 	return certFile, keyFile, roots
+}
+
+// secureStateDir returns a temporary directory the Server may adopt. t.TempDir
+// inherits the umask the suite was launched with, and a state directory that
+// is group- or other-writable is refused by design, so the mode is made
+// explicit here rather than depending on how the suite was invoked.
+func secureStateDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }

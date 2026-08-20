@@ -3,6 +3,7 @@ package producttransport
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -11,7 +12,7 @@ import (
 )
 
 func TestIdentityVerifierChecksDurableRevocation(t *testing.T) {
-	manager, err := identity.Open(filepath.Join(t.TempDir(), "identity.json"))
+	manager, err := identity.Open(filepath.Join(secureIdentityDir(t), "identity.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,4 +39,16 @@ func TestIdentityVerifierChecksDurableRevocation(t *testing.T) {
 	if _, err := verifier.VerifyCredential(context.Background(), payload, now.Add(2*time.Second)); !errors.Is(err, ErrCredentialRevoked) {
 		t.Fatalf("revoked verification error = %v", err)
 	}
+}
+
+// secureIdentityDir returns a temporary directory the identity manager may
+// adopt. t.TempDir inherits the umask the suite was launched with, and
+// identity state that is group- or other-writable is refused by design.
+func secureIdentityDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
