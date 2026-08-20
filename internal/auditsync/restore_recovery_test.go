@@ -198,6 +198,17 @@ func TestAnACKBlockedAboveTheResumePointStaysBlocked(t *testing.T) {
 	}
 
 assert:
+	// No acknowledgement may have been offered for the blocked cursor. The
+	// Agent persists a proposed cursor before it answers, so an offered-then-
+	// refused ACK would move where it resumes next time, and the hole this
+	// refused to cover would sit below that resume position and be covered on
+	// the very next reconnect. Refusing after offering is not refusing.
+	select {
+	case ack := <-stream.acks:
+		t.Fatalf("an acknowledgement was offered for a blocked cursor: %+v", ack)
+	default:
+	}
+
 	// Only the range the restore actually stranded - below where the Agent
 	// resumed - may have been recorded.
 	gaps, err := store.EffectiveGaps(ctx, testArchive, testAgentID)

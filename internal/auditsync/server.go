@@ -197,6 +197,15 @@ func (s *Server) ingestAndACK(
 		return err
 	}
 	proposed := auditstore.Cursor{Incarnation: record.Incarnation, Seq: record.Sequence}
+	// Eligibility is decided before the acknowledgement is offered, not after.
+	// The Agent persists the proposed cursor and only then reports acceptance,
+	// so an ACK that is offered and then refused still moves where that Agent
+	// resumes next time - and a hole that was above the resume position becomes
+	// one below it, which the recovery below would then treat as evidence. An
+	// ACK this Server will not honour is therefore never sent.
+	if err := s.settleACKEligibility(ctx, info.AgentID, proposed, *revision, resumedAt); err != nil {
+		return err
+	}
 	for {
 		if err := stream.SendAck(producttransport.AuditAck{AuditArchiveID: s.config.ArchiveID,
 			Incarnation: proposed.Incarnation, Sequence: proposed.Seq, CoverageRevisionSeen: *revision}); err != nil {
@@ -212,10 +221,10 @@ func (s *Server) ingestAndACK(
 			return errors.New("auditsync: missing or mismatched ACK result")
 		}
 		if response.AckResult.Accepted {
+			// No recovery attempt here. Eligibility was settled before the
+			// acknowledgement was offered; anything refusing it now is a change
+			// this Server did not sanction, and it fails closed.
 			_, err := s.config.Store.CheckAndAdvanceACK(ctx, s.config.ArchiveID, info.AgentID, proposed, *revision, s.now())
-			if errors.Is(err, auditstore.ErrACKIneligible) {
-				return s.recoverCursorRegression(ctx, info.AgentID, proposed, resumedAt, *revision, err)
-			}
 			return err
 		}
 		if response.AckResult.Error != "STALE_COVERAGE" || response.AckResult.StaleCoverage == nil {
@@ -228,10 +237,11 @@ func (s *Server) ingestAndACK(
 	}
 }
 
-// recoverCursorRegression handles the one blocked-ACK case that is recoverable
-// without an operator: this archive went backwards - a restored database - while
-// the Agent did not, so it is resuming from an acknowledgement this Server
-// issued and no longer remembers.
+// settleACKEligibility decides whether the acknowledgement about to be offered
+// can be honoured, and recovers the one blocked case that is recoverable
+// without an operator: this archive went backwards - a restored database -
+// while the Agent did not, so it is resuming from an acknowledgement this
+// Server issued and no longer remembers.
 //
 // Everything below the point the Agent resumed from is unobtainable. The Server
 // does not hold it, and the Agent will not offer it, because the Agent believes
@@ -239,25 +249,25 @@ func (s *Server) ingestAndACK(
 // what lets the ACK proceed - and the loss stays in the ledger, attributed to
 // the Server rather than to the Agent.
 //
-// Every other reason an ACK is refused is left refused. A blocked range that is
-// not entirely behind the resume point records nothing and the original error
-// is returned, because the Agent may still be about to send it.
-func (s *Server) recoverCursorRegression(
+// Every other reason an ACK is blocked stays blocked, and the session ends
+// without an acknowledgement being sent. That matters more than it looks: an
+// offered-then-refused ACK is persisted by the Agent before it answers, so
+// sending one would hand the next session a resume position built on a refusal,
+// and the hole this declined to cover would sit below it and be covered then.
+func (s *Server) settleACKEligibility(
 	ctx context.Context,
 	agentID string,
 	proposed auditstore.Cursor,
-	resumedAt *auditstore.Cursor,
 	revision uint64,
-	blocked error,
+	resumedAt *auditstore.Cursor,
 ) error {
+	blocked := s.config.Store.ACKEligibility(ctx, s.config.ArchiveID, agentID, proposed, revision)
+	if !errors.Is(blocked, auditstore.ErrACKIneligible) {
+		return blocked
+	}
 	if resumedAt == nil {
 		return blocked
 	}
-	// The reason is UNKNOWN, not DATABASE_RESTORE. What this path establishes is
-	// that the persisted cursor is behind where the Agent resumed - which a
-	// restored database explains, and so does cursor metadata loss, and so does
-	// a rollback nobody has diagnosed. The architecture is explicit that a guess
-	// here is worse than an admission, and the ledger entry is permanent.
 	recovery, err := s.config.Store.RecordCursorRegression(ctx, s.config.ArchiveID, agentID,
 		proposed, *resumedAt, auditstore.RegressionUnknown, s.now())
 	if err != nil {
@@ -266,10 +276,9 @@ func (s *Server) recoverCursorRegression(
 	if len(recovery.Recorded) == 0 {
 		return blocked
 	}
-	// Retried once. If the ACK is still refused, something other than the
-	// regression is blocking it and that error is the honest one to return.
-	_, err = s.config.Store.CheckAndAdvanceACK(ctx, s.config.ArchiveID, agentID, proposed, revision, s.now())
-	return err
+	// Re-checked once. Still blocked means something other than the regression
+	// is in the way, and that error is the honest one to return.
+	return s.config.Store.ACKEligibility(ctx, s.config.ArchiveID, agentID, proposed, revision)
 }
 
 func (s *Server) establish(ctx context.Context, agentID string, start producttransport.AuditCursor) error {

@@ -38,6 +38,45 @@ func validRegressionReason(reason string) bool {
 	return false
 }
 
+// ACKEligibility reports whether an ACK would be accepted, without writing
+// anything. It exists so the Server can decide *before* offering an
+// acknowledgement the Agent will persist: the Agent stores the proposed cursor
+// and only then reports acceptance, so an ACK that is offered and later refused
+// still moves where that Agent resumes on its next connection.
+func (s *Store) ACKEligibility(
+	ctx context.Context,
+	archiveID, agentID string,
+	proposed Cursor,
+	coverageRevisionSeen uint64,
+) error {
+	if archiveID == "" || agentID == "" || !validCursor(proposed) {
+		return fmt.Errorf("%w: invalid ACK", ErrInvariant)
+	}
+	return s.withImmediate(ctx, func(tx *connectionTx) error {
+		state, err := loadCursorState(ctx, tx, archiveID, agentID)
+		if err != nil {
+			return err
+		}
+		if coverageRevisionSeen != state.revision {
+			return fmt.Errorf("%w: presented revision %d, persisted revision %d", ErrCoverageRevision, coverageRevisionSeen, state.revision)
+		}
+		if state.ack != nil && compareCursor(proposed, *state.ack) <= 0 {
+			return nil
+		}
+		if state.next == nil || compareCursor(proposed, *state.next) >= 0 {
+			return &ACKIneligibleError{Proposed: proposed, DeliveryNext: cursorValue(state.next)}
+		}
+		unexplained, err := unexplainedACKRanges(ctx, tx, archiveID, agentID, state.ack, proposed, *state.next)
+		if err != nil {
+			return err
+		}
+		if len(unexplained) != 0 {
+			return &ACKIneligibleError{Proposed: proposed, DeliveryNext: *state.next, Unexplained: unexplained}
+		}
+		return nil
+	})
+}
+
 // RecordCursorRegression records, as Server-side coverage loss, the ranges an
 // ACK is blocked on when the Agent has provably moved past them.
 //
