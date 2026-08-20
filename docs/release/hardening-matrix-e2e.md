@@ -183,13 +183,10 @@ root, or Join Token behind.
 
 `join-token-restart` is not in the default selection and is asked for by name.
 It has to run before any case that replaces the Agent container, since the flag
-still being on the argument list is the whole point; but an extra Agent restart
-at the head of the sequence makes `db-restore` more likely to hit an open
-product defect - a Server restored behind the Agent's WAL floor leaves a range
-neither side can explain, and the Agent never reconnects. That defect is
-described in the [campaign record](v1-final-hardening.md) and pinned by
-`internal/auditstore/restore_floor_test.go`. Running this case separately keeps
-`db-restore` measuring the restore contract rather than the defect's odds.
+still being on the argument list is the whole point. It was previously kept out
+of the default selection because it appeared to break `db-restore`; that turned
+out to be a timing shift rather than an interaction, and the defect behind it is
+fixed - see the [campaign record](v1-final-hardening.md).
 The case asserts both of its preconditions - the consumed token is gone, and the
 container still carries `--join-token-file` - before it does anything, so it
 cannot quietly degrade into a plain restart test.
@@ -272,3 +269,32 @@ alone against the previous images it reproduces the report exactly:
 
 Against the images built from the fix it passes, and the Agent's log for the
 whole run is empty.
+
+## Fifth recorded execution: after the restore-recovery fix
+
+`db-restore` is deterministic from this revision on. It waits for Audit coverage
+to be established and acknowledged before taking its snapshot, and asserts
+afterwards that the restore actually stranded a range - so it exercises the
+Server cursor regression path every run rather than some runs.
+
+    docker_server_version   29.7.2
+    release_revision        98b5507730ea1fdfcd1457d42b72acadf8d4b111
+    server_image_id         sha256:7b5c5be6489e85d93dbe6d395fdae0a319eadbea697138b8646e7d1eadca988c
+    agent_image_id          sha256:315f1cfc77e0579398efe1bc00f083c10db1a9d88e788986ae7099a00dbacd41
+    selected_cases          join-token-restart plus the ten default cases
+
+Two runs of the full selection - the one that failed twice before the fix -
+recorded `status=PASS`, with the same figures both times:
+
+| Assertion | Result |
+| --- | --- |
+| `db_restore_snapshot_ack` | `1,4` — coverage established and acknowledged before the snapshot |
+| `db_restore_server_regression_ranges` | 1 — the restore stranded a range and the Server accounted for it |
+| `db_restore_coverage_start_after` | `1,1` — the archive's lower bound is unchanged |
+| `db_restore_ack_watermark_not_regressed` | PASS |
+| `db_restore_prior_operation_explained` | PASS |
+| `invariants_db_restore` | PASS |
+| `join_token_restart_*` | PASS |
+
+`db-restore` run on its own also passes, generating its own Audit activity so
+the coverage precondition is reachable outside the full sequence.

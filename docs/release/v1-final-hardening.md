@@ -39,6 +39,8 @@ find.
 | 4 | P2 | The Agent process writes no diagnostics at all. Only the Server has a diagnostics writer, and an Agent's `docker logs` is empty across kills, restarts, partitions and an archive-rollback refusal — an unrecoverable condition with no local signal. An operator debugging a stuck Agent has the dashboard and nothing else. | **Open.** The rollback refusal is observable through the audit stream, which is how the recovery matrix asserts it, but that requires a working Server. |
 | 5 | P1 | `--join-token-file` was read while the process was being assembled, before any durable state was loaded and therefore before anything knew whether an enrollment was needed. A container's argument list does not change between restarts, so an operator who followed the install guide's own instruction to remove the consumed token found the Agent refusing to start, and `restart: unless-stopped` could not recover it. On a fleet that is every Agent whose bootstrap secret was rotated or unmounted. | Fixed. The token is resolved on the enrollment path only; a registered Agent never opens the file. Pinned by eight tests in `internal/agentruntime/bootstrap_token_test.go` and the hardening matrix's `join-token-restart` case. |
 
+| 6 | P1 | A restored Server database left a range that neither side could supply, so every ACK was refused, every session ended, and the Agent reconnected into the same refusal indefinitely — permanently OFFLINE with no automatic recovery. | Fixed. `SERVER_CURSOR_REGRESSION` coverage is now recorded for exactly the unobtainable range. See below. |
+
 Fixes 1 and 2 predate this record; 3 was found by the multi-Agent lab's closing
 invariant and fixed here.
 
@@ -77,64 +79,70 @@ each one meant a gate had been reporting a result it had not established.
   not, and failed. The driver now waits for that evidence, bounded by the case
   deadline.
 
-### `db-restore`: an Agent that can never reconnect
+### `db-restore`: an Agent that could never reconnect — fixed
 
-The hardening matrix's `db-restore` case fails intermittently with
-"the Agent did not reconnect to the restored Server". It was first noticed
-because `join-token-restart` made it more likely, and first written up here as
-an interaction between the two cases. That was wrong - the extra restart only
-changes the odds. The cause has since been isolated to a single state, and it
+**Severity: P1. Resolved.**
+
+An operator restores a Server database backup. The restored archive believes it
+acknowledged far less than it had. The Agent, which was not restored, resumes
+from the acknowledgement this Server issued and has now forgotten. The range
+between the two exists nowhere: the Server does not hold it, and the Agent will
+not send it, because as far as the Agent is concerned it was already confirmed.
+
+`CheckAndAdvanceACK` refused every ACK for that range, the session ended, and
+the Agent reconnected into the same refusal indefinitely. The host stayed
+OFFLINE and nothing recovered it.
+
+**Why it only failed sometimes.** The hardening matrix took its snapshot
+immediately after the baseline, before the Agent's first Audit sync had
+established coverage. Restoring such a snapshot gives the Server a database with
+no coverage row at all, and it then establishes coverage fresh at wherever the
+Agent resumes — a real path, and the harmless one. Only when the snapshot
+happened to contain an established coverage row did the restore strand a range.
+That is what made the case look like it was interacting with
+`join-token-restart`: the extra restart shifted timing, nothing more. The case
+now waits for coverage to be established and acknowledged before snapshotting,
+and asserts afterwards that a range was actually stranded, so it exercises the
+same path every run.
+
+**The fix.** The architecture had already reserved the answer — the
+`SERVER_CURSOR_REGRESSION` source, its four reasons, the ledger entry type and
+the API rendering all existed; only the producer was missing.
+`auditstore.RecordCursorRegression` writes it, and `auditsync` calls it when an
+ACK is refused, then retries once.
+
+Three things keep it from becoming a general way past ACK eligibility:
+
+- The blocked ranges are not supplied by the caller. They are recomputed by the
+  same function the ACK check uses, which already subtracts canonical records
+  and existing effective coverage — so a range the Server actually holds, or one
+  another ledger entry already explains, cannot be covered by this.
+- Only ranges lying entirely below the point the Agent resumed at are recorded.
+  The Agent streams strictly forward from a start it derives from this Server's
+  own acknowledgement, so anything below that will not arrive. A hole *above* it
+  may still be filled, and stays refused.
+- The reason comes from the reserved set. A caller that cannot tell why the
+  archive moved backwards says `UNKNOWN` rather than assuming a restore.
+
+**Coverage semantics.** `AGENT_GAP` is an Agent saying it lost records of its
+own. `SERVER_CURSOR_REGRESSION` is the Server saying this archive can no longer
+obtain a range because the archive itself went backwards. The Agent lost
+nothing, and its claim history is not touched. The coverage start stays
+immutable: it records where this archive began, and a restore does not change
+that retroactively.
+
+**Correcting the earlier entry.** This record previously said the failure was an
+interaction with `join-token-restart`, then that the extra restart changed the
+odds. Both were descriptions of the symptom. The cause is the unrecoverable
+range between a restored Server's cursor and the Agent's resume position, and it
 has nothing to do with either case.
 
-**What happens.** An operator restores a Server database backup. The restored
-database knows it acknowledged Audit records through some cursor. The Agent was
-not restored, and it released everything it saw acknowledged *after* that backup
-was taken, so its WAL floor now sits above the restored delivery cursor. The
-range between them exists nowhere: the Server does not have it, and the Agent
-cannot resend it.
-
-`CheckAndAdvanceACK` therefore refuses every ACK, because the range is covered by
-neither a canonical event nor an effective gap entry:
-
-    agent session closed agent=...: AUDIT_ACK_INELIGIBLE: proposed (4,63), 1 unexplained ranges
-
-The session ends, the Agent reconnects, and it is refused again - indefinitely.
-The host stays OFFLINE, and the Agent has no diagnostics of its own to say why
-(finding 4 again).
-
-**Why nothing recovers it.** `auditsync`'s `CursorBehindFloor` branch is the one
-path that would raise the Server's coverage start to the Agent's floor, and it
-is gated on coverage *not* already being established - which after a restore it
-is, from the restored row. `EstablishCoverageStart` is immutable once set, so the
-Server cannot raise it afterwards either. Only a gap entry explains the range,
-and only the Agent can claim one today - and it has no basis to claim a gap for
-records it delivered and saw acknowledged. The side that knows the range will
-never exist is the Server.
-
-`internal/auditstore/restore_floor_test.go` pins all four steps: the refusal with
-the exact unexplained range, the immutable coverage start, the refusal persisting
-after the attempted repair, and a gap claim resolving it.
-
-**Severity: P1.** A Server backup restore is a documented recovery procedure, and
-the longer a fleet has been running the more likely each Agent's floor is to have
-advanced past the backup. The result is an Agent that is permanently offline and
-gives no local reason.
-
-**Proposed fix, not yet made.** When `CursorBehindFloor` arrives and coverage is
-already established, the Server should record an effective gap for
-`[requested, floor)` with its own reason, rather than doing nothing. That is what
-a gap entry means - the Server will never hold these records, and here is why -
-and it keeps the claim on the side that can actually make it truthfully. This
-changes Audit coverage semantics, so it is written down here rather than done as
-a side effect of investigating.
-
-**Measured rate.** With `join-token-restart` at the head of the full sequence:
-FAIL, FAIL, PASS. Without it: PASS. `db-restore` alone: PASS, PASS. Three cases
-including it: PASS. The earlier claim in this record that it failed 2/2 with the
-case and passed 1/1 without was drawn before the third run and read more into
-those numbers than they support; the case affects likelihood, not outcome.
-`join-token-restart` is still run as its own invocation, so neither gate's result
-depends on that likelihood.
+**Archive generation.** Verified separately and needing no change: the archive
+generation is minted from the Server Identity State's monotonic counter, not
+from the restored database, so restoring an old archive row always yields a
+generation ahead of everything already issued. The two-advance recovery seen
+earlier came from restoring the Identity State *and* the database together,
+which is a different case and is covered by recovery matrix case 1b.
 
 ## What is missing
 
