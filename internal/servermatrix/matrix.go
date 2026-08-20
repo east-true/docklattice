@@ -91,6 +91,13 @@ type HostRow struct {
 	ContainersRunning uint32
 	ContainersTotal   uint32
 	Filesystems       []Filesystem
+	// Totals is every container in this frame added up, by the same rules as
+	// every other aggregate row. Its memory limit is the sum of the containers'
+	// limits and is unbounded as soon as one of them is unlimited, which is a
+	// different quantity from MemoryCapacity above: what the containers are
+	// allowed and what the machine has are not the same question, and a view
+	// must not let them be read as one.
+	Totals Aggregate
 }
 
 // ContainerRow is one container in a view. Pending carries the Agent's meaning
@@ -107,6 +114,12 @@ type ContainerRow struct {
 	// Hiding it would make the matrix quietly wrong exactly when something has
 	// just been deployed.
 	Unmapped bool
+	// MemoryLimitUnbounded and the two percent fields are derived once here,
+	// against this frame's own Engine capacity; see markMemoryLimit for why the
+	// reported limit cannot simply be read as one.
+	MemoryLimitUnbounded bool
+	MemoryPercent        float64
+	MemoryPercentKnown   bool
 }
 
 // View is one host at one instant, as a browser should see it.
@@ -117,10 +130,14 @@ type ContainerRow struct {
 // because this browser was slow to read its subscription. Adding them together
 // would hide which side is behind.
 type View struct {
-	AgentID          string
-	ObservedAt       time.Time
-	Host             HostRow
-	Containers       []ContainerRow
+	AgentID    string
+	ObservedAt time.Time
+	Host       HostRow
+	// Projects is the whole host as a tree: project, then service, then
+	// container. Containers appear once, under the service they belong to, so
+	// the view carries each row's numbers exactly once no matter how many
+	// levels display them.
+	Projects         []ProjectRow
 	AgentDropped     uint64
 	ViewerDropped    uint64
 	MembershipStale  bool
@@ -461,6 +478,9 @@ func (h *Hub) assemble(
 		containers = append(containers, containerRow(id, true, producttransport.StatsSample{}, mapping))
 	}
 	sortContainerRows(containers)
+	for index := range containers {
+		markMemoryLimit(&containers[index], frame.Workload.MemoryCapacity)
+	}
 
 	filesystems := make([]Filesystem, 0, len(frame.Workload.Filesystems))
 	for _, filesystem := range frame.Workload.Filesystems {
@@ -475,9 +495,9 @@ func (h *Hub) assemble(
 		Host: HostRow{
 			CPUCapacity: frame.Workload.CPUCapacity, MemoryCapacity: frame.Workload.MemoryCapacity,
 			ContainersRunning: frame.Workload.ContainersRunning, ContainersTotal: frame.Workload.ContainersTotal,
-			Filesystems: filesystems,
+			Filesystems: filesystems, Totals: aggregate(containers),
 		},
-		Containers:      containers,
+		Projects:        groupProjects(containers),
 		AgentDropped:    frame.DroppedFrames,
 		MembershipStale: frame.MembershipStale, MembershipReason: frame.MembershipReason,
 		WorkloadStale: frame.WorkloadStale, WorkloadReason: frame.WorkloadReason,

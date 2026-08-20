@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -199,6 +200,20 @@ func sampleFrame(ids ...string) producttransport.MetricsMatrixFrame {
 	return frame
 }
 
+// flatContainers reads the tree back as one list in container-ID order, which
+// is what the fan-out tests are asserting about; the grouping itself has its
+// own tests.
+func flatContainers(view View) []ContainerRow {
+	var rows []ContainerRow
+	for _, project := range view.Projects {
+		for _, service := range project.Services {
+			rows = append(rows, service.Containers...)
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].ContainerID < rows[j].ContainerID })
+	return rows
+}
+
 func nextView(t *testing.T, viewer *Subscription) View {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -275,8 +290,9 @@ func TestOneAgentStreamServesEveryViewer(t *testing.T) {
 	sessions.current().push(sampleFrame("a", "b"))
 	for name, viewer := range map[string]*Subscription{"first": first, "second": second} {
 		view := nextView(t, viewer)
-		if len(view.Containers) != 2 || view.Containers[0].ContainerID != "a" || view.Containers[1].ContainerID != "b" {
-			t.Fatalf("%s viewer saw %+v, want both containers in ID order", name, view.Containers)
+		rows := flatContainers(view)
+		if len(rows) != 2 || rows[0].ContainerID != "a" || rows[1].ContainerID != "b" {
+			t.Fatalf("%s viewer saw %+v, want both containers in ID order", name, rows)
 		}
 		if view.AgentID != "agent-1" {
 			t.Fatalf("%s viewer saw Agent %q", name, view.AgentID)
@@ -290,8 +306,8 @@ func TestOneAgentStreamServesEveryViewer(t *testing.T) {
 		t.Fatalf("the Agent stream closed while a viewer was still watching")
 	}
 	sessions.current().push(sampleFrame("a", "b", "c"))
-	if view := nextView(t, second); len(view.Containers) != 3 {
-		t.Fatalf("the remaining viewer stopped receiving after the other left: %+v", view.Containers)
+	if rows := flatContainers(nextView(t, second)); len(rows) != 3 {
+		t.Fatalf("the remaining viewer stopped receiving after the other left: %+v", rows)
 	}
 
 	if err := second.Close(); err != nil {
@@ -427,8 +443,8 @@ func TestSlowViewerCoalescesFramesAndCountsWhatItMissed(t *testing.T) {
 	if view.ViewerDropped != 3 {
 		t.Fatalf("the slow viewer's view reported %d dropped rounds, want 3", view.ViewerDropped)
 	}
-	if len(view.Containers) != 1 || view.Containers[0].ContainerID != "a" {
-		t.Fatalf("the coalesced view lost content: %+v", view.Containers)
+	if rows := flatContainers(view); len(rows) != 1 || rows[0].ContainerID != "a" {
+		t.Fatalf("the coalesced view lost content: %+v", rows)
 	}
 }
 
@@ -464,14 +480,14 @@ func TestPendingMembersAppearAsRows(t *testing.T) {
 	frame.PendingContainerIDs = []string{"a"}
 	sessions.current().push(frame)
 
-	view := nextView(t, viewer)
-	if len(view.Containers) != 2 {
-		t.Fatalf("view carried %d rows, want the sampled and the pending one", len(view.Containers))
+	rows := flatContainers(nextView(t, viewer))
+	if len(rows) != 2 {
+		t.Fatalf("view carried %d rows, want the sampled and the pending one", len(rows))
 	}
-	if view.Containers[0].ContainerID != "a" || !view.Containers[0].Pending {
-		t.Fatalf("row 0 is %+v, want pending container a first", view.Containers[0])
+	if rows[0].ContainerID != "a" || !rows[0].Pending {
+		t.Fatalf("row 0 is %+v, want pending container a first", rows[0])
 	}
-	if view.Containers[1].Pending {
+	if rows[1].Pending {
 		t.Fatalf("the sampled container was reported as pending")
 	}
 }
@@ -590,7 +606,8 @@ func TestUnmappedContainersKeepTheirMetrics(t *testing.T) {
 	sessions.current().push(frame)
 
 	view := nextView(t, viewer)
-	mapped, unmapped := view.Containers[0], view.Containers[1]
+	rows := flatContainers(view)
+	mapped, unmapped := rows[0], rows[1]
 	if mapped.Unmapped || mapped.ProjectName != "shop" || mapped.Service != "web" || mapped.Image != "nginx:1" {
 		t.Fatalf("mapped row is %+v, want the discovery context joined on", mapped)
 	}
@@ -621,8 +638,8 @@ func TestFailedContextLookupIsSaidRatherThanShown(t *testing.T) {
 		t.Fatalf("subscribe: %v", err)
 	}
 	sessions.current().push(sampleFrame("a"))
-	if view := nextView(t, viewer); view.Containers[0].ProjectName != "shop" {
-		t.Fatalf("opening view lacked context: %+v", view.Containers[0])
+	if rows := flatContainers(nextView(t, viewer)); rows[0].ProjectName != "shop" {
+		t.Fatalf("opening view lacked context: %+v", rows[0])
 	}
 
 	source.fail(errors.New("agent is offline"))
@@ -636,8 +653,8 @@ func TestFailedContextLookupIsSaidRatherThanShown(t *testing.T) {
 	if view.ContextReason != "agent is offline" {
 		t.Fatalf("context reason is %q, want the lookup failure", view.ContextReason)
 	}
-	if view.Containers[0].ProjectName != "shop" || view.Containers[0].Unmapped {
-		t.Fatalf("a failed lookup erased the last known context: %+v", view.Containers[0])
+	if rows := flatContainers(view); rows[0].ProjectName != "shop" || rows[0].Unmapped {
+		t.Fatalf("a failed lookup erased the last known context: %+v", rows[0])
 	}
 }
 
@@ -683,9 +700,9 @@ func TestAnUnknownContainerIsAskedAboutOnce(t *testing.T) {
 	waitFor(t, "the newly deployed container to be looked up", func() bool { return source.callCount() == 3 })
 
 	view := viewUntil(t, viewer, sessions.current(), sampleFrame("a", "b"), "the new container to be mapped",
-		func(view View) bool { return !view.Containers[1].Unmapped })
-	if view.Containers[1].Service != "api" {
-		t.Fatalf("the new container did not pick up its context: %+v", view.Containers[1])
+		func(view View) bool { return !flatContainers(view)[1].Unmapped })
+	if rows := flatContainers(view); rows[1].Service != "api" {
+		t.Fatalf("the new container did not pick up its context: %+v", rows[1])
 	}
 }
 
