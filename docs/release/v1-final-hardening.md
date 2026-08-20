@@ -1,7 +1,8 @@
 # v1 final hardening campaign
 
-Verdict: **NOT_READY for interface freeze** — no open defect blocks it; two
-pieces of evidence are missing.
+Verdict: **no unresolved P0 or P1.** The interface freeze was completed on this
+evidence — see [`../interface-freeze.md`](../interface-freeze.md). Long-duration
+soak is excluded from that gate by project decision and has not been run.
 
 This records a campaign that ran the existing gates against hosts they had
 never been run on, added three gates for failures no existing gate could
@@ -144,7 +145,7 @@ generation ahead of everything already issued. The two-advance recovery seen
 earlier came from restoring the Identity State *and* the database together,
 which is a different case and is covered by recovery matrix case 1b.
 
-## What is missing
+## What has not been run
 
 1. **Stage 1 soak at this revision.** Architecture section 30 requires a soak
    after a transport or session change, and finding 1 is one. The recorded
@@ -156,6 +157,8 @@ which is a different case and is covered by recovery matrix case 1b.
    gaps, zero OOM events, zero HTTP errors, host ACTIVE in every sample — but
    17.6 minutes is not a soak, and this is not evidence of anything.
 2. **Stage 2 soak** (2–4 hours, mixed mode) has never run.
+
+Both are excluded from the Interface Freeze gate by project decision.
 The resource matrix has since been re-run at this revision: three trials,
 `status=PASS`, peak RSS in the low tens of MiB against 256/512 MiB budgets, no
 OOM. That run also resolved a question this record previously listed as open -
@@ -165,5 +168,7 @@ stream, failing three of five observed trials and passing two with exact counts
 of 10,773 and 80,514 bytes. The driver now holds the stream open until the
 evidence exists. See [resource-gate.md](resource-gate.md).
 
-Until the soak exists, the honest answer is NOT_READY — for want of evidence,
-not because anything found here is unresolved.
+Long-duration soak is **not run**, and is excluded from the Interface Freeze
+gate by project decision. That is a scope decision, not a result: nothing here
+should be read as a soak having passed. If a v1 Release Candidate wants
+long-duration validation, it is a separate release gate.

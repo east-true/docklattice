@@ -1,8 +1,12 @@
 # Long-running soak
 
-Status: Stage 1 PASS at revision `fd04135`. Not yet re-established at the
-current revision - see the incomplete re-run at the end. Stages 2 and 3
-outstanding.
+Status: Stage 1 PASS at revision `fd04135`. Not re-established at the current
+revision - see the incomplete re-run at the end. Stages 2 and 3 not run.
+
+Long-duration soak is **excluded from the v1 Core Interface Freeze gate by
+project decision**. Nothing in this document should be read as a soak having
+passed at the frozen revision; it has not been run there. A v1 Release
+Candidate may adopt long-duration validation as its own separate gate.
 
 Every other gate in this directory injects something and asserts what survives.
 This one injects nothing. It runs the product for hours and asserts that

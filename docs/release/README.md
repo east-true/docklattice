@@ -59,7 +59,8 @@ Supporting record:
 | Document | Subject |
 |---|---|
 | [Defaults validation](defaults-validation.md) | Which operational defaults have final evidence and which remain provisional, row by row. |
-| [v1 final hardening campaign](v1-final-hardening.md) | What the re-runs and the three new gates found, what was fixed, what is still open, and why the interface freeze is not yet claimable. |
+| [v1 final hardening campaign](v1-final-hardening.md) | What the re-runs and the new gates found, what was fixed, and what remains open and non-blocking. |
+| [v1 Core Interface Freeze](../interface-freeze.md) | The frozen external semantics: identifiers, operation states, errors, capabilities, audit coverage, credentials, file/log/metric contracts, and the change policy after freeze. |
 
 ## Reading the gates honestly
 
