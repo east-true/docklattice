@@ -162,8 +162,8 @@ every unavailable range has an allowed source.
 
 Status: package relay/stats matrix complete (slow-consumer isolation, stream
 cancellation, bounded rings); browser E2E and accessibility pending. The
-bounded-memory soak now has a harness and a gate document
-([`release/soak.md`](release/soak.md)); its stages are outstanding.
+bounded-memory soak passed its one-hour stage
+([`release/soak.md`](release/soak.md)); the longer stages are outstanding.
 
 - Connect project/service Compose operations and bounded per-stream log relay.
 - Implement viewer-scoped Docker stats, latest-wins delivery, one Server sample,
@@ -182,8 +182,8 @@ Status: passed 2026-08-18. Three-trial production-image matrix returned
 `status=PASS` in every trial (`docs/release/resource-gate.md` records the environment,
 per-trial resource summaries, and the Appendix A A.9 bounds measured).
 `operation_progress_event_latency_ms` and the Appendix A prototype acceptance
-items 1/4/5/6 are not measured by this gate; the one-hour and overnight soaks
-remain outstanding, and are now run with the harness in
+items 1/4/5/6 are not measured by this gate. The one-hour soak has since passed
+and the overnight soak remains outstanding; both are run with the harness in
 [`release/soak.md`](release/soak.md).
 
 Run production Agent and Server together under real cgroup limits with:

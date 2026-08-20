@@ -1,7 +1,6 @@
 # Long-running soak
 
-Status: NOT RUN. The harness is complete and verified; no stage has produced
-evidence yet.
+Status: Stage 1 PASS. Stages 2 and 3 outstanding.
 
 Every other gate in this directory injects something and asserts what survives.
 This one injects nothing. It runs the product for hours and asserts that
@@ -143,15 +142,64 @@ A failure at any stage is fixed before the next is attempted. A later stage
 does not re-prove an earlier one; it looks for the slower accumulation the
 shorter run could not resolve.
 
-All three stages are outstanding.
+Stage 1 has passed. Stages 2 and 3 are outstanding.
 
 ## Recorded execution
 
-None. This section carries a stage's environment, sample count, per-metric
-quarter medians, and verdict once that stage has produced a sealed evidence
-directory. A harness that runs is not a gate that passed.
+### Stage 1 - one-hour active soak
 
-What has been run so far, and is not evidence:
+    verdict                 PASS
+    mode                    active
+    duration                3600 s measured, 120 s settle, 118 judged samples
+    sample interval         30 s
+    started / finished      2026-08-20T04:04:53Z / 2026-08-20T05:07:03Z
+    kernel                  Linux 7.0.0-28-generic x86_64
+    docker_engine           29.7.2
+    release_version         1.0.0
+    release_revision        ddf11ad1745bfa689f6f8438d257f8bead19137a
+    server_image_id         sha256:6d4f5756aa3a43143bd35c499ecedf16ad64749e3f5d8dba50f19f5ac45df6a4
+    agent_image_id          sha256:11dbb69caedbe67e47090c04c40aa714fbfdee90b4a7384324738cf05cf5b5ad
+    fixture_image_id        sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
+    evidence                516 KiB, 98-entry SHA256SUMS
+
+Workload actually driven: 113 cycles, 254 stream opens and closes, 84
+operations, 9 partition-and-reconnect injections.
+
+Per-metric quarter medians and verdicts:
+
+| Metric | Quarter medians | Growth | Monotonic | Verdict |
+|---|---|---:|---|---|
+| `server.rss_kib` | 29916, 29932, 30660, 30880 | +3.22% | yes | PASS |
+| `server.threads` | 12, 12, 12, 13 | +8.33% | no | PASS |
+| `server.fds` | 16, 16, 16, 16 | 0% | no | PASS |
+| `agent.rss_kib` | 26812, 26940, 27192, 27468 | +2.45% | yes | PASS |
+| `agent.threads` | 12, 12, 12, 12 | 0% | no | PASS |
+| `agent.fds` | 10, 10, 10, 10 | 0% | no | PASS |
+| `audit.lag` | 1, 1, 1, 1 | 0% | no | PASS |
+| `audit.coverage_revision` | 0, 0, 0, 0 | 0% | no | PASS |
+
+Hard checks: no OOM event, no failed sampling request, and the Agent ACTIVE at
+every one of the 118 samples. Agent state settled at 1108 KiB with 0% growth
+across the settle window, three orders of magnitude below its ceiling. The
+Server log carried no SQLite contention and no failed API request. The closing
+invariant check passed.
+
+**What is worth carrying into Stage 2.** Both RSS series rose in every quarter.
+The rise is small - 3.22% and 2.45% over an hour, well inside the 30%
+tolerance, with peaks of 32176 KiB and 30212 KiB and last samples below those
+peaks - and the shape is consistent with the Go scavenger returning pages
+slowly rather than with retention. But "monotonic yet small" is exactly the
+shape that a longer run resolves and an hour cannot: the same slope sustained
+over twelve hours would not stay inside tolerance. Stage 2 exists to tell those
+two readings apart, and this is the number it should be compared against.
+
+**Environment note.** This run shared the host with nine unrelated Compose
+projects belonging to the operator, recorded as `other_projects_on_host=9`.
+The harness touched none of them - every target was checked against the fixture
+identity it derived - but their CPU and I/O are noise in every slope above. A
+quiet host would produce a cleaner measurement, not a different verdict.
+
+### Earlier runs, which are not evidence
 
 - A three-minute active shakedown that exercised every workload branch, the
   trend verdict, and the closing invariants end to end. It proves the harness
@@ -163,9 +211,6 @@ What has been run so far, and is not evidence:
   The count is now taken from inside the container, where the process can see
   its own descriptors. A metric that cannot fail is worse than an absent one,
   so the run was thrown away rather than published with a footnote.
-
-Stage 1 has to be run again on the corrected harness before this section says
-anything.
 
 ## What this gate does not do
 

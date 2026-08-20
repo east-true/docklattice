@@ -144,9 +144,9 @@ no adjacent-limit comparison was needed.
 | Discovery budget/interval | provisional | real 200,001-directory and slow-filesystem fixtures |
 | Stats interval/ring | provisional | real Docker viewer 0/1/N soak |
 
-The one-hour combined soak and the overnight soak required before the v1
-release candidate is signed have not been run. The harness that runs them now
-exists - see [`soak.md`](soak.md) - with all three of its stages outstanding.
-None of the rows above change until a stage produces evidence: the soak owns
-direction over time, not the values in this table, so even a passing soak
-promotes nothing here on its own.
+The one-hour soak required before the v1 release candidate is signed has now
+passed ([`soak.md`](soak.md), Stage 1); the overnight soak has not been run.
+No row above changes as a result. The soak owns direction over time, not the
+values in this table, so a passing soak promotes nothing here on its own - the
+`Stats interval/ring` row in particular still needs the real Docker viewer
+0/1/N evidence it names, which an active soak exercises but does not measure.

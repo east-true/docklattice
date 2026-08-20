@@ -22,7 +22,7 @@ did *not* measure.
 | [Hardening matrix](hardening-matrix-e2e.md) | PASS | Injected failures the product claims to survive: Agent and Server kills, network partition, interrupted operation, cancelled Compose run, racing writes, rolled-back Server database, and a filesystem too small for the WAL. Every case closes with the same invariant check over locks, operations, journals, staging, Audit coverage, and secrets. |
 | [Abuse matrix](abuse-matrix-e2e.md) | PASS | Inputs the product must refuse: path escapes, secret exposure, operation ID rebinding, replayed Join Token, foreign CA, tampered backup archive, non-identical discovery bind, self-directed operations, malformed and oversized requests, and a Compose project name collision. |
 | [Reproducible distribution](distribution.md) | PASS | `linux/amd64` and `linux/arm64` release images whose two independent build runs produced byte-identical archives. |
-| [Long-running soak](soak.md) | NOT RUN | Accumulation that no injected fault can show: retained memory, threads and descriptors that are never released, Agent state that never settles, an Audit cursor that never catches up. The harness and its verifier are complete; no stage has produced evidence. |
+| [Long-running soak](soak.md) | STAGE 1 PASS | Accumulation that no injected fault can show. One hour of active workload - 113 cycles, 254 stream opens and closes, 84 operations, 9 reconnects - left descriptors and threads flat, Agent state settled, Audit lag at 1, and no OOM, 5xx, or SQLite contention. Stages 2 and 3 outstanding. |
 
 ## Re-running the matrices on a working host
 
@@ -57,11 +57,12 @@ point:
   ownership row — Agent/Server memory — to `validated`. Every other row still
   names the final evidence it lacks. The resource matrix was defined to produce
   memory evidence, so it promotes memory evidence and nothing else.
-- The one-hour combined soak and the overnight soak that the plan requires
-  before a release candidate is signed **have not been run**. What changed is
-  that there is now a harness to run them with, and a
-  [document](soak.md) that says plainly which stages are outstanding - which is
-  all three. A harness is not evidence.
+- The [soak](soak.md) has passed its first stage and no more. One hour of
+  active workload is evidence about an hour; the overnight soak the plan
+  requires before a release candidate is signed **has not been run**. Both RSS
+  series rose in every quarter of that hour - by 3.22% and 2.45%, well inside
+  tolerance, but monotonically - which is precisely the reading a longer stage
+  exists to resolve.
 
 Two known non-blockers are recorded in the gates themselves: the hardening
 matrix records `docker-daemon-restart` as `SKIPPED_NOT_AUTHORIZED` unless the
