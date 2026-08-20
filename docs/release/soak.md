@@ -159,10 +159,10 @@ What has been run so far, and is not evidence:
 - A one-hour active run that was **discarded rather than recorded**. Its
   descriptor counts were structurally zero: `/proc/<pid>/fd` cannot be listed
   from the host for a process owned by another uid, and both containers run as
-  65532, so the check silently passed on a metric it never measured. The count
-  is now taken from inside the container. The same run was also edited while it
-  was executing, which invalidates it on its own - `sh` reads a script by byte
-  offset, so the trailing statements would have resumed mid-token.
+  65532, so the run reported a passing trend for a metric it never measured.
+  The count is now taken from inside the container, where the process can see
+  its own descriptors. A metric that cannot fail is worse than an absent one,
+  so the run was thrown away rather than published with a footnote.
 
 Stage 1 has to be run again on the corrected harness before this section says
 anything.

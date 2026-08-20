@@ -467,10 +467,13 @@ proc_field() {
         "/proc/$pid/status" 2>/dev/null || printf 0
 }
 
+# The host cannot list another user's /proc/<pid>/fd, and both containers run
+# as an unprivileged uid, so the count is taken from inside the container where
+# the process can see its own descriptors. Read from the host it is silently
+# always zero, which is worse than having no metric at all: it looks like a
+# check that keeps passing.
 fd_count() {
-    pid=$1
-    [ "$pid" != 0 ] || { printf 0; return 0; }
-    ls "/proc/$pid/fd" 2>/dev/null | wc -l | awk '{ print $1 }'
+    { docker exec "$1" sh -c 'ls /proc/1/fd 2>/dev/null | wc -l' 2>/dev/null || true; } | first_number
 }
 
 # Every collector prints exactly one integer. A sample that cannot be taken is
@@ -524,13 +527,13 @@ sample() {
         --argjson elapsed "$(( $(date +%s) - started_epoch ))" \
         --argjson server_rss "$(proc_field "$server_pid" VmRSS)" \
         --argjson server_threads "$(proc_field "$server_pid" Threads)" \
-        --argjson server_fds "$(fd_count "$server_pid")" \
+        --argjson server_fds "$(fd_count "$server")" \
         --argjson server_current "$(cgroup_metric "$server" memory.current)" \
         --argjson server_oom "$(cgroup_event "$server" oom)" \
         --argjson server_oom_kill "$(cgroup_event "$server" oom_kill)" \
         --argjson agent_rss "$(proc_field "$agent_pid" VmRSS)" \
         --argjson agent_threads "$(proc_field "$agent_pid" Threads)" \
-        --argjson agent_fds "$(fd_count "$agent_pid")" \
+        --argjson agent_fds "$(fd_count "$agent")" \
         --argjson agent_current "$(cgroup_metric "$agent" memory.current)" \
         --argjson agent_oom "$(cgroup_event "$agent" oom)" \
         --argjson agent_oom_kill "$(cgroup_event "$agent" oom_kill)" \
