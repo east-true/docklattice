@@ -883,3 +883,36 @@ func TestEnvironmentRevealControlsMasking(t *testing.T) {
 		t.Fatalf("an explicitly revealed listing must not mask: %s", revealed.Body.String())
 	}
 }
+
+type canceledBackend struct{ Backend }
+
+func (canceledBackend) Dashboard(ctx context.Context) (Dashboard, error) {
+	return Dashboard{}, fmt.Errorf("serverapi: dashboard: %w", ctx.Err())
+}
+
+// A client hanging up is the client's decision. It has to stay out of the
+// Server's failure diagnostics: every SSE stream ends this way, and a log that
+// calls each of those an internal Server failure cannot be used to find a real
+// one.
+func TestAClientHangingUpIsNotRecordedAsAServerFailure(t *testing.T) {
+	var diagnostics strings.Builder
+	handler, err := NewWithDiagnostics(canceledBackend{}, &diagnostics)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard", nil).WithContext(ctx)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code == http.StatusInternalServerError {
+		t.Fatalf("a client disconnect answered %d, which is the Server accusing itself", recorder.Code)
+	}
+	if recorder.Code != statusClientClosedRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, statusClientClosedRequest)
+	}
+	if recorded := diagnostics.String(); recorded != "" {
+		t.Fatalf("a client disconnect was recorded as a Server failure: %q", recorded)
+	}
+}
