@@ -273,10 +273,19 @@ type WorkloadSummary struct {
 // summary come from a single membership snapshot, so a frame never disagrees
 // with itself, and frames rather than samples are the unit of loss.
 type MetricsMatrixFrame struct {
-	ObservedAt    time.Time
-	Workload      WorkloadSummary
-	Containers    []StatsSample
-	DroppedFrames uint64
+	ObservedAt time.Time
+	Workload   WorkloadSummary
+	Containers []StatsSample
+	// PendingContainerIDs are members whose first sample has not arrived. They
+	// are reported rather than omitted: present-but-unreported and gone are
+	// different states, and a viewer that cannot tell them apart will show a
+	// container vanishing every time it is slow to start.
+	PendingContainerIDs []string
+	DroppedFrames       uint64
+	// MembershipStale means the rows are the last confirmed set rather than the
+	// current one, with MembershipReason saying why the refresh failed.
+	MembershipStale  bool
+	MembershipReason string
 }
 
 type MetricsMatrixSender interface {

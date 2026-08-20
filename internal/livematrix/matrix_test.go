@@ -338,6 +338,55 @@ func TestAFailedListingKeepsThePreviousMembership(t *testing.T) {
 	if len(frame.Rows) != 2 {
 		t.Fatalf("a failed listing emptied the view: %+v", frame.Rows)
 	}
+	// Keeping the rows is only half of it. A frame that keeps them without
+	// saying so asserts they are current, and they are not - membership is
+	// unknown, which is a third state and has to be visible.
+	if !frame.MembershipStale {
+		t.Fatal("stale rows were presented as current")
+	}
+	if frame.MembershipReason == "" {
+		t.Fatal("a stale frame gave no reason")
+	}
+
+	// Recovery clears it.
+	h.membership.mu.Lock()
+	h.membership.err = nil
+	h.membership.mu.Unlock()
+	before := h.membership.callCount()
+	h.events.fire()
+	waitFor(t, "recovery reconcile", func() bool { return h.membership.callCount() > before })
+	h.tickers.tick(t)
+	frame = nextFrame(t, viewer)
+	if frame.MembershipStale || frame.MembershipReason != "" {
+		t.Fatalf("a recovered frame is still marked stale: %+v", frame)
+	}
+}
+
+// TestAnEngineThatNeverAnsweredIsNotAnEmptyHost is the first-contact case: no
+// rows and no reason would read as "this host runs nothing", which is a claim
+// about the host rather than about Docker.
+func TestAnEngineThatNeverAnsweredIsNotAnEmptyHost(t *testing.T) {
+	source := &statsSource{}
+	h := newHarness(t, source)
+	h.membership.mu.Lock()
+	h.membership.err = errors.New("Cannot connect to the Docker daemon")
+	h.membership.mu.Unlock()
+
+	viewer, err := h.hub.Subscribe(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer viewer.Close()
+	waitFor(t, "first reconcile", func() bool { return h.membership.callCount() >= 1 })
+
+	h.tickers.tick(t)
+	frame := nextFrame(t, viewer)
+	if len(frame.Rows) != 0 || frame.Running != 0 {
+		t.Fatalf("rows appeared from nowhere: %+v", frame.Rows)
+	}
+	if !frame.MembershipStale {
+		t.Fatal("an unreachable Engine was reported as a host with no containers")
+	}
 }
 
 // TestViewersShareOneRelayAndTheLastOneStopsIt is the lifecycle condition: the

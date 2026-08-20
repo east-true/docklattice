@@ -1324,8 +1324,19 @@ type MetricsMatrixFrame struct {
 	Workload           *WorkloadSummary       `protobuf:"bytes,2,opt,name=workload,proto3" json:"workload,omitempty"`
 	Containers         []*StatsSample         `protobuf:"bytes,3,rep,name=containers,proto3" json:"containers,omitempty"`
 	DroppedFrames      uint64                 `protobuf:"varint,4,opt,name=dropped_frames,json=droppedFrames,proto3" json:"dropped_frames,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// membership_stale says the container rows are the last set the Agent could
+	// confirm, not the current one, because refreshing them from the Engine
+	// failed. Keeping the rows silently would assert they are current; dropping
+	// them would say the host has no containers. A failed listing means
+	// membership is unknown, which is neither, and this is how it is said.
+	MembershipStale  bool   `protobuf:"varint,5,opt,name=membership_stale,json=membershipStale,proto3" json:"membership_stale,omitempty"`
+	MembershipReason string `protobuf:"bytes,6,opt,name=membership_reason,json=membershipReason,proto3" json:"membership_reason,omitempty"`
+	// pending_container_ids are in the membership snapshot but have not produced
+	// a sample yet. Present-but-unreported is not the same as gone, and a slow
+	// container must not delay the frame for the others.
+	PendingContainerIds []string `protobuf:"bytes,7,rep,name=pending_container_ids,json=pendingContainerIds,proto3" json:"pending_container_ids,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *MetricsMatrixFrame) Reset() {
@@ -1384,6 +1395,27 @@ func (x *MetricsMatrixFrame) GetDroppedFrames() uint64 {
 		return x.DroppedFrames
 	}
 	return 0
+}
+
+func (x *MetricsMatrixFrame) GetMembershipStale() bool {
+	if x != nil {
+		return x.MembershipStale
+	}
+	return false
+}
+
+func (x *MetricsMatrixFrame) GetMembershipReason() string {
+	if x != nil {
+		return x.MembershipReason
+	}
+	return ""
+}
+
+func (x *MetricsMatrixFrame) GetPendingContainerIds() []string {
+	if x != nil {
+		return x.PendingContainerIds
+	}
+	return nil
 }
 
 type StatsSample struct {
@@ -2352,14 +2384,17 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"\x0fmemory_capacity\x18\x02 \x01(\x04R\x0ememoryCapacity\x12-\n" +
 	"\x12containers_running\x18\x03 \x01(\rR\x11containersRunning\x12)\n" +
 	"\x10containers_total\x18\x04 \x01(\rR\x0fcontainersTotal\x12I\n" +
-	"\vfilesystems\x18\x05 \x03(\v2'.dockpilot.product.v1.ManagedFilesystemR\vfilesystems\"\xf4\x01\n" +
+	"\vfilesystems\x18\x05 \x03(\v2'.dockpilot.product.v1.ManagedFilesystemR\vfilesystems\"\x80\x03\n" +
 	"\x12MetricsMatrixFrame\x121\n" +
 	"\x15observed_at_unix_nano\x18\x01 \x01(\x03R\x12observedAtUnixNano\x12A\n" +
 	"\bworkload\x18\x02 \x01(\v2%.dockpilot.product.v1.WorkloadSummaryR\bworkload\x12A\n" +
 	"\n" +
 	"containers\x18\x03 \x03(\v2!.dockpilot.product.v1.StatsSampleR\n" +
 	"containers\x12%\n" +
-	"\x0edropped_frames\x18\x04 \x01(\x04R\rdroppedFrames\"\xa6\x03\n" +
+	"\x0edropped_frames\x18\x04 \x01(\x04R\rdroppedFrames\x12)\n" +
+	"\x10membership_stale\x18\x05 \x01(\bR\x0fmembershipStale\x12+\n" +
+	"\x11membership_reason\x18\x06 \x01(\tR\x10membershipReason\x122\n" +
+	"\x15pending_container_ids\x18\a \x03(\tR\x13pendingContainerIds\"\xa6\x03\n" +
 	"\vStatsSample\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x121\n" +
 	"\x15observed_at_unix_nano\x18\x02 \x01(\x03R\x12observedAtUnixNano\x12\x1f\n" +

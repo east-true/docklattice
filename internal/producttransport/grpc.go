@@ -714,8 +714,11 @@ func (s *metricsMatrixReceiveStream) Recv(ctx context.Context) (MetricsMatrixFra
 
 func metricsMatrixFrameFromWire(frame *pb.MetricsMatrixFrame) MetricsMatrixFrame {
 	result := MetricsMatrixFrame{
-		ObservedAt:    timeFromUnixNano(frame.GetObservedAtUnixNano()),
-		DroppedFrames: frame.GetDroppedFrames(),
+		ObservedAt:          timeFromUnixNano(frame.GetObservedAtUnixNano()),
+		DroppedFrames:       frame.GetDroppedFrames(),
+		PendingContainerIDs: append([]string(nil), frame.GetPendingContainerIds()...),
+		MembershipStale:     frame.GetMembershipStale(),
+		MembershipReason:    frame.GetMembershipReason(),
 	}
 	if workload := frame.GetWorkload(); workload != nil {
 		result.Workload = WorkloadSummary{
@@ -1095,8 +1098,11 @@ type grpcMetricsMatrixSender struct{ stream grpc.ServerStream }
 
 func (s grpcMetricsMatrixSender) Send(frame MetricsMatrixFrame) error {
 	wire := &pb.MetricsMatrixFrame{
-		ObservedAtUnixNano: unixNanoOrZero(frame.ObservedAt),
-		DroppedFrames:      frame.DroppedFrames,
+		ObservedAtUnixNano:  unixNanoOrZero(frame.ObservedAt),
+		DroppedFrames:       frame.DroppedFrames,
+		PendingContainerIds: append([]string(nil), frame.PendingContainerIDs...),
+		MembershipStale:     frame.MembershipStale,
+		MembershipReason:    frame.MembershipReason,
 		Workload: &pb.WorkloadSummary{
 			CpuCapacity: frame.Workload.CPUCapacity, MemoryCapacity: frame.Workload.MemoryCapacity,
 			ContainersRunning: frame.Workload.ContainersRunning, ContainersTotal: frame.Workload.ContainersTotal,

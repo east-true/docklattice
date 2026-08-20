@@ -167,6 +167,17 @@ message MetricsMatrixFrame {
   WorkloadSummary workload = 2;
   repeated StatsSample containers = 3;
   uint64 dropped_frames = 4;
+  // membership_stale says the container rows are the last set the Agent could
+  // confirm, not the current one, because refreshing them from the Engine
+  // failed. Keeping the rows silently would assert they are current; dropping
+  // them would say the host has no containers. A failed listing means
+  // membership is unknown, which is neither, and this is how it is said.
+  bool membership_stale = 5;
+  string membership_reason = 6;
+  // pending_container_ids are in the membership snapshot but have not produced
+  // a sample yet. Present-but-unreported is not the same as gone, and a slow
+  // container must not delay the frame for the others.
+  repeated string pending_container_ids = 7;
 }
 
 message StatsSample {

@@ -76,13 +76,24 @@ type Row struct {
 	Sample      livestats.Sample
 }
 
-// Frame is one host at one instant. Rows and Summary come from a single
+// Frame is one host at one instant. Rows and Running come from a single
 // membership snapshot, so a frame never disagrees with itself.
+//
+// MembershipStale says the rows are the last known set rather than the current
+// one, because the attempt to refresh them from Docker failed. Keeping the rows
+// and saying nothing would assert they are current; dropping them would say the
+// host has no containers. Neither is true: a failed listing means membership is
+// unknown, which is a third thing and is what this reports.
+//
+// Capacity is the Engine's own numbers and changes rarely; a frame carries the
+// last successful read of it.
 type Frame struct {
-	ObservedAt time.Time
-	Capacity   Capacity
-	Running    uint32
-	Rows       []Row
+	ObservedAt       time.Time
+	Capacity         Capacity
+	Running          uint32
+	Rows             []Row
+	MembershipStale  bool
+	MembershipReason string
 }
 
 type Clock interface{ Now() time.Time }
@@ -151,6 +162,11 @@ type hostRelay struct {
 	members  map[string]*livestats.Subscription
 	capacity Capacity
 	haveCap  bool
+
+	// staleReason is empty when the last membership refresh succeeded. It is
+	// what turns "these rows are current" into "these rows are the last ones we
+	// could confirm, and here is why".
+	staleReason string
 }
 
 func New(config Config) (*Hub, error) {
@@ -266,9 +282,15 @@ func (h *Hub) run(relay *hostRelay) {
 func (h *Hub) reconcile(relay *hostRelay) {
 	running, err := h.config.Membership.Running(relay.ctx)
 	if err != nil {
-		// A failed listing leaves the previous membership alone. The frame goes
-		// out with what is known rather than emptying the view because one call
-		// failed.
+		// A failed listing is not an empty host. The previous membership stays,
+		// and the frame says it is stale so nobody reads it as current. An
+		// Engine that has never answered leaves no rows and the same reason,
+		// which reads as "Docker unavailable" rather than "no containers".
+		h.mu.Lock()
+		if h.relay == relay {
+			relay.staleReason = boundedReason(err)
+		}
+		h.mu.Unlock()
 		return
 	}
 	desired := make(map[string]struct{}, len(running))
@@ -283,6 +305,7 @@ func (h *Hub) reconcile(relay *hostRelay) {
 		h.mu.Unlock()
 		return
 	}
+	relay.staleReason = ""
 	var toClose []*livestats.Subscription
 	for id, subscription := range relay.members {
 		if _, keep := desired[id]; !keep {
@@ -352,6 +375,7 @@ func (h *Hub) publish(relay *hostRelay) {
 		subscriptions = append(subscriptions, subscription)
 	}
 	capacity := relay.capacity
+	staleReason := relay.staleReason
 	viewers := make([]*Subscription, 0, len(relay.viewers))
 	for _, viewer := range relay.viewers {
 		viewers = append(viewers, viewer)
@@ -374,14 +398,30 @@ func (h *Hub) publish(relay *hostRelay) {
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ContainerID < rows[j].ContainerID })
 
 	frame := Frame{
-		ObservedAt: h.config.Clock.Now(),
-		Capacity:   capacity,
-		Running:    uint32(len(rows)),
-		Rows:       rows,
+		ObservedAt:       h.config.Clock.Now(),
+		Capacity:         capacity,
+		Running:          uint32(len(rows)),
+		Rows:             rows,
+		MembershipStale:  staleReason != "",
+		MembershipReason: staleReason,
 	}
 	for _, viewer := range viewers {
 		viewer.put(frame)
 	}
+}
+
+// boundedReason keeps an Engine error short enough to travel in every frame.
+// It is a reason for an operator, not a payload.
+func boundedReason(err error) string {
+	const limit = 200
+	message := err.Error()
+	if message == "" {
+		message = "Docker listing failed"
+	}
+	if len(message) > limit {
+		message = message[:limit]
+	}
+	return message
 }
 
 func (h *Hub) unsubscribe(viewer *Subscription) {
