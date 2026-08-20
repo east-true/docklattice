@@ -134,10 +134,17 @@ func (f *fakeFiles) Read(_ context.Context, project, path string) (safefile.File
 }
 
 type fakeBackups struct {
-	mu       sync.Mutex
-	metadata []backup.Metadata
-	project  string
-	err      error
+	mu              sync.Mutex
+	metadata        []backup.Metadata
+	project         string
+	err             error
+	recoveryBlocked map[string]bool
+}
+
+func (f *fakeBackups) RecoveryBlocked(projectUID string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.recoveryBlocked[projectUID]
 }
 
 func (f *fakeBackups) List(_ context.Context, project string) ([]backup.Metadata, error) {
@@ -553,4 +560,48 @@ func TestConcurrentQueriesAreRaceSafe(t *testing.T) {
 		}()
 	}
 	wait.Wait()
+}
+
+// TestAProjectBlockedByRestoreRecoveryIsReported locks a state a Web console
+// has to be able to show. A restore that failed and could not be rolled back
+// leaves the project's files in an unknown state, and the Agent refuses every
+// change to it until an operator resolves it by hand.
+//
+// Before this was reported, such a project was indistinguishable over the API
+// from a healthy one - the Server advertised it as writable and every mutation
+// then failed with a free-text message the caller had to parse.
+func TestAProjectBlockedByRestoreRecoveryIsReported(t *testing.T) {
+	service, _, projects, _, backups := newTestService(t)
+	projects.projects = []agentprojects.Project{{
+		UID: testProjectUID, Root: "/srv", WorkingDir: "/srv/app", Name: "app",
+		CurrentFingerprint: testManifestHash, ComposeExecutable: true, FilesystemWritable: true,
+	}}
+	backups.recoveryBlocked = map[string]bool{testProjectUID: true}
+
+	var listed ProjectListResponse
+	if err := query(t, service, producttransport.QueryRequest{Kind: QueryProjectList}, &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Projects) != 1 || !listed.Projects[0].RestoreRecoveryRequired {
+		t.Fatalf("project list did not report the blocked project: %+v", listed.Projects)
+	}
+
+	var snapshot ProjectSnapshotResponse
+	if err := query(t, service, producttransport.QueryRequest{Kind: QueryProjectSnapshot, Target: testProjectUID}, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if !snapshot.Project.RestoreRecoveryRequired {
+		t.Fatalf("project snapshot did not report the blocked project: %+v", snapshot.Project)
+	}
+
+	// A project that is not blocked must not carry the flag, so that a console
+	// showing it can trust its absence.
+	backups.recoveryBlocked = nil
+	listed = ProjectListResponse{}
+	if err := query(t, service, producttransport.QueryRequest{Kind: QueryProjectList}, &listed); err != nil {
+		t.Fatal(err)
+	}
+	if listed.Projects[0].RestoreRecoveryRequired {
+		t.Fatalf("an unblocked project reported restore recovery: %+v", listed.Projects[0])
+	}
 }

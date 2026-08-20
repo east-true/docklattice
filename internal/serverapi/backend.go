@@ -137,6 +137,7 @@ type projectFlags struct {
 	Stale                   bool                   `json:"stale,omitempty"`
 	ComposeExecutable       bool                   `json:"compose_executable,omitempty"`
 	FilesystemWritable      bool                   `json:"filesystem_writable,omitempty"`
+	RestoreRecoveryRequired bool                   `json:"restore_recovery_required,omitempty"`
 	CapabilityReason        string                 `json:"capability_reason,omitempty"`
 	CurrentFingerprint      string                 `json:"current_fingerprint,omitempty"`
 	LastVerifiedFingerprint string                 `json:"last_verified_fingerprint,omitempty"`
@@ -1154,6 +1155,7 @@ func (b *Backend) loadProjects(ctx context.Context) ([]webui.Project, error) {
 		}
 		project.SourceGraphComplete = flags.SourceGraphComplete
 		project.ReadOnly = flags.ReadOnly || flags.Collision
+		project.RestoreRecoveryRequired = flags.RestoreRecoveryRequired
 		project.Present = !flags.Missing
 		project.Stale = flags.Stale
 		project.ComposeExecutable = flags.ComposeExecutable

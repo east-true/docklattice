@@ -54,20 +54,21 @@ type agentProjectSnapshotResponse struct {
 }
 
 type agentProjectSnapshot struct {
-	UID                 string                 `json:"project_uid"`
-	Root                string                 `json:"root"`
-	WorkingDir          string                 `json:"working_dir"`
-	Files               []agentProjectFileFact `json:"files"`
-	Name                string                 `json:"name"`
-	Services            []string               `json:"services"`
-	IncludedWorkDirs    []string               `json:"included_work_dirs,omitempty"`
-	SourceReferences    []agentSourceReference `json:"source_references,omitempty"`
-	SourceGraphComplete bool                   `json:"source_graph_complete"`
-	CurrentFingerprint  string                 `json:"current_fingerprint"`
-	ComposeExecutable   bool                   `json:"compose_executable"`
-	FilesystemWritable  bool                   `json:"filesystem_writable"`
-	CapabilityReason    string                 `json:"capability_reason,omitempty"`
-	Stale               bool                   `json:"stale"`
+	UID                     string                 `json:"project_uid"`
+	Root                    string                 `json:"root"`
+	WorkingDir              string                 `json:"working_dir"`
+	Files                   []agentProjectFileFact `json:"files"`
+	Name                    string                 `json:"name"`
+	Services                []string               `json:"services"`
+	IncludedWorkDirs        []string               `json:"included_work_dirs,omitempty"`
+	SourceReferences        []agentSourceReference `json:"source_references,omitempty"`
+	SourceGraphComplete     bool                   `json:"source_graph_complete"`
+	CurrentFingerprint      string                 `json:"current_fingerprint"`
+	ComposeExecutable       bool                   `json:"compose_executable"`
+	FilesystemWritable      bool                   `json:"filesystem_writable"`
+	RestoreRecoveryRequired bool                   `json:"restore_recovery_required,omitempty"`
+	CapabilityReason        string                 `json:"capability_reason,omitempty"`
+	Stale                   bool                   `json:"stale"`
 }
 
 type agentSourceReference struct {
@@ -502,6 +503,7 @@ func (b *Backend) mergeProjectSnapshotWithDockerObserved(ctx context.Context, ag
 			Stale:                   item.Stale,
 			ComposeExecutable:       item.ComposeExecutable,
 			FilesystemWritable:      item.FilesystemWritable,
+			RestoreRecoveryRequired: item.RestoreRecoveryRequired,
 			CapabilityReason:        item.CapabilityReason,
 			CurrentFingerprint:      item.CurrentFingerprint,
 			LastVerifiedFingerprint: item.CurrentFingerprint,
@@ -521,7 +523,11 @@ func (b *Backend) mergeProjectSnapshotWithDockerObserved(ctx context.Context, ag
 				name = prior.name
 			}
 		}
-		flags.ReadOnly = !managedProject(flags) || flags.Stale || !flags.ComposeExecutable || !flags.FilesystemWritable || flags.Collision
+		// A project whose restore could not be rolled back is not writable,
+		// whatever the filesystem says: the Agent refuses every change to it
+		// until an operator resolves it by hand.
+		flags.ReadOnly = !managedProject(flags) || flags.Stale || !flags.ComposeExecutable ||
+			!flags.FilesystemWritable || flags.Collision || flags.RestoreRecoveryRequired
 		rawFlags, err := json.Marshal(flags)
 		if err != nil {
 			return fmt.Errorf("serverapi: encode project flags: %w", err)
