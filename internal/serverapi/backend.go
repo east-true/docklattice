@@ -36,6 +36,10 @@ const (
 	maxOperationPayloadBytes = producttransport.DefaultMaxMessageBytes - 4096
 	maxOperationOutputBytes  = 64 << 10
 	maxConcurrentHostProbes  = 8
+	// hostProbeTimeout bounds the live heartbeat the dashboard performs per
+	// host. It matches the Server's own liveness loop, which has always
+	// bounded its heartbeat at the same value.
+	hostProbeTimeout = producttransport.DefaultHeartbeatTimeout
 )
 
 type Backend struct {
@@ -1216,7 +1220,14 @@ func (state *projectAccessState) applyLiveFilesystemCapability(ctx context.Conte
 	if err != nil {
 		return
 	}
-	heartbeat, err := session.Heartbeat(ctx)
+	// One unreachable Agent must not set the latency of the fleet view. A
+	// partitioned Agent does not refuse a heartbeat - its packets are dropped -
+	// so without a bound of its own this call waits for the transport to give
+	// up, and every other host's row waits behind it. The reconcile pass above
+	// already bounds its per-Agent work the same way.
+	probeCtx, cancelProbe := context.WithTimeout(ctx, hostProbeTimeout)
+	heartbeat, err := session.Heartbeat(probeCtx)
+	cancelProbe()
 	if err != nil {
 		return
 	}
@@ -1352,7 +1363,12 @@ func (b *Backend) liveHost(ctx context.Context, agent agentRow) webui.Host {
 		host.Capabilities = disabledCapabilities("agent session is not active")
 		return host
 	}
-	heartbeat, err := session.Heartbeat(ctx)
+	// Bounded for the same reason as the refresh path above: the dashboard
+	// waits for every host row, so an unreachable Agent would otherwise set
+	// the latency of the whole fleet view.
+	probeCtx, cancelProbe := context.WithTimeout(ctx, hostProbeTimeout)
+	heartbeat, err := session.Heartbeat(probeCtx)
+	cancelProbe()
 	if err != nil {
 		host.State = string(session.State())
 		host.Capabilities = disabledCapabilities("heartbeat unavailable")

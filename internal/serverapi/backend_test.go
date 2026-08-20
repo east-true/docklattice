@@ -1422,6 +1422,7 @@ type fakeSession struct {
 	getOperationErr        error
 	cancelOperation        producttransport.CancelOperationResponse
 	cancelErr              error
+	heartbeatBlocks        bool
 	heartbeats             int
 	queries                int
 	operations             int
@@ -1477,11 +1478,21 @@ func (s *fakeSession) Close(error) error {
 	s.mu.Unlock()
 	return nil
 }
-func (s *fakeSession) Heartbeat(context.Context) (producttransport.Heartbeat, error) {
+func (s *fakeSession) Heartbeat(ctx context.Context) (producttransport.Heartbeat, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	blocks := s.heartbeatBlocks
 	s.heartbeats++
-	return producttransport.Heartbeat{Capability: s.capability}, nil
+	capability := s.capability
+	s.mu.Unlock()
+	// A partitioned Agent does not refuse a heartbeat; the packets are simply
+	// dropped and the call hangs until something above it gives up. That is
+	// what this models, so the block is on the caller's context rather than a
+	// returned error.
+	if blocks {
+		<-ctx.Done()
+		return producttransport.Heartbeat{}, ctx.Err()
+	}
+	return producttransport.Heartbeat{Capability: capability}, nil
 }
 func (s *fakeSession) Query(_ context.Context, request producttransport.QueryRequest) (producttransport.QueryResponse, error) {
 	s.mu.Lock()
