@@ -261,7 +261,7 @@ func missingACKCoverage(
 		UNION ALL
 		SELECT from_seq, until_seq FROM server_archive_coverage
 		WHERE audit_archive_id = ? AND agent_id = ?
-		  AND entry_type = 'GAP' AND from_incarnation = ?
+		  AND entry_type IN ('GAP', 'REGRESSION') AND from_incarnation = ?
 		  AND from_seq IS NOT NULL AND effective = 1 AND resolved_at IS NULL
 		  AND until_seq > ? AND from_seq < ?
 		ORDER BY 1, 2

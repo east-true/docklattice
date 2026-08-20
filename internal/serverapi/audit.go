@@ -317,8 +317,7 @@ func validateCoverageEntry(entryType string, fromInc int64, fromSeq, untilInc, u
 	}
 	switch entryType {
 	case "GAP":
-		if source != "AGENT_GAP" && source != "AGENT_CONTINUITY_UNCERTAIN" &&
-			source != "SERVER_RETENTION" && source != "SERVER_CURSOR_REGRESSION" {
+		if source != "AGENT_GAP" && source != "AGENT_CONTINUITY_UNCERTAIN" && source != "SERVER_RETENTION" {
 			return invalid("invalid gap source")
 		}
 	case "REGRESSION":

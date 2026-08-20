@@ -163,9 +163,13 @@ func (s *Store) RecordCursorRegression(
 	return result, nil
 }
 
-// insertRegressionGap writes one half-open range. The ledger stores a range per
-// incarnation, and unexplainedACKRanges never spans incarnations in a single
-// range, so this does not have to split.
+// insertRegressionGap writes one half-open range as a REGRESSION entry. The
+// ledger distinguishes what a row is - LOWER_BOUND where coverage starts, GAP a
+// hole in what was delivered, REGRESSION the archive itself having moved
+// backwards - and every effective-coverage reader already had to answer for the
+// last of those. The ledger stores a range per incarnation, and
+// unexplainedACKRanges never spans incarnations in a single range, so this does
+// not have to split.
 func insertRegressionGap(
 	ctx context.Context,
 	tx *connectionTx,
@@ -182,7 +186,7 @@ func insertRegressionGap(
 			audit_archive_id, agent_id, entry_type,
 			from_incarnation, from_seq, until_incarnation, until_seq,
 			source, precision, effective, established_at, reason
-		) VALUES (?, ?, 'GAP', ?, ?, ?, ?, ?, 'exact', 1, ?, ?)
+		) VALUES (?, ?, 'REGRESSION', ?, ?, ?, ?, ?, 'exact', 1, ?, ?)
 	`, archiveID, agentID, value.From.Incarnation, value.From.Seq,
 		value.Until.Incarnation, value.Until.Seq, regressionSource, formatTime(now), reason)
 	return err

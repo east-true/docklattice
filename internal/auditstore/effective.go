@@ -227,7 +227,7 @@ func (s *Store) EffectiveGaps(ctx context.Context, archiveID, agentID string) ([
 		       precision, source, established_at
 		FROM server_archive_coverage
 		WHERE audit_archive_id = ? AND agent_id = ?
-		  AND entry_type = 'GAP' AND effective = 1 AND resolved_at IS NULL
+		  AND entry_type IN ('GAP', 'REGRESSION') AND effective = 1 AND resolved_at IS NULL
 		ORDER BY from_incarnation, from_seq
 	`, archiveID, agentID)
 	if err != nil {

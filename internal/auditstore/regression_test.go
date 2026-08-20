@@ -237,7 +237,7 @@ func assertRegressionEntries(t *testing.T, ctx context.Context, store *Store, wa
 	rows, err := store.db.QueryContext(ctx, `
 		SELECT from_incarnation, from_seq, until_incarnation, until_seq, reason, precision, effective
 		FROM server_archive_coverage
-		WHERE audit_archive_id = ? AND agent_id = ? AND entry_type = 'GAP' AND source = ?
+		WHERE audit_archive_id = ? AND agent_id = ? AND entry_type = 'REGRESSION' AND source = ?
 		ORDER BY from_incarnation, from_seq
 	`, testArchive, testAgent, regressionSource)
 	if err != nil {
@@ -290,4 +290,56 @@ func TestAReadTransactionCannotWrite(t *testing.T) {
 	// The immediate transaction's handle still satisfies the same read surface,
 	// so helpers shared by both paths keep working.
 	var _ reader = (*connectionTx)(nil)
+}
+
+// TestARegressionIsRecordedAsARegression pins the producer to the entry type
+// the ledger reserved for it, and pins every reader that has to agree.
+//
+// entry_type says what a row is - LOWER_BOUND where coverage begins, GAP a hole
+// in what was delivered, REGRESSION the archive itself having moved backwards -
+// while source and reason say why. Writing a regression as a GAP made one
+// source span two entry types and put the producer at odds with the API, which
+// had always read effective coverage as GAP plus REGRESSION.
+func TestARegressionIsRecordedAsARegression(t *testing.T) {
+	ctx, store := restoredArchive(t)
+	if _, err := store.Ingest(ctx, testArchive, testAgent,
+		[]Event{testEvent(1, 20)}, Cursor{1, 21}, testEpoch.Add(3*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecordCursorRegression(ctx, testArchive, testAgent,
+		Cursor{1, 20}, Cursor{1, 20}, RegressionDatabaseRestore, testEpoch.Add(4*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
+	var entryType, source string
+	if err := store.db.QueryRowContext(ctx, `
+		SELECT entry_type, source FROM server_archive_coverage
+		WHERE audit_archive_id = ? AND agent_id = ? AND source = ?
+	`, testArchive, testAgent, regressionSource).Scan(&entryType, &source); err != nil {
+		t.Fatal(err)
+	}
+	if entryType != "REGRESSION" {
+		t.Fatalf("entry_type = %q, want REGRESSION", entryType)
+	}
+
+	// The readers that answer "is this range covered" have to see it. ACK
+	// eligibility is the one that matters most: if it does not, the recovery
+	// records a row and changes nothing, and the Agent stays in its loop.
+	if _, err := store.CheckAndAdvanceACK(ctx, testArchive, testAgent, Cursor{1, 20}, 0, testEpoch.Add(5*time.Second)); err != nil {
+		t.Fatalf("ACK after a REGRESSION entry = %v, want it to advance", err)
+	}
+	gaps, err := store.EffectiveGaps(ctx, testArchive, testAgent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gaps) != 1 || gaps[0].Source != regressionSource {
+		t.Fatalf("effective gaps = %+v, want the regression range", gaps)
+	}
+	observation, err := store.Observe(ctx, testArchive, testAgent, true, 0, testEpoch.Add(6*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observation.EffectiveGapRecords == 0 {
+		t.Fatal("the effective gap counter ignored a regression range")
+	}
 }

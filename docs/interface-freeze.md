@@ -172,6 +172,12 @@ Coverage entry sources, frozen and non-interchangeable:
 | `SERVER_RETENTION` | the Server discarded records on purpose | `SERVER_RETENTION_APPLIED`, `QUOTA_PRESSURE_BEFORE_AGENT_ACK` |
 | `SERVER_CURSOR_REGRESSION` | the Server archive went backwards and can no longer obtain a range | `DATABASE_RESTORE`, `ARCHIVE_ROLLBACK`, `CURSOR_METADATA_LOSS`, `UNKNOWN` |
 
+A ledger row's `entry_type` says what the row *is* — `LOWER_BOUND` where this
+archive's coverage begins, `GAP` a hole in what was delivered, `REGRESSION` the
+archive itself having moved backwards — while `source` and `reason` say why.
+`GAP` and `REGRESSION` both count as effective coverage; `LOWER_BOUND` is the
+floor beneath them. One source never spans two entry types.
+
 An interface must not present all coverage loss as "the Agent lost logs". Only
 `AGENT_GAP` is an Agent claim. The coverage start is immutable once established.
 
