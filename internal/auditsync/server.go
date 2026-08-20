@@ -253,8 +253,13 @@ func (s *Server) recoverCursorRegression(
 	if resumedAt == nil {
 		return blocked
 	}
+	// The reason is UNKNOWN, not DATABASE_RESTORE. What this path establishes is
+	// that the persisted cursor is behind where the Agent resumed - which a
+	// restored database explains, and so does cursor metadata loss, and so does
+	// a rollback nobody has diagnosed. The architecture is explicit that a guess
+	// here is worse than an admission, and the ledger entry is permanent.
 	recovery, err := s.config.Store.RecordCursorRegression(ctx, s.config.ArchiveID, agentID,
-		proposed, *resumedAt, auditstore.RegressionDatabaseRestore, s.now())
+		proposed, *resumedAt, auditstore.RegressionUnknown, s.now())
 	if err != nil {
 		return err
 	}

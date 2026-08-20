@@ -93,8 +93,10 @@ archive id.
 restored archive remembers acknowledging less than it had. Agents were not
 restored, and released the records they saw acknowledged after the backup was
 taken. The range between exists nowhere. The Server records it in the coverage
-ledger as `SERVER_CURSOR_REGRESSION` with reason `DATABASE_RESTORE`, the Agents
-reconnect normally, and Audit continues from there.
+ledger as `SERVER_CURSOR_REGRESSION`, the Agents reconnect normally, and Audit
+continues from there. The reason is recorded as `UNKNOWN`, because from the
+Server's side a restore looks the same as other ways a cursor can end up behind
+the Agent - it will not claim a cause it cannot establish.
 
 That entry is **not** an Agent gap. The Agents lost nothing; the archive went
 backwards. Any view that presents coverage loss should say which of the two it

@@ -523,11 +523,7 @@ func (b *Backend) mergeProjectSnapshotWithDockerObserved(ctx context.Context, ag
 				name = prior.name
 			}
 		}
-		// A project whose restore could not be rolled back is not writable,
-		// whatever the filesystem says: the Agent refuses every change to it
-		// until an operator resolves it by hand.
-		flags.ReadOnly = !managedProject(flags) || flags.Stale || !flags.ComposeExecutable ||
-			!flags.FilesystemWritable || flags.Collision || flags.RestoreRecoveryRequired
+		flags.ReadOnly = projectReadOnly(flags, flags.Collision)
 		rawFlags, err := json.Marshal(flags)
 		if err != nil {
 			return fmt.Errorf("serverapi: encode project flags: %w", err)
@@ -661,7 +657,7 @@ func (b *Backend) mergeTargetedProjectSnapshotObserved(ctx context.Context, agen
 	} else {
 		flags.LastVerifiedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	}
-	flags.ReadOnly = !managedProject(flags) || flags.Stale || !flags.ComposeExecutable || !flags.FilesystemWritable
+	flags.ReadOnly = projectReadOnly(flags, flags.Collision)
 	name := item.Name
 	if name == "" {
 		name = priorName
@@ -813,6 +809,16 @@ func equalProjectStrings(left, right []string) bool {
 	return true
 }
 
+// projectReadOnly is the single definition of "this project cannot be changed".
+// It had been written out at four call sites, and adding a reason to one of
+// them left the other three able to clear the bit again - which is how a
+// recovery-blocked project could be advertised as writable moments after being
+// reported as damaged.
+func projectReadOnly(flags projectFlags, collision bool) bool {
+	return !managedProject(flags) || flags.Stale || !flags.ComposeExecutable ||
+		!flags.FilesystemWritable || collision || flags.RestoreRecoveryRequired
+}
+
 func reconcileTargetedProjectCollisions(ctx context.Context, tx *sql.Tx, agentID, updatedAt string) error {
 	type entry struct {
 		uid, name string
@@ -844,11 +850,11 @@ func reconcileTargetedProjectCollisions(ctx context.Context, tx *sql.Tx, agentID
 	}
 	for _, value := range entries {
 		collision := !value.flags.Missing && value.name != "" && counts[value.name] > 1
-		if value.flags.Collision == collision && value.flags.ReadOnly == (!managedProject(value.flags) || value.flags.Stale || !value.flags.ComposeExecutable || !value.flags.FilesystemWritable || collision) {
+		if value.flags.Collision == collision && value.flags.ReadOnly == projectReadOnly(value.flags, collision) {
 			continue
 		}
 		value.flags.Collision = collision
-		value.flags.ReadOnly = !managedProject(value.flags) || value.flags.Stale || !value.flags.ComposeExecutable || !value.flags.FilesystemWritable || collision
+		value.flags.ReadOnly = projectReadOnly(value.flags, collision)
 		raw, err := json.Marshal(value.flags)
 		if err != nil {
 			return fmt.Errorf("serverapi: encode project collision flags: %w", err)

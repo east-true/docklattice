@@ -195,8 +195,12 @@ restored delivery cursor.
 **Meaning.** Server-side coverage loss. The Agent lost nothing and its claim
 history is untouched.
 
-**Reason.** `DATABASE_RESTORE` when the archive binding is unchanged;
-`UNKNOWN` when the cause is not established. A guess is worse than an admission.
+**Reason.** One of `DATABASE_RESTORE`, `ARCHIVE_ROLLBACK`,
+`CURSOR_METADATA_LOSS`, `UNKNOWN`. The automatic recovery path records
+`UNKNOWN`: it establishes that the persisted cursor is behind where the Agent
+resumed, which a restored database explains and so do other causes it cannot
+tell apart. A guess is worse than an admission, and the ledger entry is
+permanent. `DATABASE_RESTORE` is reserved for a caller that can establish it.
 
 **Recovery.** The blocked ranges are recomputed by the same function the ACK
 check uses, so canonical records and existing coverage are already subtracted.
