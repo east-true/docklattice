@@ -325,9 +325,27 @@ Neither blocks this freeze.
 
 ## 18. Validation evidence
 
-See [`release/README.md`](release/README.md) for the gate documents and
+Run at the frozen revision, on this change:
+
+| Gate | Result |
+|---|---|
+| `go test ./...` | 788 tests, 54 packages, PASS |
+| `go vet ./...` | PASS |
+| `-race` on the touched packages | PASS |
+| 10 static verifiers | PASS |
+| Hardening matrix, 11 cases | PASS |
+| Abuse matrix, 13 cases | PASS |
+| Recovery matrix, incl. archive rebind and rollback | PASS |
+
+Not re-run, and not needed for this change: the resource matrix - it measures
+steady-state resource behaviour, and nothing here touches that path - and the
+VM-hosted gates (clean-host install, real daemon restart, multi-Agent lab,
+power cut), whose evidence stands at the revisions recorded in their own gate
+documents.
+
+See [`release/README.md`](release/README.md) for the full gate set and
 [`release/v1-final-hardening.md`](release/v1-final-hardening.md) for the
-campaign that produced them, including the findings and their severities.
+campaign that produced it, including every finding and its severity.
 
 ## 19. Change policy after freeze
 
