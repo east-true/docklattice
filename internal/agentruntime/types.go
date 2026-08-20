@@ -118,8 +118,12 @@ type Runtime struct {
 	productCloser   interface{ Close() error }
 	operationEngine interface{ Shutdown(context.Context) error }
 	productStorage  *runtimeStorage
-	discoveryCancel context.CancelFunc
-	discoveryDone   chan struct{}
+	// metricsMatrixInstalled says the host metrics stream exists on this
+	// Agent. It is set when the product surface is assembled, which is the only
+	// place that can answer it.
+	metricsMatrixInstalled bool
+	discoveryCancel        context.CancelFunc
+	discoveryDone          chan struct{}
 }
 
 type runtimeCloseAttempt struct {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 
+	"github.com/east-true/dockpilot/internal/livematrix"
 	"github.com/east-true/dockpilot/internal/livestats"
 	"github.com/east-true/dockpilot/internal/logrelay"
 )
@@ -76,5 +77,74 @@ func (h LiveStatsHandler) StreamStats(ctx context.Context, _ SessionInfo, reques
 	}
 }
 
+// LiveMatrixHandler bridges one host's whole-frame metrics to the
+// transport-neutral Agent streaming surface.
+//
+// It splits each frame's rows into sampled containers and pending IDs. The
+// split is not cosmetic: a member whose first sample has not arrived has no
+// numbers to send, and sending a zero-valued sample would report an idle
+// container. Naming it as pending says what is true.
+type LiveMatrixHandler struct{ Hub *livematrix.Hub }
+
+func (h LiveMatrixHandler) StreamMetricsMatrix(ctx context.Context, _ SessionInfo, _ MetricsMatrixRequest, sender MetricsMatrixSender) error {
+	if h.Hub == nil {
+		return ErrHandlerUnavailable
+	}
+	subscription, err := h.Hub.Subscribe(ctx)
+	if err != nil {
+		return err
+	}
+	defer subscription.Close()
+	for {
+		frame, err := subscription.Next(ctx)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := sender.Send(matrixFrameToWire(frame, subscription.DroppedFrames())); err != nil {
+			return err
+		}
+	}
+}
+
+func matrixFrameToWire(frame livematrix.Frame, dropped uint64) MetricsMatrixFrame {
+	containers := make([]StatsSample, 0, len(frame.Rows))
+	var pending []string
+	for _, row := range frame.Rows {
+		if row.Pending {
+			pending = append(pending, row.ContainerID)
+			continue
+		}
+		sample := row.Sample
+		containers = append(containers, StatsSample{
+			ContainerID: sample.ContainerID, ObservedAt: sample.ObservedAt, CPUPercent: sample.CPUPercent,
+			MemoryUsage: sample.MemoryUsage, MemoryLimit: sample.MemoryLimit, NetworkRX: sample.NetworkRX,
+			NetworkTX: sample.NetworkTX, BlockRead: sample.BlockRead, BlockWrite: sample.BlockWrite,
+			RestartCount: sample.RestartCount, Health: sample.Health, Uptime: sample.Uptime,
+		})
+	}
+	filesystems := make([]ManagedFilesystem, 0, len(frame.Capacity.Filesystems))
+	for _, filesystem := range frame.Capacity.Filesystems {
+		filesystems = append(filesystems, ManagedFilesystem{
+			Path: filesystem.Path, TotalBytes: filesystem.TotalBytes, FreeBytes: filesystem.FreeBytes,
+			Unavailable: filesystem.Unavailable, Reason: filesystem.Reason,
+		})
+	}
+	return MetricsMatrixFrame{
+		ObservedAt: frame.ObservedAt,
+		Workload: WorkloadSummary{
+			CPUCapacity: frame.Capacity.CPUCapacity, MemoryCapacity: frame.Capacity.MemoryCapacity,
+			ContainersRunning: frame.Running, ContainersTotal: frame.Capacity.ContainersTotal,
+			Filesystems: filesystems,
+		},
+		Containers: containers, PendingContainerIDs: pending, DroppedFrames: dropped,
+		MembershipStale: frame.MembershipStale, MembershipReason: frame.MembershipReason,
+		WorkloadStale: frame.WorkloadStale, WorkloadReason: frame.WorkloadReason,
+	}
+}
+
 var _ LogStreamHandler = LogRelayHandler{}
 var _ StatsStreamHandler = LiveStatsHandler{}
+var _ MetricsMatrixStreamHandler = LiveMatrixHandler{}

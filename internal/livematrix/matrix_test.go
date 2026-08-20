@@ -96,6 +96,12 @@ func (w *fakeWorkload) fail(err error) {
 	w.err = err
 }
 
+func (w *fakeWorkload) callCount() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.calls
+}
+
 // manualTicker lets a test decide exactly when a frame is assembled.
 type manualTicker struct{ c chan time.Time }
 
@@ -168,6 +174,14 @@ type harness struct {
 
 func newHarness(t *testing.T, source *statsSource, running ...string) *harness {
 	t.Helper()
+	return newHarnessReconcilingEvery(t, source, 1000, running...)
+}
+
+// newHarnessReconcilingEvery exposes the reconcile cadence for the tests that
+// are about it. The default is deliberately far away so that a test which ticks
+// for a frame does not get a membership refresh it did not ask for.
+func newHarnessReconcilingEvery(t *testing.T, source *statsSource, reconcileEvery int, running ...string) *harness {
+	t.Helper()
 	statsHub, err := livestats.New(livestats.Config{Source: source, SampleInterval: time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +194,7 @@ func newHarness(t *testing.T, source *statsSource, running ...string) *harness {
 	tickers := &manualTickerFactory{}
 	hub, err := New(Config{
 		Stats: statsHub, Membership: membership, Events: events, Workload: workload,
-		FrameInterval: time.Hour, ReconcileEvery: 1000, TickerFactory: tickers,
+		FrameInterval: time.Hour, ReconcileEvery: reconcileEvery, TickerFactory: tickers,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -536,7 +550,7 @@ func TestPendingMeansOnlyAwaitingItsFirstSample(t *testing.T) {
 // the other as unknown.
 func TestMembershipAndWorkloadFailIndependently(t *testing.T) {
 	source := &statsSource{}
-	h := newHarness(t, source, "a", "b")
+	h := newHarnessReconcilingEvery(t, source, 1, "a", "b")
 	viewer, err := h.hub.Subscribe(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -546,9 +560,6 @@ func TestMembershipAndWorkloadFailIndependently(t *testing.T) {
 
 	// Engine info fails; the container listing does not.
 	h.workload.fail(errors.New("engine info unavailable"))
-	before := h.membership.callCount()
-	h.events.fire()
-	waitFor(t, "reconcile", func() bool { return h.membership.callCount() > before })
 	h.tickers.tick(t)
 	frame := nextFrame(t, viewer)
 	if frame.MembershipStale {
@@ -560,19 +571,50 @@ func TestMembershipAndWorkloadFailIndependently(t *testing.T) {
 	if len(frame.Rows) != 2 {
 		t.Fatalf("rows were lost to an unrelated failure: %+v", frame.Rows)
 	}
+	if frame.Capacity.CPUCapacity != 4 {
+		t.Fatalf("a failed refresh discarded the last known capacity: %+v", frame.Capacity)
+	}
 
-	// The reverse: listing fails, Engine info recovers.
+	// The reverse: the listing fails while Engine info recovers. The workload
+	// half must refresh even though the membership half could not, because a
+	// Docker listing failure says nothing about filesystem capacity.
 	h.workload.fail(nil)
 	h.membership.mu.Lock()
 	h.membership.err = errors.New("listing unavailable")
 	h.membership.mu.Unlock()
-	before = h.membership.callCount()
-	h.events.fire()
-	waitFor(t, "reconcile", func() bool { return h.membership.callCount() > before })
 	h.tickers.tick(t)
 	frame = nextFrame(t, viewer)
-	if !frame.MembershipStale {
+	if !frame.MembershipStale || frame.MembershipReason == "" {
 		t.Fatalf("a failed listing was not reported: %+v", frame)
+	}
+	if frame.WorkloadStale {
+		t.Fatalf("a failed listing kept the workload summary from refreshing: %+v", frame)
+	}
+}
+
+// TestAnEventBurstDoesNotReQueryTheEngine separates the two cadences. Container
+// lifecycle events say membership moved; they say nothing about how many CPUs
+// the host has, and turning each one into an Engine info call would make a
+// noisy host pay for a number that changes when the machine reboots.
+func TestAnEventBurstDoesNotReQueryTheEngine(t *testing.T) {
+	source := &statsSource{}
+	h := newHarness(t, source, "a")
+	viewer, err := h.hub.Subscribe(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer viewer.Close()
+	waitFor(t, "first reconcile", func() bool { return h.membership.callCount() >= 1 })
+	afterStart := h.workload.callCount()
+
+	for i := 0; i < 50; i++ {
+		h.events.fire()
+	}
+	waitFor(t, "event-driven reconciles", func() bool { return h.membership.callCount() > 1 })
+	// Give any stray Engine call time to land before concluding none happened.
+	time.Sleep(20 * time.Millisecond)
+	if got := h.workload.callCount(); got != afterStart {
+		t.Fatalf("an event burst re-queried the Engine %d times", got-afterStart)
 	}
 }
 

@@ -255,7 +255,7 @@ func (h *Hub) run(relay *hostRelay) {
 
 	// A first reconcile before any frame, so the opening frame describes the
 	// host rather than an empty set.
-	h.reconcile(relay)
+	h.reconcile(relay, true)
 
 	changed := make(chan struct{}, 1)
 	if h.config.Events != nil {
@@ -279,22 +279,42 @@ func (h *Hub) run(relay *hostRelay) {
 		case <-changed:
 			// An event says something moved. Ask Docker rather than trusting
 			// the event to say what: one answer, one code path.
-			h.reconcile(relay)
+			//
+			// Membership only. A container starting says nothing about how many
+			// CPUs the host has, and a burst of starts must not turn into a
+			// burst of Engine info calls; capacity refreshes on its own cadence
+			// below.
+			h.reconcile(relay, false)
 		case <-ticker.C():
 			sinceReconcile++
 			if sinceReconcile >= h.config.ReconcileEvery {
 				sinceReconcile = 0
-				h.reconcile(relay)
+				h.reconcile(relay, true)
 			}
 			h.publish(relay)
 		}
 	}
 }
 
-// reconcile makes the membership set match Docker. It is the only writer of
-// relay.members, and it is idempotent: containers already present keep their
-// existing subscription, and containers that left are closed exactly once.
-func (h *Hub) reconcile(relay *hostRelay) {
+// reconcile brings the relay back in line with the host. Membership always;
+// the workload summary only when asked, because host capacity changes on the
+// timescale of rebooting a machine, not of starting a container.
+//
+// The two run one after the other and neither can skip the other: a Docker
+// listing failure must not stop filesystem capacity from refreshing, and an
+// Engine that cannot describe itself must not stop membership from moving.
+func (h *Hub) reconcile(relay *hostRelay, refreshWorkload bool) {
+	h.reconcileMembership(relay)
+	if refreshWorkload {
+		h.refreshWorkload(relay)
+	}
+}
+
+// reconcileMembership makes the membership set match Docker. It is the only
+// writer of relay.members, and it is idempotent: containers already present
+// keep their existing subscription, and containers that left are closed
+// exactly once.
+func (h *Hub) reconcileMembership(relay *hostRelay) {
 	running, err := h.config.Membership.Running(relay.ctx)
 	if err != nil {
 		// A failed listing is not an empty host. The previous membership stays,
@@ -363,9 +383,12 @@ func (h *Hub) reconcile(relay *hostRelay) {
 		h.mu.Unlock()
 	}
 
-	// The Engine's capacity is a separate call and fails separately. A failure
-	// here leaves the last known capacity in place and marks only the workload
-	// half of the frame; the container rows are unaffected.
+}
+
+// refreshWorkload re-reads the host summary. A failure here leaves the last
+// known capacity in place and marks only the workload half of the frame; the
+// container rows are unaffected.
+func (h *Hub) refreshWorkload(relay *hostRelay) {
 	capacity, capacityErr := h.config.Workload.Capacity(relay.ctx)
 	h.mu.Lock()
 	if h.relay == relay {
