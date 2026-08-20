@@ -1417,10 +1417,16 @@ func (b *Backend) liveHost(ctx context.Context, agent agentRow) webui.Host {
 		host.Capabilities.Compose = webCapability(false, capability.Reason, "connection not ready")
 		host.Capabilities.FSRead = webCapability(false, capability.Reason, "connection not ready")
 		host.Capabilities.FSWrite = webCapability(false, capability.Reason, "connection not ready")
+		host.Capabilities.Metrics = webCapability(false, capability.Reason, "connection not ready")
 		return host
 	}
 	host.Capabilities.Docker = webCapability(capability.DockerReady, capability.Reason, "Docker unavailable")
 	host.Capabilities.Compose = webCapability(capability.ComposeReady, capability.Reason, "Compose unavailable")
+	// An Agent built before live metrics leaves the flag false and says nothing
+	// about it, which is exactly why the reason is written here rather than
+	// taken from the Agent: silence from an older build is the answer, and this
+	// is the sentence that states it.
+	host.Capabilities.Metrics = webCapability(capability.MetricsMatrix, "", "live metrics are not available on this Agent")
 	fsRead, fsReadReason := agent.capabilities.FSRead, agent.capabilities.FSReadReason
 	fsWrite, fsWriteReason := agent.capabilities.FSWrite, agent.capabilities.FSWriteReason
 	if capability.FSRead || capability.FSWrite || capability.FSReadReason != "" || capability.FSWriteReason != "" {
@@ -1434,7 +1440,7 @@ func (b *Backend) liveHost(ctx context.Context, agent agentRow) webui.Host {
 
 func disabledCapabilities(reason string) webui.Capabilities {
 	value := webui.Capability{Reason: reason}
-	return webui.Capabilities{Connection: value, Docker: value, Compose: value, Discovery: value, OperationRecovery: value, FSRead: value, FSWrite: value}
+	return webui.Capabilities{Connection: value, Docker: value, Compose: value, Discovery: value, Metrics: value, OperationRecovery: value, FSRead: value, FSWrite: value}
 }
 
 func webCapability(enabled bool, reason, fallback string) webui.Capability {

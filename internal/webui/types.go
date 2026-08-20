@@ -26,10 +26,15 @@ type Capability struct {
 }
 
 type Capabilities struct {
-	Connection        Capability `json:"connection"`
-	Docker            Capability `json:"docker"`
-	Compose           Capability `json:"compose"`
-	Discovery         Capability `json:"discovery"`
+	Connection Capability `json:"connection"`
+	Docker     Capability `json:"docker"`
+	Compose    Capability `json:"compose"`
+	Discovery  Capability `json:"discovery"`
+	// Metrics is where a host says it cannot serve the live metrics matrix, and
+	// why. It belongs here rather than only on the stream's error because a
+	// console needs the answer before it opens a stream, and because this is
+	// where every other capability reason already appears.
+	Metrics           Capability `json:"metrics"`
 	OperationRecovery Capability `json:"operation_recovery"`
 	FSRead            Capability `json:"fs_read"`
 	FSWrite           Capability `json:"fs_write"`
@@ -338,6 +343,148 @@ type StatsSample struct {
 	Uptime       time.Duration `json:"uptime_nano"`
 }
 
+// The matrix view types below are the browser's whole picture of one host at
+// one instant. They are a rendering shape, not a second model: the Server has
+// already decided membership, context and aggregation, and nothing in this
+// package recomputes any of it.
+//
+// MatrixTotals is what a group of containers adds up to, and appears
+// identically on the host, project and service rows, because those rows are all
+// projections of the same container samples in the same frame.
+type MatrixTotals struct {
+	// ContainerCount is how many containers the row covers and PendingCount how
+	// many of those have not reported a sample yet. A row whose numbers come
+	// from fewer containers than it covers says so with these two.
+	ContainerCount uint32 `json:"container_count"`
+	PendingCount   uint32 `json:"pending_count"`
+
+	CPUPercent  float64 `json:"cpu_percent"`
+	MemoryUsage uint64  `json:"memory_usage"`
+	NetworkRX   uint64  `json:"network_rx"`
+	NetworkTX   uint64  `json:"network_tx"`
+	BlockRead   uint64  `json:"block_read"`
+	BlockWrite  uint64  `json:"block_write"`
+	Restarts    uint64  `json:"restarts"`
+
+	// MemoryLimit is present only when every member has a limit.
+	// MemoryLimitUnbounded means at least one member runs without one, which is
+	// not a large number but a different kind of answer; the percent is
+	// withheld rather than computed against something that bounds nothing.
+	MemoryLimit          uint64  `json:"memory_limit,omitempty"`
+	MemoryLimitUnbounded bool    `json:"memory_limit_unbounded"`
+	MemoryPercent        float64 `json:"memory_percent,omitempty"`
+	MemoryPercentKnown   bool    `json:"memory_percent_known"`
+
+	// Health is the worst status the members answered: "unhealthy" if any is,
+	// "starting" if none is unhealthy and any is starting, "healthy" if every
+	// member that has a healthcheck reports healthy, "none" if the row has
+	// members and not one has a healthcheck, and absent when every member is
+	// still pending. HealthUnreported counts members that answered nothing, so
+	// a row reading healthy alongside a nonzero count is saying that every
+	// container which answers is healthy and this many did not answer.
+	Health           string `json:"health,omitempty"`
+	HealthUnreported uint32 `json:"health_unreported"`
+
+	// Uptime is the youngest member's, because a row is only as old as its
+	// newest container.
+	Uptime      time.Duration `json:"uptime_nano,omitempty"`
+	UptimeKnown bool          `json:"uptime_known"`
+}
+
+// MatrixFilesystem is capacity for one path Dockpilot writes to. Unavailable is
+// a fact about that path, not about the host.
+type MatrixFilesystem struct {
+	Path        string `json:"path"`
+	TotalBytes  uint64 `json:"total_bytes"`
+	FreeBytes   uint64 `json:"free_bytes"`
+	Unavailable bool   `json:"unavailable"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+// MatrixHostRow is the Docker workload an Agent manages, against the capacity
+// its Engine reports. It is deliberately not host OS metrics, and a console
+// must not label it as such: CPUCapacity and MemoryCapacity are what the
+// machine has, Totals is what Dockpilot's containers are using, and what is
+// excluded from that is stated rather than papered over.
+type MatrixHostRow struct {
+	CPUCapacity       uint32             `json:"cpu_capacity"`
+	MemoryCapacity    uint64             `json:"memory_capacity"`
+	ContainersRunning uint32             `json:"containers_running"`
+	ContainersTotal   uint32             `json:"containers_total"`
+	Filesystems       []MatrixFilesystem `json:"filesystems"`
+	Totals            MatrixTotals       `json:"totals"`
+}
+
+// MatrixContainer is one container row. Pending is a member whose first sample
+// has not arrived, which is a different state from gone and is shown as one.
+// Unmapped is a container belonging to no project - it keeps its metrics and is
+// never hidden, because the Engine decides what is running and this mapping is
+// only context.
+type MatrixContainer struct {
+	ContainerID string      `json:"container_id"`
+	Pending     bool        `json:"pending"`
+	Unmapped    bool        `json:"unmapped"`
+	ProjectUID  string      `json:"project_uid,omitempty"`
+	ProjectName string      `json:"project_name,omitempty"`
+	Service     string      `json:"service,omitempty"`
+	Image       string      `json:"image,omitempty"`
+	Sample      StatsSample `json:"sample"`
+
+	MemoryLimitUnbounded bool    `json:"memory_limit_unbounded"`
+	MemoryPercent        float64 `json:"memory_percent,omitempty"`
+	MemoryPercentKnown   bool    `json:"memory_percent_known"`
+}
+
+type MatrixService struct {
+	Service    string            `json:"service"`
+	Unmapped   bool              `json:"unmapped"`
+	Totals     MatrixTotals      `json:"totals"`
+	Containers []MatrixContainer `json:"containers"`
+}
+
+type MatrixProject struct {
+	ProjectUID  string          `json:"project_uid,omitempty"`
+	ProjectName string          `json:"project_name,omitempty"`
+	Unmapped    bool            `json:"unmapped"`
+	Totals      MatrixTotals    `json:"totals"`
+	Services    []MatrixService `json:"services"`
+}
+
+// MatrixFrame is one host at one instant.
+//
+// The three staleness flags travel from the Agent unchanged and are not
+// normalized here. Each says that one part of the frame is the last thing that
+// could be confirmed rather than the current thing, and they move
+// independently: listing containers, asking the Engine about itself, and
+// looking up project context are different calls that fail for different
+// reasons. A console that collapses them will tell an operator that Docker is
+// down when only a project name is missing.
+type MatrixFrame struct {
+	AgentID    string          `json:"agent_id"`
+	ObservedAt time.Time       `json:"observed_at"`
+	Host       MatrixHostRow   `json:"host"`
+	Projects   []MatrixProject `json:"projects"`
+
+	// AgentDroppedFrames is what the Agent discarded because this Server was
+	// slow to read; ServerDroppedFrames is what this Server discarded because
+	// this browser was slow to read. They are different failures with different
+	// fixes and are never added together.
+	AgentDroppedFrames  uint64 `json:"agent_dropped_frames"`
+	ServerDroppedFrames uint64 `json:"server_dropped_frames"`
+
+	MembershipStale  bool   `json:"membership_stale"`
+	MembershipReason string `json:"membership_reason,omitempty"`
+	WorkloadStale    bool   `json:"workload_stale"`
+	WorkloadReason   string `json:"workload_reason,omitempty"`
+	ContextStale     bool   `json:"context_stale"`
+	ContextReason    string `json:"context_reason,omitempty"`
+}
+
+type MatrixStream interface {
+	Recv(context.Context) (MatrixFrame, error)
+	Close() error
+}
+
 type LogStream interface {
 	Recv(context.Context) (LogEvent, error)
 	Close() error
@@ -374,4 +521,8 @@ type Backend interface {
 	OpenLogs(context.Context, LiveRequest) (LogStream, error)
 	OpenProjectLogs(context.Context, string, ProjectLogRequest) (LogStream, error)
 	OpenStats(context.Context, LiveRequest) (StatsStream, error)
+	// OpenMatrix attaches one viewer to a host's live metrics. Every viewer of
+	// a host shares one Agent stream; the implementation owns that sharing, and
+	// this package only encodes what arrives.
+	OpenMatrix(context.Context, string) (MatrixStream, error)
 }

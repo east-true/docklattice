@@ -57,8 +57,12 @@ invent a state machine on top; the pair (state, capabilities) is the contract.
 
 The frozen set is exactly:
 
-`connection`, `docker`, `compose`, `discovery`, `operation_recovery`,
-`fs_read`, `fs_write`
+`connection`, `docker`, `compose`, `discovery`, `metrics`,
+`operation_recovery`, `fs_read`, `fs_write`
+
+`metrics` was added with the host metrics matrix as a new optional field under
+§19. It is additive: a console that does not know it is unaffected, and no
+existing capability changed meaning.
 
 Each is `{ "enabled": bool, "reason": string }`. `reason` is human-readable and
 is **not** frozen as a machine contract; it carries prefixed markers such as

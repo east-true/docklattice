@@ -144,10 +144,21 @@ Terminal statuses are `success`, `failed`, `canceled`, `interrupted`, and
 |---|---|---|
 | `GET` | `/api/v1/live/logs` | Container logs, as SSE. |
 | `GET` | `/api/v1/live/stats` | Container stats, as SSE. |
+| `GET` | `/api/v1/live/matrix` | One host's whole metrics picture, as SSE. |
 
-Both require `agent_id` and `container_id`. Logs additionally accept `follow`,
-`tail`, `stdout`, `stderr`, and `timestamps`; at least one of `stdout` or
-`stderr` must be enabled.
+Logs and stats require `agent_id` and `container_id`. Logs additionally accept
+`follow`, `tail`, `stdout`, `stderr`, and `timestamps`; at least one of `stdout`
+or `stderr` must be enabled.
+
+The matrix takes `agent_id` and nothing else. A frame is the whole host —
+host row, then project, service and container rows — so there is no selector to
+offer: narrowing is the console's job, and a second endpoint carrying the same
+data in a different shape would be a second thing to keep correct. Every viewer
+of a host shares one Agent stream.
+
+A host whose Agent does not report the metrics capability is refused with
+`503 CAPABILITY_UNAVAILABLE`, never with an empty frame. A console can see that
+before it opens a stream: it is `capabilities.metrics` on the host.
 
 Neither stream is resumable. A request carrying `Last-Event-ID` is refused with
 a `400` rather than silently restarting from the beginning and presenting the
@@ -157,3 +168,10 @@ resume from — both are live relays by design.
 Logs are rate-capped per stream and buffered with a bound; when the bound is hit
 the stream reports the dropped byte count explicitly. Stats are latest-wins: a
 slow consumer sees fresh samples, never a queue of stale ones.
+
+The matrix is latest-wins per frame rather than per sample: a slow consumer
+misses whole rounds of everything, and the next frame carries every container
+again, so no container can starve behind a busier one. Two counters say who
+fell behind and are never added together — `agent_dropped_frames` is what the
+Agent discarded because the Server was slow, `server_dropped_frames` is what the
+Server discarded because this browser was slow.

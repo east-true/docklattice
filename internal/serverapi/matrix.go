@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/east-true/dockpilot/internal/producttransport"
 	"github.com/east-true/dockpilot/internal/projectmodel"
@@ -167,11 +168,107 @@ func (b *Backend) managedProjectUIDs(ctx context.Context, agentID string) (map[s
 
 // OpenMatrix attaches a viewer to one host's live metrics. Every viewer of a
 // host shares one Agent stream; see internal/servermatrix.
-func (b *Backend) OpenMatrix(ctx context.Context, agentID string) (*servermatrix.Subscription, error) {
+func (b *Backend) OpenMatrix(ctx context.Context, agentID string) (webui.MatrixStream, error) {
 	if err := b.authorizeAgent(ctx, agentID); err != nil {
 		return nil, err
 	}
-	return b.matrix.Subscribe(ctx, agentID)
+	subscription, err := b.matrix.Subscribe(ctx, agentID)
+	if err != nil {
+		return nil, err
+	}
+	return &liveMatrixStream{subscription: subscription}, nil
+}
+
+// liveMatrixStream renames the Server's view into the browser's shape and does
+// nothing else. Every judgement in a frame was made before it got here.
+type liveMatrixStream struct {
+	subscription *servermatrix.Subscription
+	once         sync.Once
+}
+
+func (s *liveMatrixStream) Recv(ctx context.Context) (webui.MatrixFrame, error) {
+	view, err := s.subscription.Next(ctx)
+	if err != nil {
+		_ = s.Close()
+		return webui.MatrixFrame{}, err
+	}
+	return matrixFrameFromView(view), nil
+}
+
+func (s *liveMatrixStream) Close() error {
+	var err error
+	s.once.Do(func() { err = s.subscription.Close() })
+	return err
+}
+
+func matrixFrameFromView(view servermatrix.View) webui.MatrixFrame {
+	filesystems := make([]webui.MatrixFilesystem, 0, len(view.Host.Filesystems))
+	for _, filesystem := range view.Host.Filesystems {
+		filesystems = append(filesystems, webui.MatrixFilesystem{
+			Path: filesystem.Path, TotalBytes: filesystem.TotalBytes, FreeBytes: filesystem.FreeBytes,
+			Unavailable: filesystem.Unavailable, Reason: filesystem.Reason,
+		})
+	}
+	projects := make([]webui.MatrixProject, 0, len(view.Projects))
+	for _, project := range view.Projects {
+		services := make([]webui.MatrixService, 0, len(project.Services))
+		for _, service := range project.Services {
+			containers := make([]webui.MatrixContainer, 0, len(service.Containers))
+			for _, container := range service.Containers {
+				containers = append(containers, matrixContainerFromRow(container))
+			}
+			services = append(services, webui.MatrixService{
+				Service: service.Service, Unmapped: service.Unmapped,
+				Totals: matrixTotals(service.Totals), Containers: containers,
+			})
+		}
+		projects = append(projects, webui.MatrixProject{
+			ProjectUID: project.ProjectUID, ProjectName: project.ProjectName, Unmapped: project.Unmapped,
+			Totals: matrixTotals(project.Totals), Services: services,
+		})
+	}
+	return webui.MatrixFrame{
+		AgentID: view.AgentID, ObservedAt: view.ObservedAt,
+		Host: webui.MatrixHostRow{
+			CPUCapacity: view.Host.CPUCapacity, MemoryCapacity: view.Host.MemoryCapacity,
+			ContainersRunning: view.Host.ContainersRunning, ContainersTotal: view.Host.ContainersTotal,
+			Filesystems: filesystems, Totals: matrixTotals(view.Host.Totals),
+		},
+		Projects:           projects,
+		AgentDroppedFrames: view.AgentDropped, ServerDroppedFrames: view.ViewerDropped,
+		MembershipStale: view.MembershipStale, MembershipReason: view.MembershipReason,
+		WorkloadStale: view.WorkloadStale, WorkloadReason: view.WorkloadReason,
+		ContextStale: view.ContextStale, ContextReason: view.ContextReason,
+	}
+}
+
+func matrixContainerFromRow(row servermatrix.ContainerRow) webui.MatrixContainer {
+	return webui.MatrixContainer{
+		ContainerID: row.ContainerID, Pending: row.Pending, Unmapped: row.Unmapped,
+		ProjectUID: row.ProjectUID, ProjectName: row.ProjectName, Service: row.Service, Image: row.Image,
+		Sample: webui.StatsSample{
+			ContainerID: row.ContainerID, ObservedAt: row.Sample.ObservedAt, CPUPercent: row.Sample.CPUPercent,
+			MemoryUsage: row.Sample.MemoryUsage, MemoryLimit: row.Sample.MemoryLimit,
+			NetworkRX: row.Sample.NetworkRX, NetworkTX: row.Sample.NetworkTX,
+			BlockRead: row.Sample.BlockRead, BlockWrite: row.Sample.BlockWrite,
+			RestartCount: row.Sample.RestartCount, Health: row.Sample.Health, Uptime: row.Sample.Uptime,
+		},
+		MemoryLimitUnbounded: row.MemoryLimitUnbounded,
+		MemoryPercent:        row.MemoryPercent, MemoryPercentKnown: row.MemoryPercentKnown,
+	}
+}
+
+func matrixTotals(totals servermatrix.Aggregate) webui.MatrixTotals {
+	return webui.MatrixTotals{
+		ContainerCount: totals.ContainerCount, PendingCount: totals.PendingCount,
+		CPUPercent: totals.CPUPercent, MemoryUsage: totals.MemoryUsage,
+		NetworkRX: totals.NetworkRX, NetworkTX: totals.NetworkTX,
+		BlockRead: totals.BlockRead, BlockWrite: totals.BlockWrite, Restarts: totals.Restarts,
+		MemoryLimit: totals.MemoryLimit, MemoryLimitUnbounded: totals.MemoryLimitUnbounded,
+		MemoryPercent: totals.MemoryPercent, MemoryPercentKnown: totals.MemoryPercentKnown,
+		Health: totals.Health, HealthUnreported: totals.HealthUnreported,
+		Uptime: totals.Uptime, UptimeKnown: totals.UptimeKnown,
+	}
 }
 
 // Close releases what the Backend started on its own: the metrics relays and

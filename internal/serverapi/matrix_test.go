@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/east-true/dockpilot/internal/producttransport"
 	"github.com/east-true/dockpilot/internal/projectmodel"
-	"github.com/east-true/dockpilot/internal/servermatrix"
 	"github.com/east-true/dockpilot/internal/webui"
 )
 
@@ -69,6 +72,12 @@ func TestOpenMatrixRequiresTheReportedCapability(t *testing.T) {
 	if session.heartbeatCalls() == 0 {
 		t.Fatal("the capability was not read from a live heartbeat")
 	}
+	// The gate is what stops the RPC, not what cleans up after it. An Agent
+	// built before this feature must never be sent a call it does not
+	// implement, whatever it would answer.
+	if got := session.matrixOpenCalls(); got != 0 {
+		t.Fatalf("the matrix RPC was sent %d times to an Agent without the capability", got)
+	}
 
 	session.mu.Lock()
 	session.capability = producttransport.Capability{MetricsMatrix: true}
@@ -76,6 +85,9 @@ func TestOpenMatrixRequiresTheReportedCapability(t *testing.T) {
 	viewer, err := backend.OpenMatrix(ctx, "agent-a")
 	if err != nil {
 		t.Fatalf("open matrix with the capability: %v", err)
+	}
+	if got := session.matrixOpenCalls(); got != 1 {
+		t.Fatalf("the matrix RPC was sent %d times once the capability was reported, want once", got)
 	}
 	_ = viewer.Close()
 }
@@ -151,9 +163,9 @@ func TestMatrixViewJoinsDiscoveryContext(t *testing.T) {
 
 	viewCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	view, err := viewer.Next(viewCtx)
+	view, err := viewer.Recv(viewCtx)
 	if err != nil {
-		t.Fatalf("next view: %v", err)
+		t.Fatalf("next frame: %v", err)
 	}
 	if view.ContextStale {
 		t.Fatalf("context was reported stale: %q", view.ContextReason)
@@ -222,5 +234,233 @@ func TestOpenMatrixSharesOneAgentStream(t *testing.T) {
 	if got := session.heartbeatCalls(); got != heartbeatsAfterFirst {
 		t.Fatalf("the second viewer probed the Agent again (%d heartbeats, was %d)", got, heartbeatsAfterFirst)
 	}
-	var _ *servermatrix.Subscription = second
+}
+
+// Viewer lifecycle at the Backend boundary: one host stream, shared while
+// anyone is watching, ended by the last viewer to leave.
+func TestMatrixAgentStreamEndsWithTheLastViewer(t *testing.T) {
+	ctx, backend, store, registry := newTestBackend(t)
+	t.Cleanup(func() { _ = backend.Close() })
+	insertAgent(t, ctx, store, "agent-a", "Host A", "{}")
+	session := newFakeSession("agent-a")
+	session.capability = producttransport.Capability{MetricsMatrix: true}
+	session.queryPayload = []byte(`[]`)
+	stream := newFakeMatrixStream()
+	session.matrixStream = stream
+	if err := registry.Register(session); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := backend.OpenMatrix(ctx, "agent-a")
+	if err != nil {
+		t.Fatalf("first viewer: %v", err)
+	}
+	second, err := backend.OpenMatrix(ctx, "agent-a")
+	if err != nil {
+		t.Fatalf("second viewer: %v", err)
+	}
+
+	if err := first.Close(); err != nil {
+		t.Fatalf("close first viewer: %v", err)
+	}
+	select {
+	case <-stream.closed:
+		t.Fatal("the Agent stream ended while a viewer was still watching")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	if err := second.Close(); err != nil {
+		t.Fatalf("close second viewer: %v", err)
+	}
+	select {
+	case <-stream.closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the Agent stream outlived its last viewer")
+	}
+}
+
+// The Agent's drop count and the Server's reach the browser as two numbers. A
+// viewer that falls behind is told how many rounds this Server dropped for it,
+// without that being confused with what the Agent dropped for this Server.
+func TestMatrixDropCountersReachTheFrameSeparately(t *testing.T) {
+	ctx, backend, store, registry := newTestBackend(t)
+	t.Cleanup(func() { _ = backend.Close() })
+	insertAgent(t, ctx, store, "agent-a", "Host A", "{}")
+	session := newFakeSession("agent-a")
+	session.capability = producttransport.Capability{MetricsMatrix: true}
+	session.queryPayload = []byte(`[]`)
+	stream := newFakeMatrixStream()
+	session.matrixStream = stream
+	if err := registry.Register(session); err != nil {
+		t.Fatal(err)
+	}
+
+	viewer, err := backend.OpenMatrix(ctx, "agent-a")
+	if err != nil {
+		t.Fatalf("open matrix: %v", err)
+	}
+	defer viewer.Close()
+
+	// Three rounds arrive while nothing is reading, so two of them are
+	// coalesced away by the subscription rather than queued anywhere.
+	for round := 0; round < 3; round++ {
+		stream.frames <- producttransport.MetricsMatrixFrame{
+			ObservedAt: time.Unix(int64(round), 0).UTC(), DroppedFrames: 4,
+			Workload: producttransport.WorkloadSummary{CPUCapacity: 2},
+		}
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	var frame webui.MatrixFrame
+	for time.Now().Before(deadline) {
+		recvCtx, cancel := context.WithTimeout(ctx, time.Second)
+		frame, err = viewer.Recv(recvCtx)
+		cancel()
+		if err != nil {
+			t.Fatalf("recv frame: %v", err)
+		}
+		if frame.ServerDroppedFrames > 0 {
+			break
+		}
+	}
+	if frame.ServerDroppedFrames != 2 {
+		t.Fatalf("server dropped %d rounds, want the two that were coalesced", frame.ServerDroppedFrames)
+	}
+	if frame.AgentDroppedFrames != 4 {
+		t.Fatalf("the Agent's own drop count arrived as %d, want 4 kept separate", frame.AgentDroppedFrames)
+	}
+}
+
+// The capability answer a console reads before opening a stream lives where
+// every other capability reason already lives.
+func TestDashboardReportsTheMetricsCapability(t *testing.T) {
+	ctx, backend, store, registry := newTestBackend(t)
+	t.Cleanup(func() { _ = backend.Close() })
+	insertAgent(t, ctx, store, "agent-a", "Host A", "{}")
+	session := newFakeSession("agent-a")
+	session.capability = producttransport.Capability{ConnectionReady: true, DockerReady: true}
+	if err := registry.Register(session); err != nil {
+		t.Fatal(err)
+	}
+
+	host, err := backend.Host(ctx, "agent-a")
+	if err != nil {
+		t.Fatalf("host: %v", err)
+	}
+	if host.Capabilities.Metrics.Enabled {
+		t.Fatal("an Agent that does not report the capability was shown as able to serve metrics")
+	}
+	if host.Capabilities.Metrics.Reason == "" {
+		t.Fatal("the disabled metrics capability carries no reason")
+	}
+
+	session.mu.Lock()
+	session.capability.MetricsMatrix = true
+	session.mu.Unlock()
+	host, err = backend.Host(ctx, "agent-a")
+	if err != nil {
+		t.Fatalf("host after capability: %v", err)
+	}
+	if !host.Capabilities.Metrics.Enabled {
+		t.Fatal("an Agent reporting the capability was still shown as unable")
+	}
+}
+
+// The shutdown order the runtime depends on, exercised end to end over a real
+// listener: closing the Backend ends the relays, which unblocks the SSE
+// handlers that were reading them, so HTTP shutdown drains instead of waiting
+// out its deadline on streams that were never going to end on their own.
+func TestBackendCloseUnblocksStreamingHandlersBeforeShutdown(t *testing.T) {
+	ctx, backend, store, registry := newTestBackend(t)
+	insertAgent(t, ctx, store, "agent-a", "Host A", "{}")
+	session := newFakeSession("agent-a")
+	session.capability = producttransport.Capability{MetricsMatrix: true}
+	session.queryPayload = []byte(`[]`)
+	stream := newFakeMatrixStream()
+	session.matrixStream = stream
+	if err := registry.Register(session); err != nil {
+		t.Fatal(err)
+	}
+
+	handler, err := webui.New(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: time.Second}
+	serveDone := make(chan struct{})
+	go func() {
+		defer close(serveDone)
+		_ = server.Serve(listener)
+	}()
+
+	client := &http.Client{}
+	defer client.CloseIdleConnections()
+	baseline := runtime.NumGoroutine()
+
+	response, err := client.Get("http://" + listener.Addr().String() + "/api/v1/live/matrix?agent_id=agent-a")
+	if err != nil {
+		t.Fatalf("open matrix stream: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("matrix stream opened with %d", response.StatusCode)
+	}
+	// Read past the opening comment so the handler is certainly parked in Recv
+	// with nothing to write.
+	opening := make([]byte, len(": stream-open\n\n"))
+	if _, err := io.ReadFull(response.Body, opening); err != nil {
+		t.Fatalf("read stream open: %v", err)
+	}
+	stream.frames <- producttransport.MetricsMatrixFrame{Workload: producttransport.WorkloadSummary{CPUCapacity: 1}}
+	buffer := make([]byte, 1)
+	if _, err := response.Body.Read(buffer); err != nil {
+		t.Fatalf("read first frame: %v", err)
+	}
+
+	if err := backend.Close(); err != nil {
+		t.Fatalf("close backend: %v", err)
+	}
+	// The handler must return on its own now. Draining the body is how a
+	// caller sees that: it ends rather than hanging until a deadline.
+	bodyDone := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(io.Discard, response.Body)
+		bodyDone <- err
+	}()
+	select {
+	case <-bodyDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the SSE handler kept the response open after the Backend closed")
+	}
+
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelShutdown()
+	started := time.Now()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("shutdown took %v, which means it waited on a stream rather than draining", elapsed)
+	}
+	<-serveDone
+
+	select {
+	case <-stream.closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the Agent stream was left open after shutdown")
+	}
+
+	client.CloseIdleConnections()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if runtime.NumGoroutine() <= baseline {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("goroutines settled at %d, above the %d before the stream opened", runtime.NumGoroutine(), baseline)
 }
