@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -562,5 +563,145 @@ func TestMatrixViewerIsReleasedWhenTheAgentSessionIsReplaced(t *testing.T) {
 	defer next.Close()
 	if got := replacement.matrixOpenCalls(); got != 1 {
 		t.Fatalf("the new session was sent %d matrix RPCs, want one", got)
+	}
+}
+
+// openFileCount is the process's open descriptors. A relay that leaks a stream
+// shows up here as a floor that does not come back down.
+func openFileCount(t *testing.T) int {
+	t.Helper()
+	entries, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Skipf("open descriptors are not observable here: %v", err)
+	}
+	return len(entries)
+}
+
+func settledGoroutines(t *testing.T, ceiling int) int {
+	t.Helper()
+	best := runtime.NumGoroutine()
+	for range 100 {
+		runtime.GC()
+		time.Sleep(20 * time.Millisecond)
+		if count := runtime.NumGoroutine(); count < best {
+			best = count
+		}
+		if best <= ceiling {
+			return best
+		}
+	}
+	return best
+}
+
+// A replaced Agent session must leave nothing of itself behind: not the stream,
+// not the relay, not the goroutines that were reading it. The new session is
+// authoritative, and a viewer arriving afterwards reaches it rather than
+// reattaching to something the old session owned.
+func TestSessionReplacementLeavesNoMatrixResourcesBehind(t *testing.T) {
+	ctx, backend, store, registry := newTestBackend(t)
+	t.Cleanup(func() { _ = backend.Close() })
+	insertAgent(t, ctx, store, "agent-a", "Host A", "{}")
+
+	baselineGoroutines := settledGoroutines(t, 0)
+	baselineFDs := openFileCount(t)
+
+	first := newFakeSession("agent-a")
+	first.capability = producttransport.Capability{MetricsMatrix: true}
+	first.queryPayload = []byte(`[]`)
+	firstStream := newFakeMatrixStream()
+	first.matrixStream = firstStream
+	if err := registry.Register(first); err != nil {
+		t.Fatal(err)
+	}
+
+	viewers := make([]webui.MatrixStream, 0, 3)
+	for index := 0; index < 3; index++ {
+		viewer, err := backend.OpenMatrix(ctx, "agent-a")
+		if err != nil {
+			t.Fatalf("open viewer %d: %v", index, err)
+		}
+		viewers = append(viewers, viewer)
+	}
+	if got := first.matrixOpenCalls(); got != 1 {
+		t.Fatalf("three viewers opened %d Agent streams", got)
+	}
+	firstStream.frames <- producttransport.MetricsMatrixFrame{
+		Workload: producttransport.WorkloadSummary{CPUCapacity: 2},
+	}
+	readCtx, cancelRead := context.WithTimeout(ctx, 2*time.Second)
+	if _, err := viewers[0].Recv(readCtx); err != nil {
+		cancelRead()
+		t.Fatalf("first frame: %v", err)
+	}
+	cancelRead()
+
+	// The Agent reconnects. Registering the replacement closes the old session,
+	// which takes its stream with it.
+	replacement := newFakeSession("agent-a")
+	replacement.info.SessionID = "session-agent-a-replacement"
+	replacement.info.Incarnation = 2
+	replacement.capability = producttransport.Capability{MetricsMatrix: true}
+	replacement.queryPayload = []byte(`[]`)
+	replacementStream := newFakeMatrixStream()
+	replacement.matrixStream = replacementStream
+	if err := registry.Register(replacement); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-firstStream.closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the replaced session's matrix stream stayed open")
+	}
+
+	// Every viewer of the old session is released rather than left waiting on a
+	// stream that will never produce another frame. A viewer still holding an
+	// undelivered frame receives that first - it was measured before the
+	// session went away, and discarding it to deliver the failure sooner would
+	// throw away a real observation - so the release is the next answer after
+	// whatever was already in hand.
+	for index, viewer := range viewers {
+		released := false
+		for attempt := 0; attempt < 3 && !released; attempt++ {
+			recvCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			_, err := viewer.Recv(recvCtx)
+			cancel()
+			released = err != nil
+		}
+		if !released {
+			t.Fatalf("viewer %d kept receiving from a replaced session", index)
+		}
+		if err := viewer.Close(); err != nil {
+			t.Fatalf("close viewer %d: %v", index, err)
+		}
+	}
+
+	// A viewer arriving now reaches the new session, and reaches it through a
+	// fresh relay: reusing the old one would show up as no new Open.
+	next, err := backend.OpenMatrix(ctx, "agent-a")
+	if err != nil {
+		t.Fatalf("open matrix on the new session: %v", err)
+	}
+	if got := replacement.matrixOpenCalls(); got != 1 {
+		t.Fatalf("the new session was opened %d times, want once", got)
+	}
+	if got := first.matrixOpenCalls(); got != 1 {
+		t.Fatalf("the replaced session was called again (%d opens)", got)
+	}
+	if err := next.Close(); err != nil {
+		t.Fatalf("close the last viewer: %v", err)
+	}
+	select {
+	case <-replacementStream.closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the new session's stream outlived its last viewer")
+	}
+
+	// Nothing from either session is still running.
+	if settled := settledGoroutines(t, baselineGoroutines+10); settled > baselineGoroutines+10 {
+		t.Fatalf("goroutines after a session replacement = %d, baseline %d", settled, baselineGoroutines)
+	}
+	if descriptors := openFileCount(t); descriptors > baselineFDs+10 {
+		t.Fatalf("open descriptors after a session replacement = %d, baseline %d", descriptors, baselineFDs)
 	}
 }
