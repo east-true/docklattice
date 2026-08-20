@@ -181,11 +181,15 @@ Observed detail worth keeping:
 `STATUS` recorded `status=PASS`, and the run left no container, network, runtime
 root, or Join Token behind.
 
-`join-token-restart` runs first. Later cases replace the Agent container with
-one started without the token flag, and the flag still being there is the whole
-point of this one. It also depends on the baseline having deleted the consumed
-token, and asserts both preconditions before it does anything, so it cannot
-quietly degrade into a plain restart test.
+`join-token-restart` is not in the default selection and is asked for by name.
+It has to run before any case that replaces the Agent container, since the flag
+still being on the argument list is the whole point; but an extra Agent restart
+at the head of the sequence changes what `db-restore` measures, and that case
+then fails. The interaction is recorded as an open question in the
+[campaign record](v1-final-hardening.md) rather than averaged away by reordering.
+The case asserts both of its preconditions - the consumed token is gone, and the
+container still carries `--join-token-file` - before it does anything, so it
+cannot quietly degrade into a plain restart test.
 
 ## Second recorded execution: the ten portable cases at the current revision
 
@@ -236,13 +240,11 @@ Validate the checked-in static contract without Docker:
 
 ## Fourth recorded execution: with `join-token-restart`, after the bootstrap fix
 
-    started_at              2026-08-20T12:03:04Z
-    finished_at             2026-08-20T12:11:42Z
     docker_server_version   29.7.2
-    release_revision        7ed4e3a
-    server_image_id         sha256:935f7a646737300bc2589aec5c4157a8251df62c752d9c7e14ff010410287256
-    agent_image_id          sha256:64877302683103e73a9516bd7c52c8e32af4a2953bb915d9327214eda72b630b
-    selected_cases          join-token-restart plus the ten above
+    release_revision        eebfe3de574f2f27d1262340f04a4bc46687af23
+    server_image_id         sha256:f4425b262c75747768142cf0f609ad85f356836a712df14b3929d0531ff2d294
+    agent_image_id          sha256:43a7952dd353dec9733f61e080a771d2e642b1b0e5f0b6021702dbfda5a0c4c4
+    selected_cases          join-token-restart, run as its own invocation
 
 `STATUS` recorded `status=PASS`, including:
 
@@ -251,6 +253,9 @@ Validate the checked-in static contract without Docker:
 | `join_token_restart_without_bootstrap_secret` | PASS |
 | `join_token_restart_identity_preserved` | PASS |
 | `invariants_join_token_restart` | PASS |
+
+The ten default cases were run separately at the same revision and recorded
+`status=PASS`.
 
 The case was written against the defect and checked in both directions. Run
 alone against the previous images it reproduces the report exactly:

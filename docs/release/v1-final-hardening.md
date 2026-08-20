@@ -77,6 +77,41 @@ each one meant a gate had been reporting a result it had not established.
   not, and failed. The driver now waits for that evidence, bounded by the case
   deadline.
 
+### One interaction is unexplained
+
+`db-restore` restores a Server database snapshot taken once, immediately after
+the baseline, and requires the Agent to come back. Adding one more Agent
+restart to the head of the sequence - which is what `join-token-restart` does -
+makes it fail:
+
+| Selection | Result |
+|---|---|
+| the ten default cases | PASS (1/1) |
+| the ten plus `join-token-restart` first | FAIL (2/2), `db-restore: the Agent did not reconnect to the restored Server` |
+| `db-restore` alone | PASS (2/2) |
+| `join-token-restart` then `db-restore` | PASS (1/1) |
+
+The Server refuses the session in a loop:
+
+    agent session closed agent=...: AUDIT_ACK_INELIGIBLE: proposed (4,63), 1 unexplained ranges
+
+and the host stays OFFLINE for the full 300-second window. The harness's own
+standard for this case is that the Server either refuses the cursor regression
+or catches up from the Agent's retained WAL; neither happens here, and the Agent
+has no diagnostics of its own to say so (finding 4 again).
+
+This is not a regression from the bootstrap fix: the same source passed the full
+sequence when the extra restart was absent, and the two-case reproduction passes.
+It is a sensitivity to how much audit history and how many incarnations precede
+the restore, and one extra incarnation crosses it. `join-token-restart` is
+therefore run as its own invocation rather than in the default selection, so
+neither gate silently measures something other than what it was written for.
+
+**Open.** What has not been established is whether an Agent in this state can
+ever recover, or whether a real operator restoring a Server backup onto a fleet
+with ordinary restart history would land in it. Both need answering before the
+interface freeze.
+
 ## What is missing
 
 1. **Stage 1 soak at this revision.** Architecture section 30 requires a soak
