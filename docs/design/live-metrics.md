@@ -1,6 +1,6 @@
 # Live Metrics — design
 
-Status: proposal, revision 2. Not implemented.
+Status: implemented and validated, revision 2.
 
 Goal: an operator opens the console and sees, for every Docker host Dockpilot
 manages and everything running on it, what it is using right now. Nothing is
@@ -133,7 +133,7 @@ deployment:
 | CPU / memory / network / block I/O in use | sum of the container samples in this frame | measured per container by the Engine |
 | managed filesystems: total and free | `statfs` on discovery roots and the Agent state directory | these are the paths Dockpilot writes to, whatever they are mounted from |
 
-`dockeradapter` gains an `Info()` accessor; it does not have one yet.
+`dockeradapter` gained an `Info()` accessor.
 
 The row is labelled as what it is. It is not "Host CPU" — it is the workload
 Dockpilot manages on that host, next to the capacity the Engine reports. An
