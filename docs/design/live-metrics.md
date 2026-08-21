@@ -369,9 +369,49 @@ browser-facing side, not the Agent link, is the one that grows first.
 Twenty-five viewers of a 500-container host open one Agent stream and hold one
 relay, released when the last of them leaves.
 
-What these numbers do not cover is the cost the design already names as the
-real one: Docker stats collection is O(running containers), and measuring it
-needs containers, an Engine, and an isolated host to run them on.
+### The collector cost, measured
+
+The cost the design names as the real one, measured on an isolated VM - 4 vCPU,
+12 GiB, Docker 29.1.3 - with a Server, an Agent and that many fixture
+containers, watched by five viewers.
+
+| | 200 containers | 500 containers |
+|---|---|---|
+| Container rows in a frame | 202 | 502 |
+| Agent descriptors, no viewer | 12 | 10 |
+| Agent descriptors, watched | — | **514** |
+| Agent RSS, no viewer | — | 26.1 MiB |
+| Agent RSS, watched | 45.1 MiB | 73.6 MiB |
+| Agent threads | 11 | 11 |
+| Server RSS | 32.7 MiB | 40.8 MiB |
+| JSON frame to the browser | 105.8 KB | 260.2 KB |
+| Per container, JSON | 524 B | 518 B |
+| Agent / Server dropped frames | 0 / 0 | 0 / 0 |
+| VM load, 4 vCPU | 1.9 | 5.3 |
+
+Three things this settles.
+
+**Descriptors follow containers, and only while somebody is watching.** Five
+hundred containers with no viewer cost the Agent ten descriptors and 26 MiB.
+Attach a viewer and it is 514 - one Docker stats stream per container, which is
+exactly the cost §10 said could not be made sublinear. When the last viewer
+left it went back to ten with all five hundred containers still running.
+
+**Streams still follow hosts.** Five viewers of a 500-container host opened one
+Agent stream and one relay, and every viewer received the frames.
+
+**Threads do not grow at all.** Eleven at both sizes: the collectors are
+goroutines and epoll, not threads.
+
+Frame cadence was exactly 2.000 s at 200 containers, and nothing was dropped on
+either side at either size, so the producer kept up with its own tick and the
+Server kept up with the producer.
+
+The browser-facing figure is the one to watch. 260 KB per frame at five hundred
+containers is 130 KiB/s per viewer at the two second cadence, and five viewers
+of that host is about 650 KiB/s leaving the Server. That is the number a
+console should be sized against, not the 33 KiB/s protobuf figure on the Agent
+link.
 
 ## 16. Validation
 
