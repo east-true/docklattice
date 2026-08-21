@@ -162,6 +162,67 @@ heap stayed within 1-4 MB for the Agent over 111-115 GC cycles and within 1-3 MB
 for the Server over 269-275 cycles. End-of-trial goroutine headers were 28
 (Agent) and 22 (Server) in all three trials.
 
+### Re-run with live metrics active
+
+The matrix above predates the host metrics stream. Adding a steady-state hot
+path invalidates resource evidence collected without it, so the gate was run
+again on the revision that ships it, with the workload driver extended to open
+`/api/v1/live/matrix` alongside the existing logs, stats, Compose, backup,
+restore and Audit workload. All three trials returned `status=PASS`.
+
+```text
+started_at             2026-08-21T00:11:08Z
+source_revision        ab87bf2e9281724fcc114216f1e8d51d8311f4a3
+kernel                 Linux 7.0.0-29-generic x86_64
+docker_server_version  29.7.2
+cgroup                 v2, systemd driver
+server_image           dockpilot-server:m1
+agent_image            dockpilot-agent:m1
+repetitions            3
+case_seconds           600
+sample_seconds         2
+```
+
+| trial | role   | peak RSS | budget  | peak anon | cgroup peak | FD | `events.local.max` |
+| ----- | ------ | -------- | ------- | --------- | ----------- | -- | ------------------ |
+| 1     | agent  | 32.9 MiB | 256 MiB | 15.8 MiB  | 37.9 MiB    | 40 | 0                  |
+| 1     | server | 31.5 MiB | 512 MiB | 12.1 MiB  | 23.4 MiB    | 34 | 0                  |
+| 2     | agent  | 31.8 MiB | 256 MiB | 14.7 MiB  | 35.6 MiB    | 42 | 0                  |
+| 2     | server | 31.6 MiB | 512 MiB | 12.3 MiB  | 22.9 MiB    | 36 | 0                  |
+| 3     | agent  | 30.8 MiB | 256 MiB | 13.6 MiB  | 36.6 MiB    | 40 | 0                  |
+| 3     | server | 31.8 MiB | 512 MiB | 12.3 MiB  | 24.1 MiB    | 37 | 0                  |
+
+The Agent costs roughly 3-5 MiB more peak RSS and a dozen more descriptors
+than the pre-metrics run, which is the matrix relay, its event watch and its
+per-container stats subscriptions. It stays at about 13% of its budget. No
+trial reached the 80% cgroup warning threshold and `oom`/`oom_kill` were 0
+throughout.
+
+Agent RSS falls between the first and last sample in every trial - 31.8 to
+25.7, 30.9 to 25.6, 29.1 to 25.2 MiB - which is the relay being released with
+its last viewer rather than a leak wearing a passing number.
+
+**The metrics path was verifiably on.** A trial that opened no stream would
+have reported metrics resource cost that no metrics produced, so the driver
+fails closed unless the Agent reports the capability before any viewer exists,
+the stream reaches HTTP 200, frames arrive, and a frame carries container rows.
+Every trial recorded the same shape:
+
+| trial | idle subscriptions | idle frames | active subscriptions | frames | container rows | agent drops | server drops |
+| ----- | ------------------ | ----------- | -------------------- | ------ | -------------- | ----------- | ------------ |
+| 1     | 0                  | 0           | 1                    | 14     | 19             | 0           | 0            |
+| 2     | 0                  | 0           | 1                    | 14     | 19             | 0           | 0            |
+| 3     | 0                  | 0           | 1                    | 14     | 19             | 0           | 0            |
+
+The idle row is the design's central claim measured rather than asserted: with
+no viewer there is no subscription and no frame. The two drop counters are
+recorded separately and were both zero, so nothing was coalesced away at this
+load.
+
+The canonical Audit cursor advanced in all three trials - incarnation 1 seq 1
+through incarnation 2 seq 47/48/49 - with a maximum ACK watermark stall of 0
+seconds, so P1 durable progress held while the matrix streamed.
+
 Appendix A A.9 items measured by this gate:
 
 | A.9 item                              | bound                | trial 1 | trial 2 | trial 3 |
