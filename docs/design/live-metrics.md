@@ -1,6 +1,7 @@
 # Live Metrics — design
 
-Status: implemented and validated, revision 2.
+Status: implemented and validated, revision 2, except the §13 matrix view,
+which is deferred. §2 items 1-3 have shipped; item 4 has not.
 
 Goal: an operator opens the console and sees, for every Docker host Dockpilot
 manages and everything running on it, what it is using right now. Nothing is
