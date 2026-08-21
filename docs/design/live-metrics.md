@@ -344,6 +344,35 @@ wrong. §9 keeps only what an outside consumer may depend on.
   bandwidth, and whether P0/P1 were starved. The supported range is decided from
   those numbers; finding a limit at 500 is a measurement, not a design failure.
 
+## 15a. What the frame actually costs
+
+Measured on the implementation rather than estimated from it. Two numbers
+matter and they are not the same number.
+
+**On the wire, Agent to Server** (protobuf), one frame per host per tick:
+
+| Containers | Frame | Per container | Assembly | At a 2s cadence |
+|---|---|---|---|---|
+| 1 | 194 B | 194 B | 1.6 µs | 0.1 KiB/s |
+| 200 | 26.5 KB | 132 B | 178 µs | 12.9 KiB/s |
+| 500 | 66.6 KB | 133 B | 337 µs | 32.5 KiB/s |
+
+Both lines are linear: 2.5× the containers costs 2.52× the bytes and 1.89× the
+assembly. Nothing on this path is quadratic.
+
+**To the browser** (JSON over SSE), measured live against a real Engine: a
+frame carrying 18 containers was 18.6 KB, about 1.03 KB per container. That is
+roughly seven times the protobuf figure for the same rows, which is what JSON
+costs and is worth knowing before anyone proposes a faster cadence: the
+browser-facing side, not the Agent link, is the one that grows first.
+
+Twenty-five viewers of a 500-container host open one Agent stream and hold one
+relay, released when the last of them leaves.
+
+What these numbers do not cover is the cost the design already names as the
+real one: Docker stats collection is O(running containers), and measuring it
+needs containers, an Engine, and an isolated host to run them on.
+
 ## 16. Validation
 
 Resource Matrix re-run on the new revision, three trials, existing acceptance
