@@ -373,7 +373,9 @@ relay, released when the last of them leaves.
 
 The cost the design names as the real one, measured on an isolated VM - 4 vCPU,
 12 GiB, Docker 29.1.3 - with a Server, an Agent and that many fixture
-containers, watched by five viewers.
+containers, watched by five viewers. Both columns were measured at `c374866`;
+the 500 column was measured again on the merged revision, which is the next
+section.
 
 | | 200 containers | 500 containers |
 |---|---|---|
@@ -419,6 +421,66 @@ containers is 130 KiB/s per viewer at the two second cadence, and five viewers
 of that host is about 650 KiB/s leaving the Server. That is the number a
 console should be sized against, not the 33 KiB/s protobuf figure on the Agent
 link.
+
+### Revalidated on the merged revision
+
+The table above was measured at `c374866`. Review of the pull request then found
+one more defect and fixed it: reconcile treated a container ID's presence in the
+member map as proof it was still being watched, so a member whose stats stream
+had ended - while its container kept running - was never replaced, and its row
+froze on its last sample. The fix drops a member whose subscription has already
+finished and lets the existing missing path resubscribe it, which adds one
+non-blocking completion check per member per reconcile and changes nothing about
+stream topology, collector topology, buffers or the frame path.
+
+That is a change to the steady-state reconcile loop, so the 500-container case
+was measured again on the merged revision `326a847`, on the same VM shape as
+before - 4 vCPU, 12 GiB, kernel 6.8.0-137, Docker 29.1.3, cgroup v2, `nofile`
+1024. The 200-container case was not repeated: it exercises the same O(N) path
+at a smaller N and would say less than the 500 case already does.
+
+| | `c374866` | `326a847` |
+|---|---|---|
+| Container rows in a frame | 502 | 502 |
+| Agent descriptors, no viewer | 10 | 10 |
+| Agent descriptors, watched | 515 | 514 |
+| Agent RSS, no viewer | 26.1 MiB | 25.3 MiB |
+| Agent RSS, watched | 75.6 MiB | 78.7 MiB |
+| Agent threads | 11 | 9-10 |
+| Server RSS | 40.8 MiB | 39.9 MiB |
+| JSON frame to the browser | 260.2 KB | 260.8 KB |
+| Agent / Server dropped frames | 0 / 0 | 0 / 0 |
+
+The same envelope, and the same shape. Descriptors still follow containers and
+only while somebody is watching: 497 containers with no viewer cost the Agent
+ten descriptors and 25.3 MiB, and attaching five viewers took it to 514 within
+one sample. The count then held flat at 514 for the whole watched window rather
+than climbing, which is what a leak or a duplicated subscription would have
+looked like. Five viewers still opened one Agent stream and one relay, and all
+five received all twelve frames.
+
+Release is unchanged. When the last viewer left, descriptors went from 514 to
+ten in a single sample with all five hundred containers still running, while RSS
+stayed at 78.7 MiB for about thirty seconds and then fell to 33.7 MiB. Go
+returns heap on its own schedule; the bounded resource comes back at once.
+
+The reconcile cost the fix adds was measured directly rather than inferred. At
+500 members a full `reconcileMembership` takes 43-53 µs at the median and 0.8-3.6
+ms at its worst, of which the completion check over all 500 members is 4.4-4.9 µs
+- about nine nanoseconds per member, and roughly a tenth of the median reconcile.
+Against a two second frame cadence the check is 0.0002% of the budget, so the
+O(N) growth the fix introduces is real and irrelevant at this size; a reconcile
+cannot run into the next one on this path.
+
+Cadence needs one honest note. Two runs were taken. The first, sampled only from
+`/proc`, held 13 frames across 23.33 s - a 1.944 s mean whose worst interval was
+2.002 s. The second run, whose sampler additionally ran two `docker exec` calls
+every two seconds to read descriptors from inside the containers, delivered 12
+frames across 22.57 s for a 2.052 s mean but with intervals ranging from 0.394 s
+to 4.935 s. Both averaged the tick, neither dropped a frame on either side, and
+every viewer received every frame; the jitter tracks the instrumentation rather
+than the producer, which is the reason the descriptor series and the cadence
+series were not taken from the same run.
 
 ## 16. Validation
 
