@@ -320,3 +320,61 @@ which noted `dropped_bytes` never being observed and could not say whether that
 was the relay never dropping or a notification queued behind the stream it
 described. It was neither: the relay drops and reports, and the consumer had
 simply not read that far.
+
+## Metrics-active smoke at the merged Live Metrics revision
+
+Not a re-run of the gate. Live Metrics merged to `main` as `326a847`, and the
+last full Resource Matrix predates the fix that pull-request review added to
+`livematrix` reconcile. That fix adds one non-blocking completion check per
+member per reconcile and changes no topology, so what was wanted was evidence
+that steady-state resource behaviour is unchanged, not another three trials.
+
+One trial of the same runner at the same 600 s case length, on an isolated VM -
+4 vCPU, 12 GiB, kernel 6.8.0-137, Docker 29.1.3, cgroup v2.
+
+    started_at              2026-08-21T01:41:00Z
+    source_revision         326a847ab7898937c154fb99f40269745f8ef963
+    case_seconds            600
+    repetitions             1
+    server_image_id         sha256:79309f9ac59b7d741a8a08af38c45d61e8c4023a4687590d6f9ebfb1405826d5
+    agent_image_id          sha256:498819634022d75fbc07621eaa06cd6be856abe60ac78bbef2800c0818cfa9c4
+
+| Trial | Agent peak RSS / limit | Agent first → last | Server peak RSS / limit | Server first → last |
+|---|---|---|---|---|
+| 1 | 29.9 / 256 MiB | 29.0 → 25.1 MiB | 30.9 / 512 MiB | 30.1 → 30.5 MiB |
+
+`status=PASS`, `resource-trend.json` `pass: true`, `oom 0` and `oom_kill 0` in
+both roles, and neither role's `memory.peak` reached 80% of its limit. The Agent
+ends below where it started, which is the relay release the design predicts.
+Every workload verdict key passed, including `P0_P1_PASS`, `AUDIT_CONTINUITY_PASS`,
+`MATRIX_IDLE_PASS` and `MATRIX_ACTIVE_PASS`. Matrix idle recorded 0 subscriptions
+and 0 frames; Matrix active recorded 1 subscription, 14 frames, 10 container rows
+and 0 dropped frames on both sides. The Audit cursor advanced from
+`incarnation 1, seq 1` to `incarnation 2, seq 47`, fully acknowledged, with
+`ack_watermark_stalled_seconds` 0 and no gaps.
+
+Peak RSS sits inside the range the three-trial execution recorded - Agent 29.6 to
+30.9 MiB, Server 31.2 to 31.5 MiB there - so this is the same envelope rather
+than a new one.
+
+### The bounded-buffer assertion is still occasionally flaky
+
+The runner takes three trials per invocation and cannot be asked for one, so
+trial 2 started after trial 1 passed, and failed on
+`slow consumer produced no explicit bounded-buffer drop accounting` - the same
+assertion, and the same message, as the race recorded above. Holding the slow
+stream open until a drop-carrying event has been read made that race much rarer;
+it did not remove it, because the wait is bounded by the case deadline and a
+consumer reading at 1 KiB/s can still be short of the first drop-carrying event
+when the deadline arrives.
+
+Three things place it. It is the log path, not metrics: the field is
+`dropped_bytes` from `internal/logrelay`, and the merged Live Metrics change
+touches no line of that path. Trial 1 passed the identical assertion on the
+identical images minutes earlier, so it is not deterministic. And the product's
+accounting was never what the assertion doubted, which is what the earlier record
+already concluded.
+
+It is recorded here rather than fixed. Trial 3 never ran, so this invocation is
+one passing 600 s metrics-active trial and one unrelated harness failure - it is
+not a three-trial Resource Matrix and is not offered as one.
