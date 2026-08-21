@@ -47,6 +47,9 @@ type testBackend struct {
 	liveRequest       LiveRequest
 	logStream         LogStream
 	statsStream       StatsStream
+	matrixAgentID     string
+	matrixStream      MatrixStream
+	matrixErr         error
 }
 
 func (b *testBackend) Dashboard(context.Context) (Dashboard, error) { return b.dashboard, b.err }
@@ -133,6 +136,13 @@ func (b *testBackend) OpenLogs(_ context.Context, request LiveRequest) (LogStrea
 func (b *testBackend) OpenStats(_ context.Context, request LiveRequest) (StatsStream, error) {
 	b.liveRequest = request
 	return b.statsStream, b.err
+}
+func (b *testBackend) OpenMatrix(_ context.Context, agentID string) (MatrixStream, error) {
+	b.matrixAgentID = agentID
+	if b.matrixErr != nil {
+		return nil, b.matrixErr
+	}
+	return b.matrixStream, b.err
 }
 
 type sliceLogStream struct {

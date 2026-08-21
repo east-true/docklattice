@@ -57,8 +57,12 @@ invent a state machine on top; the pair (state, capabilities) is the contract.
 
 The frozen set is exactly:
 
-`connection`, `docker`, `compose`, `discovery`, `operation_recovery`,
-`fs_read`, `fs_write`
+`connection`, `docker`, `compose`, `discovery`, `metrics`,
+`operation_recovery`, `fs_read`, `fs_write`
+
+`metrics` was added with the host metrics matrix as a new optional field under
+§19. It is additive: a console that does not know it is unaffected, and no
+existing capability changed meaning.
 
 Each is `{ "enabled": bool, "reason": string }`. `reason` is human-readable and
 is **not** frozen as a machine contract; it carries prefixed markers such as
@@ -148,10 +152,126 @@ Live relay. Not storage, not search, not retention.
 ## 9. Metrics
 
 Live, viewer-scoped, ephemeral. No time series is stored server-side. With no
-viewer there is no stats stream. A console may keep a short rolling buffer; it
-must not present that as history. Scope is container-level (CPU, memory and its
-limit, network, block I/O, restarts, health, uptime) and does not extend to host
-OS monitoring.
+viewer nothing is collected: no stream, no relay, no ticker, no Docker stats
+call. A console may keep a short rolling buffer; it must not present that as
+history.
+
+Two streams, and the older one is unchanged.
+
+**Per container.** `GET /api/v1/live/stats` with `agent_id` and `container_id`,
+carrying CPU, memory and its limit, network, block I/O, restarts, health and
+uptime. Unaffected by everything below.
+
+**Per host.** `GET /api/v1/live/matrix` with `agent_id` and nothing else. One
+frame is the whole host at one instant, as a tree: the host row, then project,
+service and container rows. There is no selector, and no second endpoint
+serving the same data in another shape.
+
+Frames are additive. An Agent serves them only when its heartbeat reports the
+`metrics_matrix` capability (§4). An Agent that does not report it is never
+sent the request, and a viewer asking for that host is refused with
+`CAPABILITY_UNAVAILABLE`, never with an empty frame. Where the host cannot be
+watched is also readable before asking, as `capabilities.metrics`.
+
+### The host row is not host OS monitoring
+
+It is the Docker workload this Agent manages, against the capacity its Engine
+reports: Engine CPU and memory capacity, running and total container counts,
+the aggregate of this frame's container samples, and capacity for the paths
+Dockpilot writes to — the discovery roots and the Agent state root,
+deduplicated by device, not an inventory of the host's mounts.
+
+Host OS CPU, host memory usage and host network traffic are **not** provided in
+v1 and must not be inferred from these numbers. The Agent's official deployment
+is a container, where `/proc/net` describes the container's own namespace; a
+host traffic figure read from there would be the Agent's own traffic wearing
+the host's name. Adding real host metrics means host `/proc` access or
+namespace entry, which is a deployment and security change with its own design.
+
+### Freshness is three separate facts
+
+`membership_stale`, `workload_stale` and `context_stale` move independently,
+each with its own reason, because listing containers, asking the Engine about
+itself, and looking up project context are different calls that fail for
+different reasons. A consumer that collapses them will report Docker as down
+when only a project name is missing.
+
+Membership has three states, and the third is not the second: a successful
+listing of zero containers is a known-empty host; a failed refresh keeps the
+last known rows and says so; an Engine that has never answered has no rows and
+says so. Only the first means the host is empty.
+
+A managed filesystem that cannot be read is marked unavailable with a reason
+and does not fail the other filesystems, the membership, or the workload row.
+
+### Containers
+
+Every running container appears. A row is one of:
+
+- **sampled** — it has reported;
+- **pending** — it is in the membership snapshot and its first sample has not
+  arrived, which is not the same as gone and is not how a failed listing is
+  reported;
+- **unmapped** — it belongs to no project Dockpilot manages. It keeps its
+  metrics and is never hidden: the Engine decides what is running and the
+  project mapping is context.
+
+Project, service and image are joined from discovery and are **read-only**.
+Watching a host never changes what the Server believes about it. A Compose
+project this Server does not manage appears under the name its labels give it
+and is given no project UID, because a UID with no row behind it resolves to
+nothing.
+
+### Aggregation
+
+Host, project and service rows are projections of the same container samples in
+the same frame — there is no second collector and therefore no second
+measurement to disagree with the first. A frame is self-consistent: membership
+is snapshotted once, and the rows and the counts come from that one snapshot.
+
+CPU, memory usage, network, block I/O and restarts sum. Uptime is the youngest
+member's. Pending members are counted but contribute no values.
+
+Memory limit is a number only when every member has one. If any member runs
+unlimited the row's limit is **unbounded** — a different kind of answer, not a
+large number — and the memory percentage is withheld rather than computed
+against something that bounds nothing. Docker reports the machine's memory as
+the limit for an unlimited container, so whether a reported limit is a limit is
+decided once, against the Engine capacity in the same frame.
+
+Health is two facts, never one axis. The status is exactly one of `unhealthy`
+(any member is), `starting` (none unhealthy, any starting), `healthy` (every
+member that has a healthcheck reports healthy), `none` (members exist and none
+has a healthcheck), or absent (nothing has reported). Alongside it, a count of
+members that answered nothing — no healthcheck, or a status the build does not
+recognise, which is counted as no answer rather than ranked as a severity. A
+row reading `healthy` with a nonzero count says only that every container which
+answers is healthy. It must not be presented as the whole row being healthy.
+
+### Backpressure
+
+Latest-wins per frame, not per sample. A slow consumer misses whole rounds and
+the next frame carries every container again, so no container starves behind a
+busier one. No backlog is held anywhere: the Agent keeps one frame, each
+subscription keeps one, the Server keeps the newest per host.
+
+Two drop counters, never added together, because they blame different sides:
+`agent_dropped_frames` is what the Agent discarded because the Server was slow,
+`server_dropped_frames` is what the Server discarded because that browser was
+slow. Every round is accounted for exactly once — delivered or dropped.
+
+Metrics are P4. P0 control and P1 durable were already protected from P3/P4
+starvation and that policy is used unchanged; this feature adds no latency
+budget of its own.
+
+### Lifecycle
+
+One Agent stream per watched host, shared by every viewer of it. The first
+viewer starts collection, the rest join it, and the last one to leave ends it.
+Server↔Agent streams scale with watched hosts; Agent-side Docker stats
+collectors scale with running containers, which is the real cost and is stated
+rather than hidden. A replaced Agent session takes its stream with it and
+leaves no relay behind.
 
 ## 10. Audit and coverage
 

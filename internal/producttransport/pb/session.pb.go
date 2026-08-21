@@ -84,6 +84,12 @@ type Capability struct {
 	FsWrite       bool   `protobuf:"varint,8,opt,name=fs_write,json=fsWrite,proto3" json:"fs_write,omitempty"`
 	FsReadReason  string `protobuf:"bytes,9,opt,name=fs_read_reason,json=fsReadReason,proto3" json:"fs_read_reason,omitempty"`
 	FsWriteReason string `protobuf:"bytes,10,opt,name=fs_write_reason,json=fsWriteReason,proto3" json:"fs_write_reason,omitempty"`
+	// metrics_matrix reports that this Agent can serve the host-scoped metrics
+	// matrix stream. It is a capability rather than a protocol version because an
+	// Agent built before the feature reports the same protocol version as one
+	// built after, and so cannot be told apart by version. An Agent that does not
+	// know this field leaves it false, which is the answer the Server needs.
+	MetricsMatrix bool `protobuf:"varint,11,opt,name=metrics_matrix,json=metricsMatrix,proto3" json:"metrics_matrix,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -186,6 +192,13 @@ func (x *Capability) GetFsWriteReason() string {
 		return x.FsWriteReason
 	}
 	return ""
+}
+
+func (x *Capability) GetMetricsMatrix() bool {
+	if x != nil {
+		return x.MetricsMatrix
+	}
+	return false
 }
 
 type HeartbeatResponse struct {
@@ -1112,6 +1125,338 @@ func (x *StatsStreamRequest) GetContainerId() string {
 	return ""
 }
 
+// MetricsMatrixRequest opens the host-scoped metrics stream. It carries no
+// selector: the frame is the whole host, and narrowing is the viewer's job.
+type MetricsMatrixRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MetricsMatrixRequest) Reset() {
+	*x = MetricsMatrixRequest{}
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricsMatrixRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricsMatrixRequest) ProtoMessage() {}
+
+func (x *MetricsMatrixRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricsMatrixRequest.ProtoReflect.Descriptor instead.
+func (*MetricsMatrixRequest) Descriptor() ([]byte, []int) {
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{17}
+}
+
+// ManagedFilesystem is capacity for a path Dockpilot writes to - a discovery
+// root or the Agent state directory - deduplicated by filesystem. It is not an
+// inventory of the host's mounts.
+type ManagedFilesystem struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Path       string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	TotalBytes uint64                 `protobuf:"varint,2,opt,name=total_bytes,json=totalBytes,proto3" json:"total_bytes,omitempty"`
+	FreeBytes  uint64                 `protobuf:"varint,3,opt,name=free_bytes,json=freeBytes,proto3" json:"free_bytes,omitempty"`
+	// unavailable is this one path failing to answer - a discovery root that has
+	// gone, or one the Agent cannot stat. It is a fact about the path, and must
+	// not take the rest of the workload summary with it.
+	Unavailable   bool   `protobuf:"varint,4,opt,name=unavailable,proto3" json:"unavailable,omitempty"`
+	Reason        string `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ManagedFilesystem) Reset() {
+	*x = ManagedFilesystem{}
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ManagedFilesystem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ManagedFilesystem) ProtoMessage() {}
+
+func (x *ManagedFilesystem) ProtoReflect() protoreflect.Message {
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ManagedFilesystem.ProtoReflect.Descriptor instead.
+func (*ManagedFilesystem) Descriptor() ([]byte, []int) {
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ManagedFilesystem) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ManagedFilesystem) GetTotalBytes() uint64 {
+	if x != nil {
+		return x.TotalBytes
+	}
+	return 0
+}
+
+func (x *ManagedFilesystem) GetFreeBytes() uint64 {
+	if x != nil {
+		return x.FreeBytes
+	}
+	return 0
+}
+
+func (x *ManagedFilesystem) GetUnavailable() bool {
+	if x != nil {
+		return x.Unavailable
+	}
+	return false
+}
+
+func (x *ManagedFilesystem) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+// WorkloadSummary is the Docker workload this Agent manages, against the
+// capacity the Engine reports. It is deliberately not host OS metrics: the
+// Agent runs in a container, where /proc/net is the container's own network
+// namespace, so host network read there would be the Agent's own traffic
+// wearing the host's name. Capacity comes from the Engine because the daemon
+// runs on the host and its answer does not change with the reader's namespace.
+type WorkloadSummary struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	CpuCapacity       uint32                 `protobuf:"varint,1,opt,name=cpu_capacity,json=cpuCapacity,proto3" json:"cpu_capacity,omitempty"`
+	MemoryCapacity    uint64                 `protobuf:"varint,2,opt,name=memory_capacity,json=memoryCapacity,proto3" json:"memory_capacity,omitempty"`
+	ContainersRunning uint32                 `protobuf:"varint,3,opt,name=containers_running,json=containersRunning,proto3" json:"containers_running,omitempty"`
+	ContainersTotal   uint32                 `protobuf:"varint,4,opt,name=containers_total,json=containersTotal,proto3" json:"containers_total,omitempty"`
+	Filesystems       []*ManagedFilesystem   `protobuf:"bytes,5,rep,name=filesystems,proto3" json:"filesystems,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *WorkloadSummary) Reset() {
+	*x = WorkloadSummary{}
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkloadSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkloadSummary) ProtoMessage() {}
+
+func (x *WorkloadSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkloadSummary.ProtoReflect.Descriptor instead.
+func (*WorkloadSummary) Descriptor() ([]byte, []int) {
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *WorkloadSummary) GetCpuCapacity() uint32 {
+	if x != nil {
+		return x.CpuCapacity
+	}
+	return 0
+}
+
+func (x *WorkloadSummary) GetMemoryCapacity() uint64 {
+	if x != nil {
+		return x.MemoryCapacity
+	}
+	return 0
+}
+
+func (x *WorkloadSummary) GetContainersRunning() uint32 {
+	if x != nil {
+		return x.ContainersRunning
+	}
+	return 0
+}
+
+func (x *WorkloadSummary) GetContainersTotal() uint32 {
+	if x != nil {
+		return x.ContainersTotal
+	}
+	return 0
+}
+
+func (x *WorkloadSummary) GetFilesystems() []*ManagedFilesystem {
+	if x != nil {
+		return x.Filesystems
+	}
+	return nil
+}
+
+// MetricsMatrixFrame is one complete picture of a host at one instant. The
+// container rows and the summary are computed from a single membership
+// snapshot, so a frame never disagrees with itself; a container that dies
+// mid-assembly leaves in the next frame, not halfway through this one.
+//
+// Frames are the unit of loss. A slow consumer drops whole frames rather than
+// individual samples, because a per-sample latest-wins over one multiplexed
+// stream would let a busy container overwrite a quiet one indefinitely. Dropping
+// a frame loses one round of everything and the next frame carries every
+// container again.
+type MetricsMatrixFrame struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ObservedAtUnixNano int64                  `protobuf:"varint,1,opt,name=observed_at_unix_nano,json=observedAtUnixNano,proto3" json:"observed_at_unix_nano,omitempty"`
+	Workload           *WorkloadSummary       `protobuf:"bytes,2,opt,name=workload,proto3" json:"workload,omitempty"`
+	Containers         []*StatsSample         `protobuf:"bytes,3,rep,name=containers,proto3" json:"containers,omitempty"`
+	DroppedFrames      uint64                 `protobuf:"varint,4,opt,name=dropped_frames,json=droppedFrames,proto3" json:"dropped_frames,omitempty"`
+	// membership_stale says the container rows are the last set the Agent could
+	// confirm, not the current one, because refreshing them from the Engine
+	// failed. Keeping the rows silently would assert they are current; dropping
+	// them would say the host has no containers. A failed listing means
+	// membership is unknown, which is neither, and this is how it is said.
+	MembershipStale  bool   `protobuf:"varint,5,opt,name=membership_stale,json=membershipStale,proto3" json:"membership_stale,omitempty"`
+	MembershipReason string `protobuf:"bytes,6,opt,name=membership_reason,json=membershipReason,proto3" json:"membership_reason,omitempty"`
+	// pending_container_ids are in the membership snapshot but have not produced
+	// a sample yet. Present-but-unreported is not the same as gone, and a slow
+	// container must not delay the frame for the others.
+	PendingContainerIds []string `protobuf:"bytes,7,rep,name=pending_container_ids,json=pendingContainerIds,proto3" json:"pending_container_ids,omitempty"`
+	// workload_stale moves independently of membership_stale. Listing containers
+	// and asking the Engine about its own capacity are different calls that fail
+	// for different reasons; one frame-wide error would report a stale CPU count
+	// as containers of unknown membership, or the reverse.
+	WorkloadStale  bool   `protobuf:"varint,8,opt,name=workload_stale,json=workloadStale,proto3" json:"workload_stale,omitempty"`
+	WorkloadReason string `protobuf:"bytes,9,opt,name=workload_reason,json=workloadReason,proto3" json:"workload_reason,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *MetricsMatrixFrame) Reset() {
+	*x = MetricsMatrixFrame{}
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricsMatrixFrame) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricsMatrixFrame) ProtoMessage() {}
+
+func (x *MetricsMatrixFrame) ProtoReflect() protoreflect.Message {
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricsMatrixFrame.ProtoReflect.Descriptor instead.
+func (*MetricsMatrixFrame) Descriptor() ([]byte, []int) {
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *MetricsMatrixFrame) GetObservedAtUnixNano() int64 {
+	if x != nil {
+		return x.ObservedAtUnixNano
+	}
+	return 0
+}
+
+func (x *MetricsMatrixFrame) GetWorkload() *WorkloadSummary {
+	if x != nil {
+		return x.Workload
+	}
+	return nil
+}
+
+func (x *MetricsMatrixFrame) GetContainers() []*StatsSample {
+	if x != nil {
+		return x.Containers
+	}
+	return nil
+}
+
+func (x *MetricsMatrixFrame) GetDroppedFrames() uint64 {
+	if x != nil {
+		return x.DroppedFrames
+	}
+	return 0
+}
+
+func (x *MetricsMatrixFrame) GetMembershipStale() bool {
+	if x != nil {
+		return x.MembershipStale
+	}
+	return false
+}
+
+func (x *MetricsMatrixFrame) GetMembershipReason() string {
+	if x != nil {
+		return x.MembershipReason
+	}
+	return ""
+}
+
+func (x *MetricsMatrixFrame) GetPendingContainerIds() []string {
+	if x != nil {
+		return x.PendingContainerIds
+	}
+	return nil
+}
+
+func (x *MetricsMatrixFrame) GetWorkloadStale() bool {
+	if x != nil {
+		return x.WorkloadStale
+	}
+	return false
+}
+
+func (x *MetricsMatrixFrame) GetWorkloadReason() string {
+	if x != nil {
+		return x.WorkloadReason
+	}
+	return ""
+}
+
 type StatsSample struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	ContainerId        string                 `protobuf:"bytes,1,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
@@ -1132,7 +1477,7 @@ type StatsSample struct {
 
 func (x *StatsSample) Reset() {
 	*x = StatsSample{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[17]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1144,7 +1489,7 @@ func (x *StatsSample) String() string {
 func (*StatsSample) ProtoMessage() {}
 
 func (x *StatsSample) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[17]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1157,7 +1502,7 @@ func (x *StatsSample) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatsSample.ProtoReflect.Descriptor instead.
 func (*StatsSample) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{17}
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *StatsSample) GetContainerId() string {
@@ -1254,7 +1599,7 @@ type AuditCursor struct {
 
 func (x *AuditCursor) Reset() {
 	*x = AuditCursor{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[18]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1266,7 +1611,7 @@ func (x *AuditCursor) String() string {
 func (*AuditCursor) ProtoMessage() {}
 
 func (x *AuditCursor) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[18]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1279,7 +1624,7 @@ func (x *AuditCursor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditCursor.ProtoReflect.Descriptor instead.
 func (*AuditCursor) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{18}
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *AuditCursor) GetIncarnation() uint64 {
@@ -1307,7 +1652,7 @@ type AuditRecord struct {
 
 func (x *AuditRecord) Reset() {
 	*x = AuditRecord{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[19]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1319,7 +1664,7 @@ func (x *AuditRecord) String() string {
 func (*AuditRecord) ProtoMessage() {}
 
 func (x *AuditRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[19]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1332,7 +1677,7 @@ func (x *AuditRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditRecord.ProtoReflect.Descriptor instead.
 func (*AuditRecord) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{19}
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *AuditRecord) GetCursor() *AuditCursor {
@@ -1370,7 +1715,7 @@ type AuditGap struct {
 
 func (x *AuditGap) Reset() {
 	*x = AuditGap{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[20]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1382,7 +1727,7 @@ func (x *AuditGap) String() string {
 func (*AuditGap) ProtoMessage() {}
 
 func (x *AuditGap) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[20]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1395,7 +1740,7 @@ func (x *AuditGap) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditGap.ProtoReflect.Descriptor instead.
 func (*AuditGap) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{20}
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *AuditGap) GetIncarnation() uint64 {
@@ -1452,7 +1797,7 @@ type AuditCoverageSnapshot struct {
 
 func (x *AuditCoverageSnapshot) Reset() {
 	*x = AuditCoverageSnapshot{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[21]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1464,7 +1809,7 @@ func (x *AuditCoverageSnapshot) String() string {
 func (*AuditCoverageSnapshot) ProtoMessage() {}
 
 func (x *AuditCoverageSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[21]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1477,7 +1822,7 @@ func (x *AuditCoverageSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditCoverageSnapshot.ProtoReflect.Descriptor instead.
 func (*AuditCoverageSnapshot) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{21}
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *AuditCoverageSnapshot) GetRevision() uint64 {
@@ -1522,7 +1867,7 @@ type AuditBounds struct {
 
 func (x *AuditBounds) Reset() {
 	*x = AuditBounds{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[22]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1534,7 +1879,7 @@ func (x *AuditBounds) String() string {
 func (*AuditBounds) ProtoMessage() {}
 
 func (x *AuditBounds) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[22]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1547,7 +1892,7 @@ func (x *AuditBounds) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditBounds.ProtoReflect.Descriptor instead.
 func (*AuditBounds) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{22}
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *AuditBounds) GetWalFloor() *AuditCursor {
@@ -1603,7 +1948,7 @@ type AuditCursorBehindFloor struct {
 
 func (x *AuditCursorBehindFloor) Reset() {
 	*x = AuditCursorBehindFloor{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[23]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1615,7 +1960,7 @@ func (x *AuditCursorBehindFloor) String() string {
 func (*AuditCursorBehindFloor) ProtoMessage() {}
 
 func (x *AuditCursorBehindFloor) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[23]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1628,7 +1973,7 @@ func (x *AuditCursorBehindFloor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditCursorBehindFloor.ProtoReflect.Descriptor instead.
 func (*AuditCursorBehindFloor) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{23}
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *AuditCursorBehindFloor) GetRequested() *AuditCursor {
@@ -1667,7 +2012,7 @@ type AuditUpstream struct {
 
 func (x *AuditUpstream) Reset() {
 	*x = AuditUpstream{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[24]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1679,7 +2024,7 @@ func (x *AuditUpstream) String() string {
 func (*AuditUpstream) ProtoMessage() {}
 
 func (x *AuditUpstream) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[24]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1692,7 +2037,7 @@ func (x *AuditUpstream) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditUpstream.ProtoReflect.Descriptor instead.
 func (*AuditUpstream) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{24}
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *AuditUpstream) GetMessage() isAuditUpstream_Message {
@@ -1781,7 +2126,7 @@ type AuditArchiveDescriptor struct {
 
 func (x *AuditArchiveDescriptor) Reset() {
 	*x = AuditArchiveDescriptor{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[25]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1793,7 +2138,7 @@ func (x *AuditArchiveDescriptor) String() string {
 func (*AuditArchiveDescriptor) ProtoMessage() {}
 
 func (x *AuditArchiveDescriptor) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[25]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1806,7 +2151,7 @@ func (x *AuditArchiveDescriptor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditArchiveDescriptor.ProtoReflect.Descriptor instead.
 func (*AuditArchiveDescriptor) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{25}
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *AuditArchiveDescriptor) GetServerIdentityId() string {
@@ -1844,7 +2189,7 @@ type AuditAck struct {
 
 func (x *AuditAck) Reset() {
 	*x = AuditAck{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[26]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1856,7 +2201,7 @@ func (x *AuditAck) String() string {
 func (*AuditAck) ProtoMessage() {}
 
 func (x *AuditAck) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[26]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1869,7 +2214,7 @@ func (x *AuditAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditAck.ProtoReflect.Descriptor instead.
 func (*AuditAck) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{26}
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *AuditAck) GetAuditArchiveId() string {
@@ -1912,7 +2257,7 @@ type AuditAckResult struct {
 
 func (x *AuditAckResult) Reset() {
 	*x = AuditAckResult{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[27]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1924,7 +2269,7 @@ func (x *AuditAckResult) String() string {
 func (*AuditAckResult) ProtoMessage() {}
 
 func (x *AuditAckResult) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[27]
+	mi := &file_dockpilot_product_v1_session_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1937,7 +2282,7 @@ func (x *AuditAckResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditAckResult.ProtoReflect.Descriptor instead.
 func (*AuditAckResult) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{27}
+	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *AuditAckResult) GetProposed() *AuditCursor {
@@ -1974,7 +2319,7 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"\n" +
 	"\"dockpilot/product/v1/session.proto\x12\x14dockpilot.product.v1\"=\n" +
 	"\x10HeartbeatRequest\x12)\n" +
-	"\x11sent_at_unix_nano\x18\x01 \x01(\x03R\x0esentAtUnixNano\"\xff\x02\n" +
+	"\x11sent_at_unix_nano\x18\x01 \x01(\x03R\x0esentAtUnixNano\"\xa6\x03\n" +
 	"\n" +
 	"Capability\x12)\n" +
 	"\x10connection_ready\x18\x01 \x01(\bR\x0fconnectionReady\x12!\n" +
@@ -1987,7 +2332,8 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"\bfs_write\x18\b \x01(\bR\afsWrite\x12$\n" +
 	"\x0efs_read_reason\x18\t \x01(\tR\ffsReadReason\x12&\n" +
 	"\x0ffs_write_reason\x18\n" +
-	" \x01(\tR\rfsWriteReason\"\x88\x01\n" +
+	" \x01(\tR\rfsWriteReason\x12%\n" +
+	"\x0emetrics_matrix\x18\v \x01(\bR\rmetricsMatrix\"\x88\x01\n" +
 	"\x11HeartbeatResponse\x121\n" +
 	"\x15observed_at_unix_nano\x18\x01 \x01(\x03R\x12observedAtUnixNano\x12@\n" +
 	"\n" +
@@ -2064,7 +2410,34 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"\bterminal\x18\a \x01(\bR\bterminal\x12\x14\n" +
 	"\x05error\x18\b \x01(\tR\x05error\"7\n" +
 	"\x12StatsStreamRequest\x12!\n" +
-	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\"\xa6\x03\n" +
+	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\"\x16\n" +
+	"\x14MetricsMatrixRequest\"\xa1\x01\n" +
+	"\x11ManagedFilesystem\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1f\n" +
+	"\vtotal_bytes\x18\x02 \x01(\x04R\n" +
+	"totalBytes\x12\x1d\n" +
+	"\n" +
+	"free_bytes\x18\x03 \x01(\x04R\tfreeBytes\x12 \n" +
+	"\vunavailable\x18\x04 \x01(\bR\vunavailable\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"\x82\x02\n" +
+	"\x0fWorkloadSummary\x12!\n" +
+	"\fcpu_capacity\x18\x01 \x01(\rR\vcpuCapacity\x12'\n" +
+	"\x0fmemory_capacity\x18\x02 \x01(\x04R\x0ememoryCapacity\x12-\n" +
+	"\x12containers_running\x18\x03 \x01(\rR\x11containersRunning\x12)\n" +
+	"\x10containers_total\x18\x04 \x01(\rR\x0fcontainersTotal\x12I\n" +
+	"\vfilesystems\x18\x05 \x03(\v2'.dockpilot.product.v1.ManagedFilesystemR\vfilesystems\"\xd0\x03\n" +
+	"\x12MetricsMatrixFrame\x121\n" +
+	"\x15observed_at_unix_nano\x18\x01 \x01(\x03R\x12observedAtUnixNano\x12A\n" +
+	"\bworkload\x18\x02 \x01(\v2%.dockpilot.product.v1.WorkloadSummaryR\bworkload\x12A\n" +
+	"\n" +
+	"containers\x18\x03 \x03(\v2!.dockpilot.product.v1.StatsSampleR\n" +
+	"containers\x12%\n" +
+	"\x0edropped_frames\x18\x04 \x01(\x04R\rdroppedFrames\x12)\n" +
+	"\x10membership_stale\x18\x05 \x01(\bR\x0fmembershipStale\x12+\n" +
+	"\x11membership_reason\x18\x06 \x01(\tR\x10membershipReason\x122\n" +
+	"\x15pending_container_ids\x18\a \x03(\tR\x13pendingContainerIds\x12%\n" +
+	"\x0eworkload_stale\x18\b \x01(\bR\rworkloadStale\x12'\n" +
+	"\x0fworkload_reason\x18\t \x01(\tR\x0eworkloadReason\"\xa6\x03\n" +
 	"\vStatsSample\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x121\n" +
 	"\x15observed_at_unix_nano\x18\x02 \x01(\x03R\x12observedAtUnixNano\x12\x1f\n" +
@@ -2153,7 +2526,7 @@ func file_dockpilot_product_v1_session_proto_rawDescGZIP() []byte {
 	return file_dockpilot_product_v1_session_proto_rawDescData
 }
 
-var file_dockpilot_product_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_dockpilot_product_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_dockpilot_product_v1_session_proto_goTypes = []any{
 	(*HeartbeatRequest)(nil),             // 0: dockpilot.product.v1.HeartbeatRequest
 	(*Capability)(nil),                   // 1: dockpilot.product.v1.Capability
@@ -2172,17 +2545,21 @@ var file_dockpilot_product_v1_session_proto_goTypes = []any{
 	(*LogStreamRequest)(nil),             // 14: dockpilot.product.v1.LogStreamRequest
 	(*LogEvent)(nil),                     // 15: dockpilot.product.v1.LogEvent
 	(*StatsStreamRequest)(nil),           // 16: dockpilot.product.v1.StatsStreamRequest
-	(*StatsSample)(nil),                  // 17: dockpilot.product.v1.StatsSample
-	(*AuditCursor)(nil),                  // 18: dockpilot.product.v1.AuditCursor
-	(*AuditRecord)(nil),                  // 19: dockpilot.product.v1.AuditRecord
-	(*AuditGap)(nil),                     // 20: dockpilot.product.v1.AuditGap
-	(*AuditCoverageSnapshot)(nil),        // 21: dockpilot.product.v1.AuditCoverageSnapshot
-	(*AuditBounds)(nil),                  // 22: dockpilot.product.v1.AuditBounds
-	(*AuditCursorBehindFloor)(nil),       // 23: dockpilot.product.v1.AuditCursorBehindFloor
-	(*AuditUpstream)(nil),                // 24: dockpilot.product.v1.AuditUpstream
-	(*AuditArchiveDescriptor)(nil),       // 25: dockpilot.product.v1.AuditArchiveDescriptor
-	(*AuditAck)(nil),                     // 26: dockpilot.product.v1.AuditAck
-	(*AuditAckResult)(nil),               // 27: dockpilot.product.v1.AuditAckResult
+	(*MetricsMatrixRequest)(nil),         // 17: dockpilot.product.v1.MetricsMatrixRequest
+	(*ManagedFilesystem)(nil),            // 18: dockpilot.product.v1.ManagedFilesystem
+	(*WorkloadSummary)(nil),              // 19: dockpilot.product.v1.WorkloadSummary
+	(*MetricsMatrixFrame)(nil),           // 20: dockpilot.product.v1.MetricsMatrixFrame
+	(*StatsSample)(nil),                  // 21: dockpilot.product.v1.StatsSample
+	(*AuditCursor)(nil),                  // 22: dockpilot.product.v1.AuditCursor
+	(*AuditRecord)(nil),                  // 23: dockpilot.product.v1.AuditRecord
+	(*AuditGap)(nil),                     // 24: dockpilot.product.v1.AuditGap
+	(*AuditCoverageSnapshot)(nil),        // 25: dockpilot.product.v1.AuditCoverageSnapshot
+	(*AuditBounds)(nil),                  // 26: dockpilot.product.v1.AuditBounds
+	(*AuditCursorBehindFloor)(nil),       // 27: dockpilot.product.v1.AuditCursorBehindFloor
+	(*AuditUpstream)(nil),                // 28: dockpilot.product.v1.AuditUpstream
+	(*AuditArchiveDescriptor)(nil),       // 29: dockpilot.product.v1.AuditArchiveDescriptor
+	(*AuditAck)(nil),                     // 30: dockpilot.product.v1.AuditAck
+	(*AuditAckResult)(nil),               // 31: dockpilot.product.v1.AuditAckResult
 }
 var file_dockpilot_product_v1_session_proto_depIdxs = []int32{
 	1,  // 0: dockpilot.product.v1.HeartbeatResponse.capability:type_name -> dockpilot.product.v1.Capability
@@ -2190,28 +2567,31 @@ var file_dockpilot_product_v1_session_proto_depIdxs = []int32{
 	6,  // 2: dockpilot.product.v1.CancelOperationResponse.operation:type_name -> dockpilot.product.v1.OperationResponse
 	6,  // 3: dockpilot.product.v1.ActiveOperation.operation:type_name -> dockpilot.product.v1.OperationResponse
 	12, // 4: dockpilot.product.v1.ListActiveOperationsResponse.operations:type_name -> dockpilot.product.v1.ActiveOperation
-	18, // 5: dockpilot.product.v1.AuditRecord.cursor:type_name -> dockpilot.product.v1.AuditCursor
-	20, // 6: dockpilot.product.v1.AuditCoverageSnapshot.gaps:type_name -> dockpilot.product.v1.AuditGap
-	18, // 7: dockpilot.product.v1.AuditBounds.wal_floor:type_name -> dockpilot.product.v1.AuditCursor
-	18, // 8: dockpilot.product.v1.AuditBounds.wal_ceiling:type_name -> dockpilot.product.v1.AuditCursor
-	18, // 9: dockpilot.product.v1.AuditBounds.next_cursor:type_name -> dockpilot.product.v1.AuditCursor
-	18, // 10: dockpilot.product.v1.AuditBounds.server_acked_through:type_name -> dockpilot.product.v1.AuditCursor
-	18, // 11: dockpilot.product.v1.AuditCursorBehindFloor.requested:type_name -> dockpilot.product.v1.AuditCursor
-	22, // 12: dockpilot.product.v1.AuditCursorBehindFloor.bounds:type_name -> dockpilot.product.v1.AuditBounds
-	21, // 13: dockpilot.product.v1.AuditCursorBehindFloor.coverage:type_name -> dockpilot.product.v1.AuditCoverageSnapshot
-	19, // 14: dockpilot.product.v1.AuditUpstream.record:type_name -> dockpilot.product.v1.AuditRecord
-	21, // 15: dockpilot.product.v1.AuditUpstream.coverage:type_name -> dockpilot.product.v1.AuditCoverageSnapshot
-	23, // 16: dockpilot.product.v1.AuditUpstream.cursor_behind_floor:type_name -> dockpilot.product.v1.AuditCursorBehindFloor
-	27, // 17: dockpilot.product.v1.AuditUpstream.ack_result:type_name -> dockpilot.product.v1.AuditAckResult
-	18, // 18: dockpilot.product.v1.AuditAck.cursor:type_name -> dockpilot.product.v1.AuditCursor
-	25, // 19: dockpilot.product.v1.AuditAck.archive:type_name -> dockpilot.product.v1.AuditArchiveDescriptor
-	18, // 20: dockpilot.product.v1.AuditAckResult.proposed:type_name -> dockpilot.product.v1.AuditCursor
-	21, // 21: dockpilot.product.v1.AuditAckResult.stale_coverage:type_name -> dockpilot.product.v1.AuditCoverageSnapshot
-	22, // [22:22] is the sub-list for method output_type
-	22, // [22:22] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	18, // 5: dockpilot.product.v1.WorkloadSummary.filesystems:type_name -> dockpilot.product.v1.ManagedFilesystem
+	19, // 6: dockpilot.product.v1.MetricsMatrixFrame.workload:type_name -> dockpilot.product.v1.WorkloadSummary
+	21, // 7: dockpilot.product.v1.MetricsMatrixFrame.containers:type_name -> dockpilot.product.v1.StatsSample
+	22, // 8: dockpilot.product.v1.AuditRecord.cursor:type_name -> dockpilot.product.v1.AuditCursor
+	24, // 9: dockpilot.product.v1.AuditCoverageSnapshot.gaps:type_name -> dockpilot.product.v1.AuditGap
+	22, // 10: dockpilot.product.v1.AuditBounds.wal_floor:type_name -> dockpilot.product.v1.AuditCursor
+	22, // 11: dockpilot.product.v1.AuditBounds.wal_ceiling:type_name -> dockpilot.product.v1.AuditCursor
+	22, // 12: dockpilot.product.v1.AuditBounds.next_cursor:type_name -> dockpilot.product.v1.AuditCursor
+	22, // 13: dockpilot.product.v1.AuditBounds.server_acked_through:type_name -> dockpilot.product.v1.AuditCursor
+	22, // 14: dockpilot.product.v1.AuditCursorBehindFloor.requested:type_name -> dockpilot.product.v1.AuditCursor
+	26, // 15: dockpilot.product.v1.AuditCursorBehindFloor.bounds:type_name -> dockpilot.product.v1.AuditBounds
+	25, // 16: dockpilot.product.v1.AuditCursorBehindFloor.coverage:type_name -> dockpilot.product.v1.AuditCoverageSnapshot
+	23, // 17: dockpilot.product.v1.AuditUpstream.record:type_name -> dockpilot.product.v1.AuditRecord
+	25, // 18: dockpilot.product.v1.AuditUpstream.coverage:type_name -> dockpilot.product.v1.AuditCoverageSnapshot
+	27, // 19: dockpilot.product.v1.AuditUpstream.cursor_behind_floor:type_name -> dockpilot.product.v1.AuditCursorBehindFloor
+	31, // 20: dockpilot.product.v1.AuditUpstream.ack_result:type_name -> dockpilot.product.v1.AuditAckResult
+	22, // 21: dockpilot.product.v1.AuditAck.cursor:type_name -> dockpilot.product.v1.AuditCursor
+	29, // 22: dockpilot.product.v1.AuditAck.archive:type_name -> dockpilot.product.v1.AuditArchiveDescriptor
+	22, // 23: dockpilot.product.v1.AuditAckResult.proposed:type_name -> dockpilot.product.v1.AuditCursor
+	25, // 24: dockpilot.product.v1.AuditAckResult.stale_coverage:type_name -> dockpilot.product.v1.AuditCoverageSnapshot
+	25, // [25:25] is the sub-list for method output_type
+	25, // [25:25] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_dockpilot_product_v1_session_proto_init() }
@@ -2219,7 +2599,7 @@ func file_dockpilot_product_v1_session_proto_init() {
 	if File_dockpilot_product_v1_session_proto != nil {
 		return
 	}
-	file_dockpilot_product_v1_session_proto_msgTypes[24].OneofWrappers = []any{
+	file_dockpilot_product_v1_session_proto_msgTypes[28].OneofWrappers = []any{
 		(*AuditUpstream_Record)(nil),
 		(*AuditUpstream_Coverage)(nil),
 		(*AuditUpstream_CursorBehindFloor)(nil),
@@ -2231,7 +2611,7 @@ func file_dockpilot_product_v1_session_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dockpilot_product_v1_session_proto_rawDesc), len(file_dockpilot_product_v1_session_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   28,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

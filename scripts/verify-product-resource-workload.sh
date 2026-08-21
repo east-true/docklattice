@@ -45,11 +45,23 @@ for literal in \
     'last-three average RSS <= 120% of first-three after the churn baseline' \
     'all four window quarters slope upward' \
     'anonymous memory increased persistently across the observation window' \
-    'rm -f "$RESOURCE_VERDICT_FILE"'; do
+    'rm -f "$RESOURCE_VERDICT_FILE"' \
+    'api/v1/live/matrix?agent_id=$agent_id' \
+    'matrix-evidence.jsonl' \
+    'capabilities.metrics.enabled' \
+    'a Matrix-active trial is impossible' \
+    'phase:"idle"' \
+    'phase:"active"' \
+    'grep -c ' \
+    'this trial measured no Metrics activity' \
+    'no Matrix frame carried a container row' \
+    'Matrix capture exceeded its explicit bound' \
+    'agent_dropped_frames' \
+    'server_dropped_frames'; do
     require_literal "$literal" "$driver"
 done
 
-for key in PRODUCT_SERVER_AGENT REAL_COMPOSE_CHILD REAL_WAL_FSYNC BACKUP_SNAPSHOT_IO DISCOVERY_SCAN APPENDIX_A_MIX P0_P1_PASS AUDIT_CONTINUITY_PASS BOUNDED_BUFFERS_PASS RESOURCE_TREND_PASS; do
+for key in PRODUCT_SERVER_AGENT REAL_COMPOSE_CHILD REAL_WAL_FSYNC BACKUP_SNAPSHOT_IO DISCOVERY_SCAN APPENDIX_A_MIX P0_P1_PASS AUDIT_CONTINUITY_PASS BOUNDED_BUFFERS_PASS RESOURCE_TREND_PASS MATRIX_IDLE_PASS MATRIX_ACTIVE_PASS; do
     require_literal "$key" "$driver"
 done
 

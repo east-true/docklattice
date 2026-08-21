@@ -160,6 +160,8 @@ func (h *Handler) serveAPI(w http.ResponseWriter, r *http.Request) {
 		h.serveLogs(w, r)
 	case r.URL.Path == "/api/v1/live/stats" && r.Method == http.MethodGet:
 		h.serveStats(w, r)
+	case r.URL.Path == "/api/v1/live/matrix" && r.Method == http.MethodGet:
+		h.serveMatrix(w, r)
 	case r.URL.Path == "/api/v1/dashboard" && r.Method == http.MethodGet:
 		if !requireEmptyGET(w, r) {
 			return
@@ -513,6 +515,69 @@ func (h *Handler) serveStats(w http.ResponseWriter, r *http.Request) {
 		}
 		flusher.Flush()
 	}
+}
+
+// serveMatrix streams one host's whole picture. It holds no state and decides
+// nothing: the Backend has already settled membership, context and aggregation,
+// and normalizing any of it here - filling in a stale reason, hiding a pending
+// container, merging the two dropped-frame counters - would quietly contradict
+// what the Server measured.
+func (h *Handler) serveMatrix(w http.ResponseWriter, r *http.Request) {
+	agentID, err := decodeMatrixRequest(r)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	stream, err := h.backend.OpenMatrix(r.Context(), agentID)
+	if err != nil {
+		// A host that cannot be watched answers here, before any SSE body is
+		// written, so the browser gets a status and a reason rather than an
+		// open stream that never produces a frame.
+		h.respond(w, nil, err)
+		return
+	}
+	defer stream.Close()
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeProblem(w, http.StatusInternalServerError, "STREAM_UNAVAILABLE", "streaming response is unavailable")
+		return
+	}
+	prepareSSE(w)
+	if _, err := io.WriteString(w, ": stream-open\n\n"); err != nil {
+		return
+	}
+	flusher.Flush()
+	for {
+		frame, err := stream.Recv(r.Context())
+		if err != nil {
+			return
+		}
+		if err := writeSSE(w, "matrix", frame); err != nil {
+			return
+		}
+		flusher.Flush()
+	}
+}
+
+// decodeMatrixRequest accepts one host and nothing else. The frame is the whole
+// host by design, so there is no container or service selector to offer:
+// narrowing is the viewer's job, and a second endpoint carrying the same data
+// in a different shape would be a second thing to keep correct.
+func decodeMatrixRequest(r *http.Request) (string, error) {
+	if r.Header.Get("Last-Event-ID") != "" {
+		return "", errors.New("live streams cannot be resumed")
+	}
+	query := r.URL.Query()
+	for key, values := range query {
+		if key != "agent_id" || len(values) != 1 {
+			return "", fmt.Errorf("unsupported or repeated live-stream parameter %q", key)
+		}
+	}
+	agentID := query.Get("agent_id")
+	if agentID == "" {
+		return "", errors.New("agent_id is required")
+	}
+	return agentID, nil
 }
 
 func decodeLiveRequest(r *http.Request, logs bool) (LiveRequest, error) {

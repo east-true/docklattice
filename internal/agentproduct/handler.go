@@ -19,6 +19,7 @@ import (
 	"github.com/east-true/dockpilot/internal/composeexec"
 	productconfig "github.com/east-true/dockpilot/internal/config"
 	"github.com/east-true/dockpilot/internal/dockeradapter"
+	"github.com/east-true/dockpilot/internal/livematrix"
 	"github.com/east-true/dockpilot/internal/livestats"
 	"github.com/east-true/dockpilot/internal/logrelay"
 	"github.com/east-true/dockpilot/internal/operation"
@@ -81,6 +82,19 @@ type Config struct {
 
 	StatsSource         livestats.Source
 	StatsSampleInterval time.Duration
+
+	// MatrixDocker, MatrixPaths and MatrixFrameInterval configure host-scoped
+	// live metrics. MatrixPaths are the paths Dockpilot writes to - the
+	// discovery roots and the Agent state root - reported as capacity, not as
+	// an inventory of the host's mounts.
+	MatrixDocker        MatrixDocker
+	MatrixPaths         []string
+	MatrixFrameInterval time.Duration
+
+	// matrixEventRetry and matrixProbe exist so tests can drive the event
+	// resubscribe delay and the filesystem probe without a real host.
+	matrixEventRetry time.Duration
+	matrixProbe      func(string) (filesystemUsage, error)
 }
 
 // Handler implements the complete v1 Agent product surface. It owns only the
@@ -95,20 +109,23 @@ type Handler struct {
 	logs       producttransport.LogStreamHandler
 	stats      producttransport.StatsStreamHandler
 	statsHub   *livestats.Hub
+	matrix     producttransport.MetricsMatrixStreamHandler
+	matrixHub  *livematrix.Hub
 
 	closeOnce sync.Once
 	closeErr  error
 }
 
 var (
-	_ producttransport.AgentHandler             = (*Handler)(nil)
-	_ producttransport.AuditSyncHandler         = (*Handler)(nil)
-	_ producttransport.QueryHandler             = (*Handler)(nil)
-	_ producttransport.OperationHandler         = (*Handler)(nil)
-	_ producttransport.OperationControlHandler  = (*Handler)(nil)
-	_ producttransport.OperationRecoveryHandler = (*Handler)(nil)
-	_ producttransport.LogStreamHandler         = (*Handler)(nil)
-	_ producttransport.StatsStreamHandler       = (*Handler)(nil)
+	_ producttransport.AgentHandler               = (*Handler)(nil)
+	_ producttransport.AuditSyncHandler           = (*Handler)(nil)
+	_ producttransport.QueryHandler               = (*Handler)(nil)
+	_ producttransport.OperationHandler           = (*Handler)(nil)
+	_ producttransport.OperationControlHandler    = (*Handler)(nil)
+	_ producttransport.OperationRecoveryHandler   = (*Handler)(nil)
+	_ producttransport.LogStreamHandler           = (*Handler)(nil)
+	_ producttransport.StatsStreamHandler         = (*Handler)(nil)
+	_ producttransport.MetricsMatrixStreamHandler = (*Handler)(nil)
 )
 
 func New(config Config) (*Handler, error) {
@@ -153,11 +170,17 @@ func New(config Config) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	matrix, err := newMatrixHub(config, stats)
+	if err != nil {
+		_ = stats.Close()
+		return nil, err
+	}
 	return &Handler{
 		control: config.Control, audit: audit, query: queries, operations: operations,
 		engine: config.Engine,
 		logs:   producttransport.LogRelayHandler{Relay: logs},
 		stats:  producttransport.LiveStatsHandler{Hub: stats}, statsHub: stats,
+		matrix: producttransport.LiveMatrixHandler{Hub: matrix}, matrixHub: matrix,
 	}, nil
 }
 
@@ -257,12 +280,42 @@ func validCancelReason(reason operation.CancelReason) bool {
 	}
 }
 
+// The three stream methods below each check their handler before calling it.
+//
+// New cannot produce a Handler with any of them missing - it refuses the
+// configuration instead - so in a running Agent these checks never fire. They
+// are here because *Handler satisfies every stream handler interface
+// unconditionally, which means the transport's own "handler is not configured"
+// check can never fire for this type: the type assertion always succeeds, and
+// whatever is behind the field is called. That leaves the constructor as the
+// only thing standing between a Server's call and a nil dereference, and a
+// process boundary must not depend on an invariant held one layer away.
+//
+// Capability negotiation decides which Agents a Server should call. It is not
+// what keeps an Agent alive when something calls anyway - an older Server, a
+// replayed request, a future build that makes one of these optional. The answer
+// to a call that cannot be served is the same one every other unconfigured
+// handler gives, which the transport already renders as Unimplemented.
+
 func (h *Handler) StreamLogs(ctx context.Context, info producttransport.SessionInfo, request producttransport.LogRequest, sender producttransport.LogSender) error {
+	if h.logs == nil {
+		return fmt.Errorf("%w: logs", producttransport.ErrHandlerUnavailable)
+	}
 	return h.logs.StreamLogs(ctx, info, request, sender)
 }
 
 func (h *Handler) StreamStats(ctx context.Context, info producttransport.SessionInfo, request producttransport.StatsRequest, sender producttransport.StatsSender) error {
+	if h.stats == nil {
+		return fmt.Errorf("%w: stats", producttransport.ErrHandlerUnavailable)
+	}
 	return h.stats.StreamStats(ctx, info, request, sender)
+}
+
+func (h *Handler) StreamMetricsMatrix(ctx context.Context, info producttransport.SessionInfo, request producttransport.MetricsMatrixRequest, sender producttransport.MetricsMatrixSender) error {
+	if h.matrix == nil {
+		return fmt.Errorf("%w: metrics matrix", producttransport.ErrHandlerUnavailable)
+	}
+	return h.matrix.StreamMetricsMatrix(ctx, info, request, sender)
 }
 
 // Close stops viewer-scoped Docker stats collection. It deliberately does not
@@ -270,6 +323,8 @@ func (h *Handler) StreamStats(ctx context.Context, info producttransport.Session
 // those dependencies are owned by agentruntime and have a stricter shutdown
 // order relative to Audit WAL finalization.
 func (h *Handler) Close() error {
-	h.closeOnce.Do(func() { h.closeErr = h.statsHub.Close() })
+	// The matrix hub holds container subscriptions from the stats hub, so it
+	// goes first: closing it releases them before their owner shuts down.
+	h.closeOnce.Do(func() { h.closeErr = errors.Join(h.matrixHub.Close(), h.statsHub.Close()) })
 	return h.closeErr
 }

@@ -150,6 +150,8 @@ func validConfig(t *testing.T) (Config, *fakeControl, *fakeDocker) {
 			return ctx.Err()
 		}),
 		StatsSampleInterval: time.Millisecond,
+		MatrixDocker:        &fakeMatrixDocker{},
+		MatrixFrameInterval: time.Millisecond,
 	}, control, docker
 }
 

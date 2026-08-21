@@ -50,6 +50,7 @@ type Defaults struct {
 	DiscoveryMaxDuration              time.Duration
 	DiscoveryDirectoriesPerSecond     int
 	StatsSampleInterval               time.Duration
+	MetricsFrameInterval              time.Duration
 	BrowserSparklineSamples           int
 	HeartbeatInterval                 time.Duration
 	OfflineAfter                      time.Duration
@@ -103,6 +104,7 @@ func V1Defaults() Defaults {
 		DiscoveryMaxDuration:              time.Minute,
 		DiscoveryDirectoriesPerSecond:     1_000,
 		StatsSampleInterval:               2 * time.Second,
+		MetricsFrameInterval:              2 * time.Second,
 		BrowserSparklineSamples:           120,
 		HeartbeatInterval:                 30 * time.Second,
 		OfflineAfter:                      90 * time.Second,
@@ -136,6 +138,7 @@ func (d Defaults) Validate() error {
 		"discovery interval":         d.DiscoveryInterval,
 		"discovery max duration":     d.DiscoveryMaxDuration,
 		"stats sample interval":      d.StatsSampleInterval,
+		"metrics frame interval":     d.MetricsFrameInterval,
 		"heartbeat interval":         d.HeartbeatInterval,
 		"offline threshold":          d.OfflineAfter,
 		"credential lifetime":        d.CredentialLifetime,

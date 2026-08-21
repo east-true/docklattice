@@ -25,6 +25,12 @@ message Capability {
   bool fs_write = 8;
   string fs_read_reason = 9;
   string fs_write_reason = 10;
+  // metrics_matrix reports that this Agent can serve the host-scoped metrics
+  // matrix stream. It is a capability rather than a protocol version because an
+  // Agent built before the feature reports the same protocol version as one
+  // built after, and so cannot be told apart by version. An Agent that does not
+  // know this field leaves it false, which is the answer the Server needs.
+  bool metrics_matrix = 11;
 }
 
 message HeartbeatResponse {
@@ -117,6 +123,72 @@ message LogEvent {
 
 message StatsStreamRequest {
   string container_id = 1;
+}
+
+// MetricsMatrixRequest opens the host-scoped metrics stream. It carries no
+// selector: the frame is the whole host, and narrowing is the viewer's job.
+message MetricsMatrixRequest {}
+
+// ManagedFilesystem is capacity for a path Dockpilot writes to - a discovery
+// root or the Agent state directory - deduplicated by filesystem. It is not an
+// inventory of the host's mounts.
+message ManagedFilesystem {
+  string path = 1;
+  uint64 total_bytes = 2;
+  uint64 free_bytes = 3;
+  // unavailable is this one path failing to answer - a discovery root that has
+  // gone, or one the Agent cannot stat. It is a fact about the path, and must
+  // not take the rest of the workload summary with it.
+  bool unavailable = 4;
+  string reason = 5;
+}
+
+// WorkloadSummary is the Docker workload this Agent manages, against the
+// capacity the Engine reports. It is deliberately not host OS metrics: the
+// Agent runs in a container, where /proc/net is the container's own network
+// namespace, so host network read there would be the Agent's own traffic
+// wearing the host's name. Capacity comes from the Engine because the daemon
+// runs on the host and its answer does not change with the reader's namespace.
+message WorkloadSummary {
+  uint32 cpu_capacity = 1;
+  uint64 memory_capacity = 2;
+  uint32 containers_running = 3;
+  uint32 containers_total = 4;
+  repeated ManagedFilesystem filesystems = 5;
+}
+
+// MetricsMatrixFrame is one complete picture of a host at one instant. The
+// container rows and the summary are computed from a single membership
+// snapshot, so a frame never disagrees with itself; a container that dies
+// mid-assembly leaves in the next frame, not halfway through this one.
+//
+// Frames are the unit of loss. A slow consumer drops whole frames rather than
+// individual samples, because a per-sample latest-wins over one multiplexed
+// stream would let a busy container overwrite a quiet one indefinitely. Dropping
+// a frame loses one round of everything and the next frame carries every
+// container again.
+message MetricsMatrixFrame {
+  int64 observed_at_unix_nano = 1;
+  WorkloadSummary workload = 2;
+  repeated StatsSample containers = 3;
+  uint64 dropped_frames = 4;
+  // membership_stale says the container rows are the last set the Agent could
+  // confirm, not the current one, because refreshing them from the Engine
+  // failed. Keeping the rows silently would assert they are current; dropping
+  // them would say the host has no containers. A failed listing means
+  // membership is unknown, which is neither, and this is how it is said.
+  bool membership_stale = 5;
+  string membership_reason = 6;
+  // pending_container_ids are in the membership snapshot but have not produced
+  // a sample yet. Present-but-unreported is not the same as gone, and a slow
+  // container must not delay the frame for the others.
+  repeated string pending_container_ids = 7;
+  // workload_stale moves independently of membership_stale. Listing containers
+  // and asking the Engine about its own capacity are different calls that fail
+  // for different reasons; one frame-wide error would report a stale CPU count
+  // as containers of unknown membership, or the reverse.
+  bool workload_stale = 8;
+  string workload_reason = 9;
 }
 
 message StatsSample {

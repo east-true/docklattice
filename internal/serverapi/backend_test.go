@@ -1436,7 +1436,11 @@ type fakeSession struct {
 	statsRequest           producttransport.StatsRequest
 	logStream              producttransport.LogReceiveStream
 	statsStream            producttransport.StatsReceiveStream
+	matrixStream           producttransport.MetricsMatrixReceiveStream
+	matrixOpens            int
 }
+
+func (s *fakeSession) matrixOpenCalls() int { s.mu.Lock(); defer s.mu.Unlock(); return s.matrixOpens }
 
 type fakeRecoverySession struct {
 	*fakeSession
@@ -1475,7 +1479,14 @@ func (s *fakeSession) Close(error) error {
 		s.state = producttransport.StateClosed
 		close(s.done)
 	}
+	// A closed session takes its streams with it, exactly as the real
+	// transport does. Without this a replaced session would leave a stream that
+	// still answers, which is a state the Agent side cannot produce.
+	stream := s.matrixStream
 	s.mu.Unlock()
+	if stream != nil {
+		_ = stream.Close()
+	}
 	return nil
 }
 func (s *fakeSession) Heartbeat(ctx context.Context) (producttransport.Heartbeat, error) {
@@ -1547,6 +1558,15 @@ func (s *fakeSession) OpenLogs(_ context.Context, request producttransport.LogRe
 		return nil, producttransport.ErrHandlerUnavailable
 	}
 	return s.logStream, nil
+}
+func (s *fakeSession) OpenMetricsMatrix(_ context.Context, _ producttransport.MetricsMatrixRequest) (producttransport.MetricsMatrixReceiveStream, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.matrixOpens++
+	if s.matrixStream == nil {
+		return nil, producttransport.ErrHandlerUnavailable
+	}
+	return s.matrixStream, nil
 }
 func (s *fakeSession) OpenStats(_ context.Context, request producttransport.StatsRequest) (producttransport.StatsReceiveStream, error) {
 	s.mu.Lock()

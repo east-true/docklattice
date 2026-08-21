@@ -322,6 +322,20 @@ containers=$(docker ps -q --no-trunc --filter "label=io.dockpilot.resource-drive
 [ "$(printf '%s\n' "$containers" | awk 'NF { count++ } END { print count+0 }')" -eq 6 ] || fail "did not start exactly six bounded log/stat emitters"
 container_list=$(printf '%s\n' "$containers" | tr '\n' ' ')
 
+# The Matrix hot path is measured, not assumed. Before any viewer exists this
+# records the idle half of the design's central claim - no viewer, no
+# collection - and refuses to continue if the Agent cannot serve the stream at
+# all, because a trial that never opened it would report Metrics resource cost
+# that no Metrics produced.
+matrix_evidence="$evidence/matrix-evidence.jsonl"
+matrix_capability=$(jq -r --arg id "$agent_id" \
+    '[.hosts[] | select(.id == $id) | .capabilities.metrics.enabled] | first // false' "$DOCKPILOT_DASHBOARD_FILE")
+[ "$matrix_capability" = true ] || fail "Agent does not report the metrics_matrix capability; a Matrix-active trial is impossible"
+matrix_idle_streams=0
+matrix_idle_at=$(now_iso)
+jq -cn --arg at "$matrix_idle_at" --argjson trial "$trial" --argjson streams "$matrix_idle_streams" \
+    '{at:$at,trial:$trial,phase:"idle",matrix_subscriptions_opened:$streams,matrix_frames_received:0}' >"$matrix_evidence"
+
 stream_pids=
 start_stream() {
     kind=$1
@@ -329,7 +343,15 @@ start_stream() {
     container=$3
     seconds=$4
     status_file="$evidence/stream-$kind-$index.status"
-    if [ "$kind" = slow-log ]; then
+    if [ "$kind" = matrix ]; then
+        # Host-scoped: one stream carries every container on this Agent, so
+        # the container argument is deliberately unused here. The body is
+        # captured because the only proof this hot path actually ran is a
+        # frame, not a status code.
+        output="$evidence/matrix.sse"
+        rate_args=
+        url="$DOCKPILOT_BASE_URL/api/v1/live/matrix?agent_id=$agent_id"
+    elif [ "$kind" = slow-log ]; then
         output="$evidence/slow-log.sse"
         rate_args="--limit-rate 1k"
         url="$DOCKPILOT_BASE_URL/api/v1/live/logs?agent_id=$agent_id&container_id=$container&follow=true&tail=0&stdout=true&stderr=true"
@@ -364,6 +386,9 @@ for container in $container_list; do
     start_stream stats "$index" "$container" "$stream_seconds"
     index=$((index + 1))
 done
+# Exactly one, because a frame is the whole host. A second would prove nothing
+# the first does not and would misrepresent what a second viewer costs.
+start_stream matrix 1 "" "$stream_seconds"
 
 audit_sampler() {
     while [ ! -e "$stop_audit" ]; do
@@ -589,6 +614,33 @@ wait "$audit_sampler_pid" 2>/dev/null || true
 
 sample_all_io end
 
+# Matrix positive evidence. HTTP 200 is not evidence: a refused capability, a
+# wrong Agent ID, or a stream that opened and produced nothing would all leave
+# a status code behind. What is required is frames, and rows inside them.
+matrix_status="$evidence/stream-matrix-1.status"
+[ -f "$matrix_status" ] || fail "the Matrix stream left no status behind"
+grep -F 'http_code=200' "$matrix_status" >/dev/null || fail "the Matrix stream did not reach HTTP 200"
+matrix_frames=$(grep -c '^event: matrix$' "$evidence/matrix.sse" 2>/dev/null || printf '0')
+[ "$matrix_frames" -gt 0 ] || fail "the Matrix stream produced no frames; this trial measured no Metrics activity"
+matrix_capture_bytes=$(wc -c <"$evidence/matrix.sse" | awk '{ print $1 }')
+[ "$matrix_capture_bytes" -le $((RESOURCE_CASE_SECONDS * 65536 + 65536)) ] || fail "Matrix capture exceeded its explicit bound"
+# A frame that carries the fixture containers proves the Agent assembled real
+# rows rather than an empty host row.
+matrix_rows=$(awk '/^data: / { sub(/^data: /, ""); print }' "$evidence/matrix.sse" |
+    jq -R 'fromjson? // empty' |
+    jq -s '[.[] | [.projects[]?.services[]?.containers[]?] | length] | max // 0')
+[ "$matrix_rows" -gt 0 ] || fail "no Matrix frame carried a container row"
+matrix_agent_drops=$(awk '/^data: / { sub(/^data: /, ""); print }' "$evidence/matrix.sse" |
+    jq -R 'fromjson? // empty' | jq -s '[.[] | .agent_dropped_frames // 0] | max // 0')
+matrix_server_drops=$(awk '/^data: / { sub(/^data: /, ""); print }' "$evidence/matrix.sse" |
+    jq -R 'fromjson? // empty' | jq -s '[.[] | .server_dropped_frames // 0] | max // 0')
+jq -cn --arg at "$(now_iso)" --argjson trial "$trial" --argjson frames "$matrix_frames" \
+    --argjson rows "$matrix_rows" --argjson bytes "$matrix_capture_bytes" \
+    --argjson agent_drops "$matrix_agent_drops" --argjson server_drops "$matrix_server_drops" \
+    '{at:$at,trial:$trial,phase:"active",matrix_subscriptions_opened:1,matrix_frames_received:$frames,
+      max_container_rows:$rows,capture_bytes:$bytes,
+      agent_dropped_frames:$agent_drops,server_dropped_frames:$server_drops}' >>"$matrix_evidence"
+
 slow_capture_bytes=$(wc -c <"$evidence/slow-log.sse" | awk '{ print $1 }')
 [ "$slow_capture_bytes" -le $((RESOURCE_CASE_SECONDS * 2048 + 65536)) ] || fail "slow log capture exceeded its explicit bound"
 # The SSE capture is stopped at a byte bound, so its final event can be cut
@@ -758,11 +810,11 @@ restore_journal_peak=$(awk -F '\t' '$2 == "restore-journal" && $5 == "active" &&
 
 rm -f "$evidence"/.api-dashboard-* "$evidence"/.api-containers-* "$evidence"/.api-cancel-* "$evidence"/stream-churn-*.status
 
-for key in PRODUCT_SERVER_AGENT REAL_COMPOSE_CHILD REAL_WAL_FSYNC BACKUP_SNAPSHOT_IO DISCOVERY_SCAN APPENDIX_A_MIX P0_P1_PASS AUDIT_CONTINUITY_PASS BOUNDED_BUFFERS_PASS RESOURCE_TREND_PASS; do
+for key in PRODUCT_SERVER_AGENT REAL_COMPOSE_CHILD REAL_WAL_FSYNC BACKUP_SNAPSHOT_IO DISCOVERY_SCAN APPENDIX_A_MIX P0_P1_PASS AUDIT_CONTINUITY_PASS BOUNDED_BUFFERS_PASS RESOURCE_TREND_PASS MATRIX_IDLE_PASS MATRIX_ACTIVE_PASS; do
     printf '%s=1\n' "$key"
 done >"$RESOURCE_VERDICT_FILE"
 
-sha256sum "$compose_evidence" "$latency_evidence" "$audit_evidence" "$buffer_evidence" "$io_evidence" "$trend_evidence" \
+sha256sum "$compose_evidence" "$latency_evidence" "$audit_evidence" "$buffer_evidence" "$io_evidence" "$trend_evidence" "$matrix_evidence" \
     >"$evidence/workload-evidence.sha256"
 failure_reason=
 completed=1

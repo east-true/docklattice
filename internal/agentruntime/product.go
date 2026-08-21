@@ -137,16 +137,34 @@ func (r *Runtime) startProduct(ctx context.Context) error {
 		Engine: engine, Compose: compose, Admission: runtimeStorage,
 		Timeouts: r.configTimeouts(), LogSource: logs, StatsSource: stats,
 		StatsSampleInterval: productconfig.V1Defaults().StatsSampleInterval,
+		MatrixDocker:        docker,
+		MatrixPaths:         managedPaths(r.config.ProjectRoots, stateRoot),
+		MatrixFrameInterval: productconfig.V1Defaults().MetricsFrameInterval,
 	})
 	if err != nil {
 		return err
 	}
 	r.handler, r.productCloser = product, product
+	r.metricsMatrixInstalled = true
 	r.operationEngine = engine
 	r.productStorage = runtimeStorage
 	r.startDiscoveryLoop(ctx, catalog, runtimeStorage, appender, r.config.DiscoveryInterval)
 	r.updateProductCapability(nil, nil)
 	return nil
+}
+
+// managedPaths are the paths Dockpilot writes to on this host: the discovery
+// roots and the Agent state root. They are what the host row reports capacity
+// for. Deduplication is by filesystem and happens at probe time, because two
+// distinct paths on one mount are one filesystem and neither of them is
+// redundant as a path.
+func managedPaths(roots []string, stateRoot string) []string {
+	paths := make([]string, 0, len(roots)+1)
+	paths = append(paths, roots...)
+	if stateRoot != "" {
+		paths = append(paths, stateRoot)
+	}
+	return paths
 }
 
 func (r *Runtime) startDiscoveryLoop(ctx context.Context, catalog *agentprojects.Catalog, storage *runtimeStorage, appender *auditevents.Appender, interval time.Duration) {
@@ -216,6 +234,10 @@ func (r *Runtime) updateProductCapability(discoveryErr, reclaimErr error) {
 		r.heartbeat.capability = capability
 		return
 	}
+	// Live metrics need Docker and nothing else. They are deliberately settled
+	// before the Compose and storage checks below, each of which returns early:
+	// a host whose Compose roots are unusable can still be watched.
+	capability.MetricsMatrix = r.metricsMatrixInstalled
 	if discoveryErr != nil {
 		capability.ComposeReady = false
 		capability.Reason = "project discovery failed"

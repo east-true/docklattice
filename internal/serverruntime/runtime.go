@@ -99,6 +99,7 @@ type Runtime struct {
 	ready      bool
 	running    bool
 	components *serverbootstrap.Components
+	backend    *serverapi.Backend
 	httpServer *http.Server
 	httpLn     net.Listener
 	agentLn    net.Listener
@@ -251,6 +252,7 @@ func (r *Runtime) Ready(ctx context.Context) (err error) {
 	}
 
 	r.components = components
+	r.backend = backend
 	r.registry = registry
 	r.httpServer = httpServer
 	r.httpLn = tls.NewListener(httpLn, tlsConfig.Clone())
@@ -271,6 +273,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 	}
 	r.running = true
 	httpServer, httpLn, acceptor, liveness, store, auditServer, retentionStore, archiveID := r.httpServer, r.httpLn, r.acceptor, r.liveness, r.components.Store, r.audit, r.retention, r.components.Archive.AuditArchiveID
+	backend := r.backend
 	retentionPolicy, retentionInterval, retentionTimeout := r.config.AuditRetentionPolicy, r.config.AuditRetentionInterval, r.config.AuditRetentionTimeout
 	r.mu.Unlock()
 
@@ -358,6 +361,13 @@ func (r *Runtime) Run(ctx context.Context) error {
 	<-livenessDone
 	cancelRetention()
 	<-retentionDone
+	// The Backend closes before the HTTP server, not after. Its live metrics
+	// relays are what browser SSE handlers are blocked reading; ending them
+	// lets those handlers return, so Shutdown drains rather than waiting out
+	// its own deadline on streams that were never going to end on their own.
+	if err := backend.Close(); runErr == nil && err != nil {
+		runErr = err
+	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := httpServer.Shutdown(shutdownCtx); runErr == nil && err != nil {
