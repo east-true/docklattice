@@ -101,7 +101,7 @@ docker run --rm --user 0:0 --entrypoint /bin/sh -v "$runtime:/scale" "$server_im
 
 docker network create --subnet "198.19.$(( $$ % 250 + 1 )).0/24" "$network" >"$evidence/network.id"
 docker run -d --name "$server" --network "$network" --network-alias server \
-    --log-driver local --log-opt max-size=5m --log-opt max-file=1 \
+    --log-driver local --log-opt max-size=5m --log-opt max-file=1 --log-opt compress=false \
     -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/dockpilot" "$server_image" \
     server --listen 0.0.0.0:8080 --agent-listen 0.0.0.0:8443 --allow-public-bind \
     >"$evidence/server.container-id"
@@ -124,7 +124,7 @@ docker run --rm --user 0:0 --entrypoint /bin/sh -v "$runtime/agent:/agent" "$ser
 
 socket_gid=$(stat -c '%g' /var/run/docker.sock)
 docker run -d --name "$agent" --network "$network" \
-    --log-driver local --log-opt max-size=5m --log-opt max-file=1 \
+    --log-driver local --log-opt max-size=5m --log-opt max-file=1 --log-opt compress=false \
     --group-add "$socket_gid" -e GODEBUG=gctrace=1 \
     -v /var/run/docker.sock:/var/run/docker.sock:rw \
     -v "$runtime/agent:/var/lib/dockpilot" \
@@ -151,7 +151,7 @@ printf 'creating %s fixture containers\n' "$containers"
 i=1
 while [ "$i" -le "$containers" ]; do
     docker run -d --name "$prefix-load-$i" --label "$fixture_label" \
-        --log-driver local --log-opt max-size=1m --log-opt max-file=1 \
+        --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
         --entrypoint /bin/sh "$fixture_image" -c 'while :; do sleep 30; done' >/dev/null
     i=$((i + 1))
 done
