@@ -144,23 +144,60 @@ func (f *manualTickerFactory) tick(t *testing.T) {
 }
 
 // statsSource feeds livestats. Containers named in slow never emit, which is
-// how a pending row is produced.
+// how a pending row is produced. A container given an end channel by
+// endFirstStream has its first stream fail, which is how a stats stream that
+// stops while its container keeps running is produced.
 type statsSource struct {
-	mu   sync.Mutex
-	slow map[string]bool
+	mu       sync.Mutex
+	slow     map[string]bool
+	ends     map[string]chan struct{}
+	attempts map[string]int
 }
 
 func (s *statsSource) Stream(ctx context.Context, containerID string, emit func(livestats.Sample) error) error {
 	s.mu.Lock()
 	slow := s.slow[containerID]
+	if s.attempts == nil {
+		s.attempts = make(map[string]int)
+	}
+	s.attempts[containerID]++
+	// The end channel is consumed by the attempt that gets it, so a
+	// resubscription is a healthy stream rather than an instant failure again.
+	end := s.ends[containerID]
+	delete(s.ends, containerID)
 	s.mu.Unlock()
 	if !slow {
 		if err := emit(livestats.Sample{ContainerID: containerID, MemoryUsage: 1}); err != nil {
 			return err
 		}
 	}
-	<-ctx.Done()
-	return ctx.Err()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-end:
+		// A nil channel blocks forever, so a container without an end
+		// channel behaves exactly as it did before.
+		return errors.New("stats stream ended")
+	}
+}
+
+// endFirstStream arranges for the next stream of containerID to fail when the
+// returned channel is closed, without the container leaving the running set.
+func (s *statsSource) endFirstStream(containerID string) chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ends == nil {
+		s.ends = make(map[string]chan struct{})
+	}
+	end := make(chan struct{})
+	s.ends[containerID] = end
+	return end
+}
+
+func (s *statsSource) streamAttempts(containerID string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.attempts[containerID]
 }
 
 type harness struct {
@@ -687,4 +724,50 @@ func (g *gatedMembership) Running(ctx context.Context) ([]string, error) {
 	g.onEnter()
 	defer g.onExit()
 	return g.inner.Running(ctx)
+}
+
+// TestAMemberIsResubscribedWhenItsStatsStreamEnds: a Docker stats stream can
+// end while its container keeps running - a transient socket or decoder
+// failure, or a restart quick enough that the same ID is listed again. The
+// subscription is finished but still mapped, and a reconcile that only asks
+// whether an ID is present would call the row watched and go on repeating the
+// last sample for as long as the container lives. Reconcile has to notice the
+// finished subscription and replace it.
+func TestAMemberIsResubscribedWhenItsStatsStreamEnds(t *testing.T) {
+	source := &statsSource{}
+	end := source.endFirstStream("a")
+	h := newHarnessReconcilingEvery(t, source, 1, "a")
+
+	viewer, err := h.hub.Subscribe(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer viewer.Close()
+
+	waitFor(t, "the first stats stream", func() bool { return source.streamAttempts("a") == 1 })
+	h.tickers.tick(t)
+	frame := nextFrame(t, viewer)
+	if len(frame.Rows) != 1 {
+		t.Fatalf("rows = %+v, want the one running container", frame.Rows)
+	}
+
+	// The stats stream fails. The container itself is untouched and stays in
+	// the running set, so this is not a membership change.
+	close(end)
+	waitFor(t, "the ended stats stream to be dropped", func() bool { return h.statsHub.ActiveStreams() == 0 })
+
+	h.tickers.tick(t)
+	waitFor(t, "the member to be resubscribed", func() bool { return source.streamAttempts("a") >= 2 })
+
+	// The replacement is a live stream, not a second dead entry.
+	waitFor(t, "the replacement stream to be active", func() bool { return h.statsHub.ActiveStreams() == 1 })
+
+	h.tickers.tick(t)
+	frame = nextFrame(t, viewer)
+	if len(frame.Rows) != 1 {
+		t.Fatalf("rows = %+v, want the one running container", frame.Rows)
+	}
+	if frame.MembershipStale {
+		t.Fatal("a stats stream ending is not a membership refresh failure")
+	}
 }

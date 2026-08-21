@@ -346,6 +346,18 @@ func (h *Hub) reconcileMembership(relay *hostRelay) {
 		if _, keep := desired[id]; !keep {
 			toClose = append(toClose, subscription)
 			delete(relay.members, id)
+			continue
+		}
+		// A stats stream can end while its container keeps running: a
+		// transient Docker socket or decoder failure, or a restart quick
+		// enough that the same ID is listed again by this reconcile. The
+		// subscription is finished but still mapped, so the presence check
+		// below would count the row as watched and Latest would repeat the
+		// last sample - or withhold the first one - for as long as the
+		// container lives. Drop it here so it is resubscribed as missing.
+		if ended(subscription) {
+			toClose = append(toClose, subscription)
+			delete(relay.members, id)
 		}
 	}
 	missing := make([]string, 0)
@@ -383,6 +395,18 @@ func (h *Hub) reconcileMembership(relay *hostRelay) {
 		h.mu.Unlock()
 	}
 
+}
+
+// ended reports whether a member subscription has already finished. livestats
+// finishes a subscription when its Docker stats stream ends, which is not the
+// same event as the container leaving the membership snapshot.
+func ended(subscription *livestats.Subscription) bool {
+	select {
+	case <-subscription.Done():
+		return true
+	default:
+		return false
+	}
 }
 
 // refreshWorkload re-reads the host summary. A failure here leaves the last
