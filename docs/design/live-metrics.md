@@ -379,9 +379,9 @@ containers, watched by five viewers.
 |---|---|---|
 | Container rows in a frame | 202 | 502 |
 | Agent descriptors, no viewer | 12 | 10 |
-| Agent descriptors, watched | — | **514** |
+| Agent descriptors, watched | — | **515** |
 | Agent RSS, no viewer | — | 26.1 MiB |
-| Agent RSS, watched | 45.1 MiB | 73.6 MiB |
+| Agent RSS, watched | 45.1 MiB | 75.6 MiB |
 | Agent threads | 11 | 11 |
 | Server RSS | 32.7 MiB | 40.8 MiB |
 | JSON frame to the browser | 105.8 KB | 260.2 KB |
@@ -393,9 +393,16 @@ Three things this settles.
 
 **Descriptors follow containers, and only while somebody is watching.** Five
 hundred containers with no viewer cost the Agent ten descriptors and 26 MiB.
-Attach a viewer and it is 514 - one Docker stats stream per container, which is
-exactly the cost §10 said could not be made sublinear. When the last viewer
-left it went back to ten with all five hundred containers still running.
+Attach a viewer and it is 515 - one Docker stats stream per container, which is
+exactly the cost §10 said could not be made sublinear. The count tracked
+membership one for one as it climbed: 499 containers, 515 descriptors, before
+the last fixture had even been created.
+
+Release is the other half. When the last viewer left, descriptors went from 515
+to ten in a single twelve-second sample with all five hundred containers still
+running, while RSS came down over the following samples - 75.6, then 40.7, then
+33.7 MiB. Go returns heap on its own schedule; the bounded resource was handed
+back at once.
 
 **Streams still follow hosts.** Five viewers of a 500-container host opened one
 Agent stream and one relay, and every viewer received the frames.
