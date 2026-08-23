@@ -1,9 +1,12 @@
 # Dockpilot UI — Implementation Gap Report
 
-**Status:** Revalidated after current `main` integration; awaiting final gate review.
+**Status:** Approved implementation gate; slices A and B approved, slice C deferred.
 
-**Compared at:** merged branch revision `58ad1dc50af1fbfda2550c2fd88c7aba7a6a890b`,
-including `main@22f21678f0400b1a81a1ff9fab083a90f011774a`
+**Initial comparison at:** `docs/final-ui-design@a4205c0`
+
+**Revalidated against:** merged branch revision
+`58ad1dc50af1fbfda2550c2fd88c7aba7a6a890b`, including
+`main@22f21678f0400b1a81a1ff9fab083a90f011774a`
 
 **Scope:** `DESIGN.md`, `docs/design/web-ui.md`,
 `docs/design/web-ui-acceptance.md`, frozen product/interface contracts, and the
@@ -11,8 +14,9 @@ current Server, Agent, API, and `internal/webui/**` implementation.
 
 This report is the implementation gate required by
 `docs/prompts/implementation-handoff.md`. A design request does not authorize an
-API, protobuf, persistence, Docker-operation, or product-policy change. No Web
-UI implementation should start until this report is reviewed.
+API, protobuf, persistence, Docker-operation, or product-policy change.
+Implementation may proceed only within the externally approved slice A then
+slice B boundary below. Slice C and unresolved product policy remain excluded.
 
 ## Classification
 
@@ -23,8 +27,9 @@ UI implementation should start until this report is reviewed.
 | **Minimal extension** | An additive, bounded Agent/Server/API field or endpoint is required. Existing authority and storage rules can remain unchanged. |
 | **Product decision** | The requested behavior is unsupported, optional/P1, or would choose unresolved policy. It must not be implemented without explicit approval. |
 
-“Minimal extension” is not pre-approved by this report. It identifies the
-smallest expected contract change for review.
+“Minimal extension” identifies the smallest expected contract change for
+review. Only the items assigned to externally approved slices A and B are
+approved by this gate; slice C and product-decision items are not.
 
 ## Current implementation baseline
 
@@ -492,3 +497,45 @@ this response does not self-approve the implementation gate.
 
 Implementation remains paused pending an external review of this refreshed
 gate and explicit scope selection for slices A and B.
+
+## External review decision — 2026-08-23
+
+**Verdict:** Approved as the implementation gate, with slices A and B approved
+and slice C deferred.
+
+The revalidation response resolves the prior conditional-review findings. The
+design branch now incorporates `main@22f21678`; sidebar availability uses the
+explicit connection capability rather than `Host.state`; Host Summary Engine
+facts are correctly separated from viewer-scoped Live Metrics; project
+Container attachment counts are freshness-qualified; and the Compose
+source/fingerprint and Docker-compatible memory semantics affected by the
+updated main revision have been revalidated.
+
+Slice A is approved as required work for the final v1 screen contract.
+
+Slice B is also approved for the same implementation campaign, but should
+follow slice A as a separately validated implementation phase. The advanced
+Engine and Docker object Inspector reads are part of the accepted
+progressive-disclosure design and are required before the final UI can claim
+full Inspector/detail acceptance. They remain bounded, read-only extensions and
+do not change Dockpilot's authority or persistence model.
+
+Slice C remains deferred. No cross-host live Container search, host-scoped
+multi-Container logs, Audit whitelist expansion, Image/Volume disk-usage
+queries, restore diff preview, raw Container environment/inspect reveal, or
+Processes/threads metrics should be added without a separate product decision.
+
+The Compose build policy remains unresolved and is not implicitly approved by
+this gate. Implementation of the surrounding UI and slices A/B may proceed,
+but the final availability and semantics of build-capable Compose Pull/Up
+actions must not be invented by the implementation and require a separate
+explicit product decision.
+
+Authority and storage boundaries remain unchanged: Docker Engine is
+authoritative for current runtime state, the host filesystem for Compose
+configuration content, the Agent for execution and project locks, and the
+Server canonical Audit archive for synchronized Audit history.
+
+Implementation may proceed with slice A followed by slice B. Final v1
+acceptance remains contingent on the separately resolved Compose build policy
+and successful acceptance validation.
