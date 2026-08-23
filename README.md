@@ -197,7 +197,7 @@ dependency and Chromium once, then run the suite or open the interactive UI:
 
 ```sh
 npm ci
-npx playwright install chromium
+npm run test:ui:install
 npm run test:ui
 npm run test:ui:open
 ```
@@ -208,6 +208,11 @@ build-policy, and Inspector screenshots. Set `PLAYWRIGHT_TEST_BASE_URL` to test
 an already running Dockpilot UI instead of the local asset server. The setup
 follows Playwright's official [web server](https://playwright.dev/docs/test-webserver)
 and [CI](https://playwright.dev/docs/ci) guidance.
+
+For local runs, the Playwright configuration uses its pinned Chromium when it
+is installed and otherwise discovers a standard local Chrome or Chromium
+installation. If neither is available, the suite stops once with the install
+command instead of emitting one browser-launch error per test.
 
 Run `npm run format` after editing the browser code. CI runs
 `npm run check:format` so the workbench, Playwright configuration, and UI tests
