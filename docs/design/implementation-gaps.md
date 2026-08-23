@@ -673,5 +673,7 @@ The responsive screenshots were reviewed for density, status color, table
 overflow, Inspector width/scroll behavior, and mobile one-column details. This
 is implementation evidence, not owner sign-off: the unchecked human checklist
 in `web-ui-acceptance.md` remains intentionally open until a person performs
-the final interactive review. The verification commit is recorded by the
-follow-up integration record after the code commit exists.
+the final interactive review.
+
+**Verified implementation commit:**
+`706f1d0578b1fb2511d17746391c7abfcec634c8`
