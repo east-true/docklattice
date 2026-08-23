@@ -8,10 +8,11 @@
   "scripts": {
     "format": "prettier --write .github/workflows/ci.yml package.json playwright.config.mjs internal/webui/assets/app.js tests/ui/*.mjs",
     "check:format": "prettier --check .github/workflows/ci.yml package.json playwright.config.mjs internal/webui/assets/app.js tests/ui/*.mjs",
-    "test:ui": "playwright test",
-    "test:ui:headed": "playwright test --headed",
-    "test:ui:open": "playwright test --ui",
-    "test:ui:report": "playwright show-report"
+    "test:ui:install": "node tests/ui/run-playwright.mjs install chromium",
+    "test:ui": "node tests/ui/run-playwright.mjs test",
+    "test:ui:headed": "node tests/ui/run-playwright.mjs test --headed",
+    "test:ui:open": "node tests/ui/run-playwright.mjs test --ui",
+    "test:ui:report": "node tests/ui/run-playwright.mjs show-report"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

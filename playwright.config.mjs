@@ -1,11 +1,71 @@
-import { defineConfig } from "@playwright/test";
+import { existsSync } from "node:fs";
+import path from "node:path";
+
+import { chromium, defineConfig } from "@playwright/test";
+
+function systemChromeCandidates() {
+  if (process.platform === "linux") {
+    return [
+      "/usr/bin/google-chrome",
+      "/usr/bin/google-chrome-stable",
+      "/usr/bin/chromium",
+      "/usr/bin/chromium-browser",
+    ];
+  }
+  if (process.platform === "darwin") {
+    return [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    ];
+  }
+  if (process.platform === "win32") {
+    return [
+      process.env.PROGRAMFILES &&
+        path.join(
+          process.env.PROGRAMFILES,
+          "Google",
+          "Chrome",
+          "Application",
+          "chrome.exe",
+        ),
+      process.env["PROGRAMFILES(X86)"] &&
+        path.join(
+          process.env["PROGRAMFILES(X86)"],
+          "Google",
+          "Chrome",
+          "Application",
+          "chrome.exe",
+        ),
+      process.env.LOCALAPPDATA &&
+        path.join(
+          process.env.LOCALAPPDATA,
+          "Google",
+          "Chrome",
+          "Application",
+          "chrome.exe",
+        ),
+    ].filter(Boolean);
+  }
+  return [];
+}
+
+function browserExecutable() {
+  if (process.env.PLAYWRIGHT_EXECUTABLE_PATH) {
+    return process.env.PLAYWRIGHT_EXECUTABLE_PATH;
+  }
+  if (existsSync(chromium.executablePath())) {
+    return undefined;
+  }
+  return systemChromeCandidates().find((candidate) => existsSync(candidate));
+}
 
 const externalBaseURL = process.env.PLAYWRIGHT_TEST_BASE_URL;
 const baseURL = externalBaseURL || "http://127.0.0.1:4173";
-const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH;
+const executablePath = browserExecutable();
 
 export default defineConfig({
   testDir: "./tests/ui",
+  globalSetup: "./tests/ui/global-setup.mjs",
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
