@@ -22,6 +22,7 @@ import (
 var (
 	ErrUnsupportedOperation = errors.New("agent operation is not wired to a safe executor")
 	ErrProjectUnavailable   = errors.New("Agent project is unavailable or not safely managed")
+	ErrComposeBuildRequired = errors.New("Compose mutation requires an Image build, which Dockpilot v1 does not perform")
 )
 
 type Docker interface {
@@ -135,6 +136,12 @@ func (s *Service) StartOperation(ctx context.Context, _ producttransport.Session
 			}
 			approvedFiles = append([]safefile.ApprovedFile(nil), approvedFiles...)
 		}
+		if isComposeOperation(opType) {
+			command.composeServices, err = composeMutationServices(opType, request.Target, project.Services)
+			if err != nil {
+				return producttransport.OperationResponse{}, err
+			}
+		}
 	}
 	digest := sha256.Sum256(request.Payload)
 	spec := operation.Spec{
@@ -209,7 +216,7 @@ func (s *Service) run(runCtx context.Context, current *operation.Operation, comm
 		}
 		runErr = s.runContainer(runCtx, record)
 	case isComposeOperation(record.Type):
-		result, runErr = s.runCompose(runCtx, current, record, project)
+		result, runErr = s.runCompose(runCtx, current, record, project, command.composeServices)
 	case isFileWriteOperation(record.Type):
 		result, runErr = s.runFileWrite(runCtx, current, project, approvedFiles, *command.fileWrite)
 	case record.Type == operation.TypeBackupCreate:
@@ -266,12 +273,8 @@ func (s *Service) runContainer(ctx context.Context, record operation.Record) err
 	}
 }
 
-func (s *Service) runCompose(ctx context.Context, current *operation.Operation, record operation.Record, project composeexec.Project) (string, error) {
+func (s *Service) runCompose(ctx context.Context, current *operation.Operation, record operation.Record, project composeexec.Project, services []string) (string, error) {
 	composeOperation := mapComposeOperation(record.Type)
-	services := []string(nil)
-	if record.Target != "" {
-		services = []string{record.Target}
-	}
 	relay := make(chan composeexec.OutputChunk, 32)
 	drained := make(chan struct{})
 	go func() {
@@ -301,6 +304,21 @@ func (s *Service) runCompose(ctx context.Context, current *operation.Operation, 
 		return "", fmt.Errorf("docker compose %s exited with status %d", composeOperation, result.ExitCode)
 	}
 	return fmt.Sprintf("docker compose %s completed", composeOperation), nil
+}
+
+func composeMutationServices(kind operation.Type, target string, models []composeexec.Service) ([]string, error) {
+	policy, err := composeexec.EvaluateV1Policy(models)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrComposeBuildRequired, err)
+	}
+	services, err := policy.Targets(mapComposeOperation(kind), target)
+	if err != nil {
+		if kind == operation.TypeComposePull || kind == operation.TypeComposeUp {
+			return nil, fmt.Errorf("%w: %v", ErrComposeBuildRequired, err)
+		}
+		return nil, fmt.Errorf("%w: %v", ErrProjectUnavailable, err)
+	}
+	return services, nil
 }
 
 func mapComposeOperation(kind operation.Type) composeexec.Operation {
@@ -354,9 +372,28 @@ func (s *Service) timeout(kind operation.Type) time.Duration {
 }
 
 func responseFromRecord(record operation.Record) producttransport.OperationResponse {
+	canCancel, cancelReason := operationCancelability(record)
 	return producttransport.OperationResponse{
 		Status: string(record.Status), Phase: string(record.Phase), Revision: record.Revision,
 		PartialEffectsPossible: record.PartialEffectsPossible, Error: record.Error,
 		OutputTail: append([]byte(nil), record.OutputTail...), OutputTruncated: record.OutputTruncated,
+		CancelMode: string(record.CancelMode), CanCancel: canCancel, CancelabilityReason: cancelReason,
+		RequestedAt: record.RequestedAt, StartedAt: record.StartedAt, FinishedAt: record.FinishedAt,
 	}
+}
+
+func operationCancelability(record operation.Record) (bool, string) {
+	if record.Status.Terminal() {
+		return false, "operation is terminal"
+	}
+	if !record.CancelRequestedAt.IsZero() {
+		return false, "cancellation already requested"
+	}
+	if record.CancelMode == operation.CancelNone {
+		return false, "operation is not cancelable"
+	}
+	if record.CancelMode == operation.CancelBeforeCommit && !record.CommitStartedAt.IsZero() {
+		return false, "commit has started"
+	}
+	return true, ""
 }

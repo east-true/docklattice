@@ -191,6 +191,28 @@ go test ./...
 go test -race ./...
 ```
 
+The browser workbench has a Playwright acceptance suite at the five required
+viewports (1440, 1280, 1024, 768, and 375 pixels). Install the pinned test
+dependency and Chromium once, then run the suite or open the interactive UI:
+
+```sh
+npm ci
+npx playwright install chromium
+npm run test:ui
+npm run test:ui:open
+```
+
+`npm run test:ui:headed` runs the same scenarios in a visible browser and
+`npm run test:ui:report` opens the HTML report with the captured Home, Compose
+build-policy, and Inspector screenshots. Set `PLAYWRIGHT_TEST_BASE_URL` to test
+an already running Dockpilot UI instead of the local asset server. The setup
+follows Playwright's official [web server](https://playwright.dev/docs/test-webserver)
+and [CI](https://playwright.dev/docs/ci) guidance.
+
+Run `npm run format` after editing the browser code. CI runs
+`npm run check:format` so the workbench, Playwright configuration, and UI tests
+remain consistently formatted and reviewable.
+
 Contract and safety-boundary checks, none of which need Docker:
 
 ```sh
@@ -206,8 +228,10 @@ rejected by `scripts/verify-release-scope.sh` before a human sees it.
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-The embedded frontend is first-party: `internal/webui/assets` is three
-hand-written files with no third-party code and no external references.
+The embedded production frontend is first-party: `internal/webui/assets` is
+three hand-written files with no third-party code and no external references.
+Playwright is a development-only acceptance-test dependency and is not linked
+into the Dockpilot binary or copied into either release image.
 
 Third-party license and NOTICE texts for the Go binary are generated at release
 time from the pinned `go.sum` versions rather than vendored:

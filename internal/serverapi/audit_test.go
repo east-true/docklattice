@@ -279,6 +279,7 @@ func storedAuditEventFromPayload(t *testing.T, agentID string, cursor auditstore
 	return auditstore.Event{
 		AgentID: agentID, Cursor: cursor, OccurredAt: envelope.Event.FirstAt, Kind: string(envelope.Event.Kind),
 		Actor: envelope.Event.Actor, ProjectUID: envelope.ProjectUID, OperationID: envelope.OperationID,
+		ResourceType: envelope.Event.ResourceType, ResourceID: envelope.Event.ResourceID, Action: envelope.Event.Action,
 		Metadata: append(json.RawMessage(nil), payload...),
 	}
 }

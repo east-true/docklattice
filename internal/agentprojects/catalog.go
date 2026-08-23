@@ -44,17 +44,21 @@ type SourceGraph interface {
 type RootExecutionPolicy func(root string) (allowed bool, reason string)
 
 type Project struct {
-	UID          string
-	Root         string
-	WorkingDir   string
-	Files        []projectmodel.FileFact
-	ComposeFiles []string
-	Name         string
-	Services     []string
+	UID            string
+	Root           string
+	WorkingDir     string
+	Files          []projectmodel.FileFact
+	ComposeFiles   []string
+	Name           string
+	Services       []string
+	ServiceModels  []composeexec.Service
+	ActiveProfiles []string
 	// EnvFiles is metadata only: it records service env_file references from
 	// Compose's resolved model without retaining any environment value or file
 	// content. Readable is true only for a current read-only safefile approval.
 	EnvFiles            []EnvFileReference
+	Secrets             []ResourceSource
+	Configs             []ResourceSource
 	SourceReferences    []SourceReference
 	ReadOnlyFiles       []safefile.ApprovedFile
 	IncludedWorkDirs    []string
@@ -69,6 +73,13 @@ type Project struct {
 type EnvFileReference struct {
 	Path     string
 	Readable bool
+}
+
+type ResourceSource struct {
+	Name       string
+	SourceType string
+	Source     string
+	External   bool
 }
 
 // SourceReference is content-free include/extends provenance. ReadOnly is
@@ -228,7 +239,11 @@ func (c *Catalog) rescan(ctx context.Context, observer ExternalChangeObserver) e
 			cached.SourceGraphComplete && project.SourceGraphComplete {
 			project.Name = cached.Name
 			project.Services = append([]string(nil), cached.Services...)
+			project.ServiceModels = cloneServiceModels(cached.ServiceModels)
+			project.ActiveProfiles = append([]string(nil), cached.ActiveProfiles...)
 			project.EnvFiles = append([]EnvFileReference(nil), cached.EnvFiles...)
+			project.Secrets = append([]ResourceSource(nil), cached.Secrets...)
+			project.Configs = append([]ResourceSource(nil), cached.Configs...)
 			project.ReadOnlyFiles = append([]safefile.ApprovedFile(nil), cached.ReadOnlyFiles...)
 			next[uid] = project
 			continue
@@ -251,6 +266,10 @@ func (c *Catalog) rescan(ctx context.Context, observer ExternalChangeObserver) e
 		}
 		project.Name = resolved.Project.Name
 		project.Services = append([]string(nil), resolved.Services...)
+		project.ServiceModels = cloneServiceModels(resolved.ServiceModels)
+		project.ActiveProfiles = append([]string(nil), resolved.ActiveProfiles...)
+		project.Secrets = resourceSources(resolved.Secrets)
+		project.Configs = resourceSources(resolved.Configs)
 		sourceApprovals := append([]safefile.ApprovedFile(nil), project.ReadOnlyFiles...)
 		var envApprovals []safefile.ApprovedFile
 		var envFacts []projectmodel.FileFact
@@ -420,6 +439,10 @@ func (c *Catalog) projectFromFiles(ctx context.Context, previous Project, files 
 		project.CurrentFingerprint = fingerprint
 		project.Name = previous.Name
 		project.Services = append([]string(nil), previous.Services...)
+		project.ServiceModels = cloneServiceModels(previous.ServiceModels)
+		project.ActiveProfiles = append([]string(nil), previous.ActiveProfiles...)
+		project.Secrets = append([]ResourceSource(nil), previous.Secrets...)
+		project.Configs = append([]ResourceSource(nil), previous.Configs...)
 		return project, nil
 	}
 	project.Files, project.SourceReferences, project.ReadOnlyFiles, project.IncludedWorkDirs, project.SourceGraphComplete =
@@ -436,7 +459,11 @@ func (c *Catalog) projectFromFiles(ctx context.Context, previous Project, files 
 		previous.SourceGraphComplete && project.SourceGraphComplete {
 		project.Name = previous.Name
 		project.Services = append([]string(nil), previous.Services...)
+		project.ServiceModels = cloneServiceModels(previous.ServiceModels)
+		project.ActiveProfiles = append([]string(nil), previous.ActiveProfiles...)
 		project.EnvFiles = append([]EnvFileReference(nil), previous.EnvFiles...)
+		project.Secrets = append([]ResourceSource(nil), previous.Secrets...)
+		project.Configs = append([]ResourceSource(nil), previous.Configs...)
 		project.ReadOnlyFiles = append([]safefile.ApprovedFile(nil), previous.ReadOnlyFiles...)
 		return project, nil
 	}
@@ -450,6 +477,10 @@ func (c *Catalog) projectFromFiles(ctx context.Context, previous Project, files 
 	}
 	project.Name = resolved.Project.Name
 	project.Services = append([]string(nil), resolved.Services...)
+	project.ServiceModels = cloneServiceModels(resolved.ServiceModels)
+	project.ActiveProfiles = append([]string(nil), resolved.ActiveProfiles...)
+	project.Secrets = resourceSources(resolved.Secrets)
+	project.Configs = resourceSources(resolved.Configs)
 	sourceApprovals := append([]safefile.ApprovedFile(nil), project.ReadOnlyFiles...)
 	var envApprovals []safefile.ApprovedFile
 	var envFacts []projectmodel.FileFact
@@ -697,7 +728,10 @@ func (c *Catalog) Project(_ context.Context, uid string) (composeexec.Project, b
 	if !ok || project.Stale || !project.ComposeExecutable || project.Name == "" {
 		return composeexec.Project{}, false, nil
 	}
-	return composeexec.Project{WorkingDir: project.WorkingDir, Files: append([]string(nil), project.ComposeFiles...), Name: project.Name}, true, nil
+	return composeexec.Project{
+		WorkingDir: project.WorkingDir, Files: append([]string(nil), project.ComposeFiles...), Name: project.Name,
+		Services: cloneServiceModels(project.ServiceModels),
+	}, true, nil
 }
 
 // ApprovedReadOnlyFiles returns a defensive copy of the current catalog's
@@ -772,9 +806,31 @@ func cloneProject(project Project) Project {
 	project.Files = append([]projectmodel.FileFact(nil), project.Files...)
 	project.ComposeFiles = append([]string(nil), project.ComposeFiles...)
 	project.Services = append([]string(nil), project.Services...)
+	project.ServiceModels = cloneServiceModels(project.ServiceModels)
+	project.ActiveProfiles = append([]string(nil), project.ActiveProfiles...)
 	project.EnvFiles = append([]EnvFileReference(nil), project.EnvFiles...)
+	project.Secrets = append([]ResourceSource(nil), project.Secrets...)
+	project.Configs = append([]ResourceSource(nil), project.Configs...)
 	project.SourceReferences = append([]SourceReference(nil), project.SourceReferences...)
 	project.ReadOnlyFiles = append([]safefile.ApprovedFile(nil), project.ReadOnlyFiles...)
 	project.IncludedWorkDirs = append([]string(nil), project.IncludedWorkDirs...)
 	return project
+}
+
+func cloneServiceModels(input []composeexec.Service) []composeexec.Service {
+	result := make([]composeexec.Service, len(input))
+	for index, service := range input {
+		result[index] = service
+		result[index].Profiles = append([]string(nil), service.Profiles...)
+		result[index].DependsOn = append([]string(nil), service.DependsOn...)
+	}
+	return result
+}
+
+func resourceSources(input []composeconfig.ResourceSource) []ResourceSource {
+	result := make([]ResourceSource, len(input))
+	for index, source := range input {
+		result[index] = ResourceSource(source)
+	}
+	return result
 }

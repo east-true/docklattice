@@ -37,7 +37,7 @@ var persistedColumns = map[string][]string{
 	},
 	"audit_events": {
 		"id", "agent_id", "incarnation", "seq", "occurred_at", "kind", "actor",
-		"project_uid", "operation_id", "metadata_json",
+		"project_uid", "operation_id", "metadata_json", "resource_type", "resource_id", "action",
 	},
 	"backup_index": {
 		"id", "agent_id", "project_uid", "kind", "created_at", "size_bytes",

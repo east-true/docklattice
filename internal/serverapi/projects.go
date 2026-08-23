@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/east-true/dockpilot/internal/composeexec"
 	"github.com/east-true/dockpilot/internal/producttransport"
 	"github.com/east-true/dockpilot/internal/projectmodel"
 	"github.com/east-true/dockpilot/internal/webui"
@@ -55,21 +56,56 @@ type agentProjectSnapshotResponse struct {
 }
 
 type agentProjectSnapshot struct {
-	UID                     string                 `json:"project_uid"`
-	Root                    string                 `json:"root"`
-	WorkingDir              string                 `json:"working_dir"`
-	Files                   []agentProjectFileFact `json:"files"`
-	Name                    string                 `json:"name"`
-	Services                []string               `json:"services"`
-	IncludedWorkDirs        []string               `json:"included_work_dirs,omitempty"`
-	SourceReferences        []agentSourceReference `json:"source_references,omitempty"`
-	SourceGraphComplete     bool                   `json:"source_graph_complete"`
-	CurrentFingerprint      string                 `json:"current_fingerprint"`
-	ComposeExecutable       bool                   `json:"compose_executable"`
-	FilesystemWritable      bool                   `json:"filesystem_writable"`
-	RestoreRecoveryRequired bool                   `json:"restore_recovery_required,omitempty"`
-	CapabilityReason        string                 `json:"capability_reason,omitempty"`
-	Stale                   bool                   `json:"stale"`
+	UID                     string                  `json:"project_uid"`
+	Root                    string                  `json:"root"`
+	WorkingDir              string                  `json:"working_dir"`
+	Files                   []agentProjectFileFact  `json:"files"`
+	Name                    string                  `json:"name"`
+	Services                []string                `json:"services"`
+	ComposeFiles            []string                `json:"compose_files"`
+	DefinedServices         []agentComposeService   `json:"defined_services"`
+	ActiveProfiles          []string                `json:"active_profiles,omitempty"`
+	EnvFiles                []agentEnvFileReference `json:"env_files,omitempty"`
+	Secrets                 []agentComposeResource  `json:"secrets,omitempty"`
+	Configs                 []agentComposeResource  `json:"configs,omitempty"`
+	PullServices            []string                `json:"pull_services,omitempty"`
+	ProjectUpAvailable      bool                    `json:"project_up_available"`
+	ProjectUpReason         string                  `json:"project_up_reason,omitempty"`
+	IncludedWorkDirs        []string                `json:"included_work_dirs,omitempty"`
+	SourceReferences        []agentSourceReference  `json:"source_references,omitempty"`
+	SourceGraphComplete     bool                    `json:"source_graph_complete"`
+	CurrentFingerprint      string                  `json:"current_fingerprint"`
+	ComposeExecutable       bool                    `json:"compose_executable"`
+	FilesystemWritable      bool                    `json:"filesystem_writable"`
+	RestoreRecoveryRequired bool                    `json:"restore_recovery_required,omitempty"`
+	CapabilityReason        string                  `json:"capability_reason,omitempty"`
+	Stale                   bool                    `json:"stale"`
+}
+
+type agentComposeService struct {
+	Name              string   `json:"name"`
+	Image             string   `json:"image,omitempty"`
+	HasBuild          bool     `json:"has_build"`
+	PullPolicy        string   `json:"pull_policy,omitempty"`
+	Profiles          []string `json:"profiles,omitempty"`
+	DependsOn         []string `json:"depends_on,omitempty"`
+	Active            bool     `json:"active"`
+	BuildRequired     bool     `json:"build_required"`
+	PullAvailable     bool     `json:"pull_available"`
+	UpAvailable       bool     `json:"up_available"`
+	UnavailableReason string   `json:"unavailable_reason,omitempty"`
+}
+
+type agentEnvFileReference struct {
+	Path     string `json:"path"`
+	Readable bool   `json:"readable"`
+}
+
+type agentComposeResource struct {
+	Name       string `json:"name"`
+	SourceType string `json:"source_type,omitempty"`
+	Source     string `json:"source,omitempty"`
+	External   bool   `json:"external"`
 }
 
 type agentSourceReference struct {
@@ -235,6 +271,9 @@ func validateProjectSnapshot(agentID string, snapshot agentProjectList) ([]valid
 				return nil, &corruptDataError{boundary: "Agent project services", cause: errors.New("invalid or unsorted service")}
 			}
 		}
+		if err := validateComposeProjectMetadata(item); err != nil {
+			return nil, &corruptDataError{boundary: "Agent effective Compose metadata", cause: err}
+		}
 		for includeIndex, directory := range item.IncludedWorkDirs {
 			if !canonicalAbsolutePath(directory) || !pathWithin(item.Root, directory) ||
 				includeIndex > 0 && item.IncludedWorkDirs[includeIndex-1] >= directory {
@@ -257,6 +296,113 @@ func validateProjectSnapshot(agentID string, snapshot agentProjectList) ([]valid
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].UID < result[j].UID })
 	return result, nil
+}
+
+func validateComposeProjectMetadata(item agentProjectSnapshot) error {
+	if len(item.DefinedServices) == 0 {
+		if len(item.ComposeFiles) != 0 || len(item.ActiveProfiles) != 0 || len(item.EnvFiles) != 0 ||
+			len(item.Secrets) != 0 || len(item.Configs) != 0 || len(item.PullServices) != 0 ||
+			item.ProjectUpAvailable || item.ProjectUpReason != "" {
+			return errors.New("partial effective Compose metadata")
+		}
+		return nil // Protocol N-1 Agent: mutation policy must fail closed later.
+	}
+	if len(item.DefinedServices) != len(item.Services) || len(item.ComposeFiles) == 0 || len(item.ComposeFiles) > 32 ||
+		len(item.ProjectUpReason) > maxProjectMetadataText || !utf8.ValidString(item.ProjectUpReason) {
+		return errors.New("invalid effective Compose metadata bounds")
+	}
+	seenFiles := make(map[string]struct{}, len(item.ComposeFiles))
+	for _, path := range item.ComposeFiles {
+		cleaned := filepath.Clean(path)
+		if path == "" || len(path) > maxProjectMetadataText || !utf8.ValidString(path) || filepath.IsAbs(path) ||
+			cleaned != path || path == "." || path == ".." || strings.HasPrefix(path, ".."+string(filepath.Separator)) {
+			return errors.New("invalid relative Compose file")
+		}
+		if _, duplicate := seenFiles[path]; duplicate {
+			return errors.New("duplicate Compose file")
+		}
+		seenFiles[path] = struct{}{}
+	}
+	models := make([]composeexec.Service, len(item.DefinedServices))
+	for index, service := range item.DefinedServices {
+		if service.Name != item.Services[index] || len(service.Image) > maxProjectMetadataText || len(service.PullPolicy) > 128 ||
+			len(service.UnavailableReason) > maxProjectMetadataText || !utf8.ValidString(service.Image) ||
+			!utf8.ValidString(service.PullPolicy) || !utf8.ValidString(service.UnavailableReason) ||
+			!strictSortedBounded(service.Profiles, 256, 128) || !strictSortedBounded(service.DependsOn, maxProjectServices, 256) {
+			return errors.New("invalid defined Service metadata")
+		}
+		models[index] = composeexec.Service{
+			Name: service.Name, Image: service.Image, HasBuild: service.HasBuild, PullPolicy: service.PullPolicy,
+			Profiles: append([]string(nil), service.Profiles...), DependsOn: append([]string(nil), service.DependsOn...), Active: service.Active,
+		}
+	}
+	policy, err := composeexec.EvaluateV1Policy(models)
+	if err != nil || !equalProjectStrings(policy.PullServices, item.PullServices) ||
+		policy.ProjectUpAvailable != item.ProjectUpAvailable || policy.ProjectUpReason != item.ProjectUpReason {
+		return errors.New("effective Service policy does not match the Service model")
+	}
+	if len(policy.Services) != len(item.DefinedServices) {
+		return errors.New("effective Service policy length mismatch")
+	}
+	for index, decision := range policy.Services {
+		service := item.DefinedServices[index]
+		if decision.Name != service.Name || decision.BuildRequired() != service.BuildRequired ||
+			decision.PullAvailable != service.PullAvailable || decision.UpAvailable != service.UpAvailable ||
+			decision.UnavailableReason != service.UnavailableReason {
+			return errors.New("derived Service policy fields do not match")
+		}
+	}
+	if !strictSortedBounded(item.ActiveProfiles, 256, 128) || !strictSortedBounded(item.PullServices, maxProjectServices, 256) {
+		return errors.New("invalid profile or Pull Service metadata")
+	}
+	activeProfiles := make(map[string]struct{})
+	for _, model := range models {
+		if model.Active {
+			for _, profile := range model.Profiles {
+				activeProfiles[profile] = struct{}{}
+			}
+		}
+	}
+	wantProfiles := make([]string, 0, len(activeProfiles))
+	for profile := range activeProfiles {
+		wantProfiles = append(wantProfiles, profile)
+	}
+	sort.Strings(wantProfiles)
+	if !equalProjectStrings(wantProfiles, item.ActiveProfiles) {
+		return errors.New("active profiles do not match effective Services")
+	}
+	if len(item.EnvFiles) > maxProjectSourceRefs || len(item.Secrets) > maxProjectSourceRefs || len(item.Configs) > maxProjectSourceRefs {
+		return errors.New("too many Compose source metadata entries")
+	}
+	for _, reference := range item.EnvFiles {
+		if reference.Path == "" || len(reference.Path) > maxProjectMetadataText || !utf8.ValidString(reference.Path) {
+			return errors.New("invalid env_file metadata")
+		}
+	}
+	for _, resources := range [][]agentComposeResource{item.Secrets, item.Configs} {
+		previous := ""
+		for _, resource := range resources {
+			if resource.Name == "" || resource.Name <= previous || len(resource.Name) > 256 || len(resource.Source) > maxProjectMetadataText ||
+				!utf8.ValidString(resource.Name) || !utf8.ValidString(resource.Source) ||
+				(resource.SourceType != "" && resource.SourceType != "file" && resource.SourceType != "environment" && resource.SourceType != "external") {
+				return errors.New("invalid Compose resource source metadata")
+			}
+			previous = resource.Name
+		}
+	}
+	return nil
+}
+
+func strictSortedBounded(values []string, maximum, maxText int) bool {
+	if len(values) > maximum {
+		return false
+	}
+	for index, value := range values {
+		if value == "" || len(value) > maxText || !utf8.ValidString(value) || index > 0 && values[index-1] >= value {
+			return false
+		}
+	}
+	return true
 }
 
 func validateDockerProjectFacts(facts []agentDockerProjectFact) ([]projectmodel.DockerFact, error) {
@@ -500,6 +646,15 @@ func (b *Backend) mergeProjectSnapshotWithDockerObserved(ctx context.Context, ag
 			UnmanagedReason:         mergedItem.unmanagedReason,
 			ContainerIDs:            append([]string(nil), mergedItem.containerIDs...),
 			Services:                append([]string(nil), mergedItem.services...),
+			ComposeFiles:            append([]string(nil), item.ComposeFiles...),
+			DefinedServices:         append([]agentComposeService(nil), item.DefinedServices...),
+			ActiveProfiles:          append([]string(nil), item.ActiveProfiles...),
+			EnvFiles:                append([]agentEnvFileReference(nil), item.EnvFiles...),
+			Secrets:                 append([]agentComposeResource(nil), item.Secrets...),
+			Configs:                 append([]agentComposeResource(nil), item.Configs...),
+			PullServices:            append([]string(nil), item.PullServices...),
+			ProjectUpAvailable:      item.ProjectUpAvailable,
+			ProjectUpReason:         item.ProjectUpReason,
 			IncludedBy:              append([]string(nil), mergedItem.includedBy...),
 			IncludedWorkDirs:        append([]string(nil), item.IncludedWorkDirs...),
 			SourceReferences:        append([]agentSourceReference(nil), item.SourceReferences...),
@@ -641,6 +796,15 @@ func (b *Backend) mergeTargetedProjectSnapshotObserved(ctx context.Context, agen
 		UnmanagedReason:         prior.UnmanagedReason,
 		ContainerIDs:            append([]string(nil), prior.ContainerIDs...),
 		Services:                append([]string(nil), prior.Services...),
+		ComposeFiles:            append([]string(nil), item.ComposeFiles...),
+		DefinedServices:         append([]agentComposeService(nil), item.DefinedServices...),
+		ActiveProfiles:          append([]string(nil), item.ActiveProfiles...),
+		EnvFiles:                append([]agentEnvFileReference(nil), item.EnvFiles...),
+		Secrets:                 append([]agentComposeResource(nil), item.Secrets...),
+		Configs:                 append([]agentComposeResource(nil), item.Configs...),
+		PullServices:            append([]string(nil), item.PullServices...),
+		ProjectUpAvailable:      item.ProjectUpAvailable,
+		ProjectUpReason:         item.ProjectUpReason,
 		IncludedBy:              append([]string(nil), prior.IncludedBy...),
 		IncludedWorkDirs:        append([]string(nil), item.IncludedWorkDirs...),
 		SourceReferences:        append([]agentSourceReference(nil), item.SourceReferences...),

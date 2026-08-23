@@ -56,6 +56,10 @@ type SessionInfo struct {
 	ServerIdentityID string
 	Incarnation      uint64
 	ProtocolVersion  uint32
+	// SourceIP is captured by the Server from the current transport peer. It is
+	// in-memory session metadata only and is never sent by or persisted for the
+	// Agent.
+	SourceIP string
 }
 
 type CredentialIdentity struct {
@@ -146,6 +150,12 @@ type OperationResponse struct {
 	Error                  string
 	OutputTail             []byte
 	OutputTruncated        bool
+	CancelMode             string
+	CanCancel              bool
+	CancelabilityReason    string
+	RequestedAt            time.Time
+	StartedAt              time.Time
+	FinishedAt             time.Time
 }
 
 type OperationHandler interface {
@@ -207,6 +217,8 @@ type LogRequest struct {
 	ShowStdout  bool
 	ShowStderr  bool
 	Timestamps  bool
+	Since       string
+	Until       string
 }
 
 type LogEvent struct {

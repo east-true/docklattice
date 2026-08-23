@@ -68,15 +68,50 @@ type Capability struct {
 }
 
 type Container struct {
-	ID       string
-	Names    []string
-	Image    string
-	State    string
-	Status   string
-	Health   string
-	ExitCode int
-	Labels   map[string]string
-	Mounts   []Mount
+	ID                  string
+	ImageID             string
+	Names               []string
+	Image               string
+	State               string
+	Status              string
+	Health              string
+	ExitCode            int
+	Labels              map[string]string
+	Mounts              []Mount
+	Ports               []PublishedPort
+	Protected           bool
+	ProtectionReason    string
+	CreatedAt           string
+	StartedAt           string
+	FinishedAt          string
+	OOMKilled           bool
+	RestartCount        int
+	RestartPolicy       string
+	RestartMaximumRetry int
+	StopSignal          string
+	StopTimeout         *int
+	LoggingDriver       string
+	Command             []string
+	Entrypoint          []string
+	ExposedPorts        []string
+	Networks            []ContainerNetwork
+}
+
+type ContainerNetwork struct {
+	Name       string
+	NetworkID  string
+	EndpointID string
+	IPv4       string
+	IPv6       string
+	MAC        string
+	Aliases    []string
+}
+
+type PublishedPort struct {
+	HostIP        string
+	PublishedPort uint16
+	TargetPort    uint16
+	Protocol      string
 }
 
 type Mount struct {
@@ -171,8 +206,21 @@ func (adapter *Adapter) List(ctx context.Context) ([]Container, error) {
 		return nil, fmt.Errorf("%w: list containers: %v", ErrUnavailable, err)
 	}
 	containers := make([]Container, 0, len(result.Items))
+	identity := adapter.identity()
+	protected := make(map[string]struct{}, len(identity.ProtectedContainerIDs))
+	for _, id := range identity.ProtectedContainerIDs {
+		protected[id] = struct{}{}
+	}
 	for _, item := range result.Items {
-		containers = append(containers, fromSummary(item))
+		current := fromSummary(item)
+		if identity.FailClosed {
+			current.Protected = true
+			current.ProtectionReason = "Agent identity is unknown; Container mutations fail closed"
+		} else if _, found := protected[current.ID]; found {
+			current.Protected = true
+			current.ProtectionReason = "Container is protected as the Agent or a member of its Compose project"
+		}
+		containers = append(containers, current)
 	}
 	return containers, nil
 }
@@ -233,7 +281,21 @@ func (adapter *Adapter) Inspect(ctx context.Context, id string) (Container, erro
 	if err != nil {
 		return Container{}, fmt.Errorf("docker inspect %s: %w", id, err)
 	}
-	return fromInspect(result.Container), nil
+	container := fromInspect(result.Container)
+	identity := adapter.identity()
+	if identity.FailClosed {
+		container.Protected = true
+		container.ProtectionReason = "Agent identity is unknown; Container mutations fail closed"
+	} else {
+		for _, protectedID := range identity.ProtectedContainerIDs {
+			if protectedID == container.ID {
+				container.Protected = true
+				container.ProtectionReason = "Container is protected as the Agent or a member of its Compose project"
+				break
+			}
+		}
+	}
+	return container, nil
 }
 
 func (adapter *Adapter) Start(ctx context.Context, id string) error {
@@ -299,34 +361,99 @@ func fromSummary(value container.Summary) Container {
 	for _, mount := range value.Mounts {
 		mounts = append(mounts, Mount{Type: string(mount.Type), Source: mount.Source, Destination: mount.Destination, ReadWrite: mount.RW})
 	}
-	result := Container{ID: value.ID, Names: append([]string(nil), value.Names...), Image: value.Image, State: string(value.State), Status: value.Status, Labels: cloneLabels(value.Labels), Mounts: mounts}
+	result := Container{ID: value.ID, Names: append([]string(nil), value.Names...), Image: value.Image, ImageID: value.ImageID, State: string(value.State), Status: value.Status, Labels: cloneLabels(value.Labels), Mounts: mounts}
 	if value.Health != nil {
 		result.Health = string(value.Health.Status)
+	}
+	for _, port := range value.Ports {
+		if port.PublicPort == 0 {
+			continue
+		}
+		hostIP := ""
+		if port.IP.IsValid() {
+			hostIP = port.IP.String()
+		}
+		result.Ports = append(result.Ports, PublishedPort{
+			HostIP: hostIP, PublishedPort: port.PublicPort, TargetPort: port.PrivatePort, Protocol: port.Type,
+		})
+	}
+	if value.NetworkSettings != nil {
+		result.Networks = networkAttachments(value.NetworkSettings.Networks)
 	}
 	return result
 }
 
 func fromInspect(value container.InspectResponse) Container {
-	result := Container{ID: value.ID, Image: value.Image}
+	result := Container{ID: value.ID, Image: value.Image, ImageID: value.Image, CreatedAt: value.Created, RestartCount: value.RestartCount}
 	if value.Name != "" {
 		result.Names = []string{value.Name}
 	}
 	if value.Config != nil {
 		result.Labels = cloneLabels(value.Config.Labels)
-		if result.Image == "" {
+		if value.Config.Image != "" {
 			result.Image = value.Config.Image
+		}
+		result.StopSignal = value.Config.StopSignal
+		result.StopTimeout = value.Config.StopTimeout
+		result.Command = append([]string(nil), value.Config.Cmd...)
+		result.Entrypoint = append([]string(nil), value.Config.Entrypoint...)
+		for port := range value.Config.ExposedPorts {
+			result.ExposedPorts = append(result.ExposedPorts, port.String())
 		}
 	}
 	if value.State != nil {
 		result.State = string(value.State.Status)
 		result.Status = string(value.State.Status)
 		result.ExitCode = value.State.ExitCode
+		result.OOMKilled = value.State.OOMKilled
+		result.StartedAt = value.State.StartedAt
+		result.FinishedAt = value.State.FinishedAt
 		if value.State.Health != nil {
 			result.Health = string(value.State.Health.Status)
 		}
 	}
+	if value.HostConfig != nil {
+		result.RestartPolicy = string(value.HostConfig.RestartPolicy.Name)
+		result.RestartMaximumRetry = value.HostConfig.RestartPolicy.MaximumRetryCount
+		result.LoggingDriver = value.HostConfig.LogConfig.Type
+	}
 	for _, mount := range value.Mounts {
 		result.Mounts = append(result.Mounts, Mount{Type: string(mount.Type), Source: mount.Source, Destination: mount.Destination, ReadWrite: mount.RW})
+	}
+	if value.NetworkSettings != nil {
+		result.Networks = networkAttachments(value.NetworkSettings.Networks)
+		for target, bindings := range value.NetworkSettings.Ports {
+			for _, binding := range bindings {
+				published, err := strconv.ParseUint(binding.HostPort, 10, 16)
+				if err != nil || published == 0 || target.Num() == 0 {
+					continue
+				}
+				hostIP := ""
+				if binding.HostIP.IsValid() {
+					hostIP = binding.HostIP.String()
+				}
+				result.Ports = append(result.Ports, PublishedPort{HostIP: hostIP, PublishedPort: uint16(published), TargetPort: target.Num(), Protocol: string(target.Proto())})
+			}
+		}
+	}
+	return result
+}
+
+func networkAttachments(values map[string]*network.EndpointSettings) []ContainerNetwork {
+	result := make([]ContainerNetwork, 0, len(values))
+	for name, endpoint := range values {
+		if endpoint == nil {
+			continue
+		}
+		ipv4, ipv6 := "", ""
+		if endpoint.IPAddress.IsValid() {
+			ipv4 = endpoint.IPAddress.String()
+		}
+		if endpoint.GlobalIPv6Address.IsValid() {
+			ipv6 = endpoint.GlobalIPv6Address.String()
+		}
+		result = append(result, ContainerNetwork{Name: name, NetworkID: endpoint.NetworkID, EndpointID: endpoint.EndpointID,
+			IPv4: ipv4, IPv6: ipv6, MAC: endpoint.MacAddress.String(), Aliases: append([]string(nil), endpoint.Aliases...)})
 	}
 	return result
 }

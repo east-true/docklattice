@@ -442,6 +442,12 @@ type OperationResponse struct {
 	Error                  string                 `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
 	OutputTail             []byte                 `protobuf:"bytes,6,opt,name=output_tail,json=outputTail,proto3" json:"output_tail,omitempty"`
 	OutputTruncated        bool                   `protobuf:"varint,7,opt,name=output_truncated,json=outputTruncated,proto3" json:"output_truncated,omitempty"`
+	CancelMode             string                 `protobuf:"bytes,8,opt,name=cancel_mode,json=cancelMode,proto3" json:"cancel_mode,omitempty"`
+	CanCancel              bool                   `protobuf:"varint,9,opt,name=can_cancel,json=canCancel,proto3" json:"can_cancel,omitempty"`
+	CancelabilityReason    string                 `protobuf:"bytes,10,opt,name=cancelability_reason,json=cancelabilityReason,proto3" json:"cancelability_reason,omitempty"`
+	RequestedAtUnixNano    int64                  `protobuf:"varint,11,opt,name=requested_at_unix_nano,json=requestedAtUnixNano,proto3" json:"requested_at_unix_nano,omitempty"`
+	StartedAtUnixNano      int64                  `protobuf:"varint,12,opt,name=started_at_unix_nano,json=startedAtUnixNano,proto3" json:"started_at_unix_nano,omitempty"`
+	FinishedAtUnixNano     int64                  `protobuf:"varint,13,opt,name=finished_at_unix_nano,json=finishedAtUnixNano,proto3" json:"finished_at_unix_nano,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -523,6 +529,48 @@ func (x *OperationResponse) GetOutputTruncated() bool {
 		return x.OutputTruncated
 	}
 	return false
+}
+
+func (x *OperationResponse) GetCancelMode() string {
+	if x != nil {
+		return x.CancelMode
+	}
+	return ""
+}
+
+func (x *OperationResponse) GetCanCancel() bool {
+	if x != nil {
+		return x.CanCancel
+	}
+	return false
+}
+
+func (x *OperationResponse) GetCancelabilityReason() string {
+	if x != nil {
+		return x.CancelabilityReason
+	}
+	return ""
+}
+
+func (x *OperationResponse) GetRequestedAtUnixNano() int64 {
+	if x != nil {
+		return x.RequestedAtUnixNano
+	}
+	return 0
+}
+
+func (x *OperationResponse) GetStartedAtUnixNano() int64 {
+	if x != nil {
+		return x.StartedAtUnixNano
+	}
+	return 0
+}
+
+func (x *OperationResponse) GetFinishedAtUnixNano() int64 {
+	if x != nil {
+		return x.FinishedAtUnixNano
+	}
+	return 0
 }
 
 type GetOperationRequest struct {
@@ -891,6 +939,8 @@ type LogStreamRequest struct {
 	Timestamps    bool                   `protobuf:"varint,6,opt,name=timestamps,proto3" json:"timestamps,omitempty"`
 	ProjectUid    string                 `protobuf:"bytes,7,opt,name=project_uid,json=projectUid,proto3" json:"project_uid,omitempty"`
 	Services      []string               `protobuf:"bytes,8,rep,name=services,proto3" json:"services,omitempty"`
+	Since         string                 `protobuf:"bytes,9,opt,name=since,proto3" json:"since,omitempty"`
+	Until         string                 `protobuf:"bytes,10,opt,name=until,proto3" json:"until,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -979,6 +1029,20 @@ func (x *LogStreamRequest) GetServices() []string {
 		return x.Services
 	}
 	return nil
+}
+
+func (x *LogStreamRequest) GetSince() string {
+	if x != nil {
+		return x.Since
+	}
+	return ""
+}
+
+func (x *LogStreamRequest) GetUntil() string {
+	if x != nil {
+		return x.Until
+	}
+	return ""
 }
 
 type LogEvent struct {
@@ -2351,7 +2415,7 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"\vproject_key\x18\x03 \x01(\tR\n" +
 	"projectKey\x12\x16\n" +
 	"\x06target\x18\x04 \x01(\tR\x06target\x12\x18\n" +
-	"\apayload\x18\x05 \x01(\fR\apayload\"\xf9\x01\n" +
+	"\apayload\x18\x05 \x01(\fR\apayload\"\x85\x04\n" +
 	"\x11OperationResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x14\n" +
 	"\x05phase\x18\x02 \x01(\tR\x05phase\x12\x1a\n" +
@@ -2360,7 +2424,16 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"\x05error\x18\x05 \x01(\tR\x05error\x12\x1f\n" +
 	"\voutput_tail\x18\x06 \x01(\fR\n" +
 	"outputTail\x12)\n" +
-	"\x10output_truncated\x18\a \x01(\bR\x0foutputTruncated\"8\n" +
+	"\x10output_truncated\x18\a \x01(\bR\x0foutputTruncated\x12\x1f\n" +
+	"\vcancel_mode\x18\b \x01(\tR\n" +
+	"cancelMode\x12\x1d\n" +
+	"\n" +
+	"can_cancel\x18\t \x01(\bR\tcanCancel\x121\n" +
+	"\x14cancelability_reason\x18\n" +
+	" \x01(\tR\x13cancelabilityReason\x123\n" +
+	"\x16requested_at_unix_nano\x18\v \x01(\x03R\x13requestedAtUnixNano\x12/\n" +
+	"\x14started_at_unix_nano\x18\f \x01(\x03R\x11startedAtUnixNano\x121\n" +
+	"\x15finished_at_unix_nano\x18\r \x01(\x03R\x12finishedAtUnixNano\"8\n" +
 	"\x13GetOperationRequest\x12!\n" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\"s\n" +
 	"\x14GetOperationResponse\x12\x14\n" +
@@ -2383,7 +2456,7 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"\x1cListActiveOperationsResponse\x12E\n" +
 	"\n" +
 	"operations\x18\x01 \x03(\v2%.dockpilot.product.v1.ActiveOperationR\n" +
-	"operations\"\x8b\x02\n" +
+	"operations\"\xb7\x02\n" +
 	"\x10LogStreamRequest\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x16\n" +
 	"\x06follow\x18\x02 \x01(\bR\x06follow\x12\x1d\n" +
@@ -2398,7 +2471,10 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"timestamps\x12\x1f\n" +
 	"\vproject_uid\x18\a \x01(\tR\n" +
 	"projectUid\x12\x1a\n" +
-	"\bservices\x18\b \x03(\tR\bservices\"\x81\x02\n" +
+	"\bservices\x18\b \x03(\tR\bservices\x12\x14\n" +
+	"\x05since\x18\t \x01(\tR\x05since\x12\x14\n" +
+	"\x05until\x18\n" +
+	" \x01(\tR\x05until\"\x81\x02\n" +
 	"\bLogEvent\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x12\x16\n" +
 	"\x06stream\x18\x02 \x01(\tR\x06stream\x12\x1d\n" +

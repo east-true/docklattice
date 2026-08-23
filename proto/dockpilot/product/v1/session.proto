@@ -64,6 +64,12 @@ message OperationResponse {
   string error = 5;
   bytes output_tail = 6;
   bool output_truncated = 7;
+  string cancel_mode = 8;
+  bool can_cancel = 9;
+  string cancelability_reason = 10;
+  int64 requested_at_unix_nano = 11;
+  int64 started_at_unix_nano = 12;
+  int64 finished_at_unix_nano = 13;
 }
 
 message GetOperationRequest {
@@ -108,6 +114,8 @@ message LogStreamRequest {
   bool timestamps = 6;
   string project_uid = 7;
   repeated string services = 8;
+  string since = 9;
+  string until = 10;
 }
 
 message LogEvent {

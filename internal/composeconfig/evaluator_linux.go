@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -40,11 +41,48 @@ type Evaluator struct {
 }
 
 type Result struct {
-	Project  composeexec.Project
-	Services []string
+	Project        composeexec.Project
+	Services       []string
+	ServiceModels  []composeexec.Service
+	ActiveProfiles []string
 	// EnvFiles contains the distinct service env_file paths from Compose's
 	// resolved model. It never contains environment values or file contents.
 	EnvFiles []string
+	Secrets  []ResourceSource
+	Configs  []ResourceSource
+}
+
+// ResourceSource is content-free Compose secret/config source metadata. Source
+// may be a relative file path, an environment variable name, or an external
+// resource name; it never contains the referenced value or file content.
+type ResourceSource struct {
+	Name       string
+	SourceType string
+	Source     string
+	External   bool
+}
+
+type composeModel struct {
+	Name     string                     `json:"name"`
+	Services map[string]rawServiceModel `json:"services"`
+	Secrets  map[string]rawResource     `json:"secrets"`
+	Configs  map[string]rawResource     `json:"configs"`
+}
+
+type rawServiceModel struct {
+	Image      string          `json:"image"`
+	Build      json.RawMessage `json:"build"`
+	PullPolicy string          `json:"pull_policy"`
+	Profiles   []string        `json:"profiles"`
+	DependsOn  json.RawMessage `json:"depends_on"`
+	EnvFile    json.RawMessage `json:"env_file"`
+}
+
+type rawResource struct {
+	File        string          `json:"file"`
+	Environment string          `json:"environment"`
+	Name        string          `json:"name"`
+	External    json.RawMessage `json:"external"`
 }
 
 func (e Evaluator) Evaluate(ctx context.Context, workingDir string, files []string) (Result, error) {
@@ -64,9 +102,56 @@ func (e Evaluator) Evaluate(ctx context.Context, workingDir string, files []stri
 	if grace <= 0 {
 		grace = DefaultCancelGrace
 	}
+	active, err := e.evaluateModel(ctx, dockerPath, workingDir, files, false, limit, grace)
+	if err != nil {
+		return Result{}, err
+	}
+	all, err := e.evaluateModel(ctx, dockerPath, workingDir, files, true, limit, grace)
+	if err != nil {
+		return Result{}, err
+	}
+	if active.Name == "" || all.Name != active.Name {
+		return Result{}, fmt.Errorf("%w: inconsistent Compose project name", ErrInvalidProject)
+	}
+	activeNames := make(map[string]struct{}, len(active.Services))
+	for name := range active.Services {
+		activeNames[name] = struct{}{}
+	}
+	services := sortedServiceNames(all.Services)
+	models, err := serviceModels(all.Services, activeNames, services)
+	if err != nil {
+		return Result{}, err
+	}
+	activeProfiles := selectedActiveProfiles(e.Env, all.Services)
+	envFiles, err := collectEnvFiles(all.Services, services)
+	if err != nil {
+		return Result{}, err
+	}
+	secrets, err := resourceSources("secret", all.Secrets)
+	if err != nil {
+		return Result{}, err
+	}
+	configs, err := resourceSources("config", all.Configs)
+	if err != nil {
+		return Result{}, err
+	}
+	project := composeexec.Project{WorkingDir: workingDir, Files: files, Name: active.Name, Services: models}
+	if _, err := composeexec.BuildArgs(composeexec.Spec{Operation: composeexec.OperationConfig, Project: project}); err != nil {
+		return Result{}, fmt.Errorf("%w: resolved Compose identity: %v", ErrInvalidProject, err)
+	}
+	return Result{
+		Project: project, Services: services, ServiceModels: models, ActiveProfiles: activeProfiles,
+		EnvFiles: envFiles, Secrets: secrets, Configs: configs,
+	}, nil
+}
+
+func (e Evaluator) evaluateModel(ctx context.Context, dockerPath, workingDir string, files []string, allProfiles bool, limit int, grace time.Duration) (composeModel, error) {
 	args := []string{"compose", "--progress", "plain", "--project-directory", workingDir}
 	for _, file := range files {
 		args = append(args, "--file", file)
+	}
+	if allProfiles {
+		args = append(args, "--profile", "*")
 	}
 	args = append(args, "config", "--format", "json", "--no-env-resolution")
 
@@ -79,66 +164,193 @@ func (e Evaluator) Evaluate(ctx context.Context, workingDir string, files []stri
 	}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	if err := cmd.Start(); err != nil {
-		return Result{}, fmt.Errorf("composeconfig: start Docker Compose: %w", err)
+		return composeModel{}, fmt.Errorf("composeconfig: start Docker Compose: %w", err)
 	}
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
 	waitErr, canceled, killErr := waitProcess(ctx, cmd, waited, grace)
 	if killErr != nil {
-		return Result{}, killErr
+		return composeModel{}, killErr
 	}
 	if canceled {
-		return Result{}, ctx.Err()
+		return composeModel{}, ctx.Err()
 	}
 	var exitError *exec.ExitError
 	if waitErr != nil {
 		if errors.As(waitErr, &exitError) {
-			return Result{}, fmt.Errorf("composeconfig: Docker Compose config exited with status %d", exitError.ExitCode())
+			return composeModel{}, fmt.Errorf("composeconfig: Docker Compose config exited with status %d", exitError.ExitCode())
 		}
-		return Result{}, fmt.Errorf("composeconfig: wait: %w", waitErr)
+		return composeModel{}, fmt.Errorf("composeconfig: wait: %w", waitErr)
 	}
 	if stdout.tooLarge {
 		clear(stdout.data)
-		return Result{}, ErrOutputTooLarge
+		return composeModel{}, ErrOutputTooLarge
 	}
 	payload := stdout.data
 	defer clear(payload)
-	var model struct {
-		Name     string `json:"name"`
-		Services map[string]struct {
-			EnvFile json.RawMessage `json:"env_file"`
-		} `json:"services"`
-	}
+	var model composeModel
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	if err := decoder.Decode(&model); err != nil {
-		return Result{}, fmt.Errorf("composeconfig: decode Docker Compose JSON: %w", err)
+		return composeModel{}, fmt.Errorf("composeconfig: decode Docker Compose JSON: %w", err)
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		if err == nil {
-			return Result{}, errors.New("composeconfig: trailing Docker Compose JSON")
+			return composeModel{}, errors.New("composeconfig: trailing Docker Compose JSON")
 		}
-		return Result{}, fmt.Errorf("composeconfig: trailing Docker Compose JSON: %w", err)
+		return composeModel{}, fmt.Errorf("composeconfig: trailing Docker Compose JSON: %w", err)
 	}
-	services := make([]string, 0, len(model.Services))
-	for service := range model.Services {
-		services = append(services, service)
-	}
-	sort.Strings(services)
-	envFiles, err := collectEnvFiles(model.Services, services)
-	if err != nil {
-		return Result{}, err
-	}
-	project := composeexec.Project{WorkingDir: workingDir, Files: files, Name: model.Name}
-	if _, err := composeexec.BuildArgs(composeexec.Spec{Operation: composeexec.OperationConfig, Project: project}); err != nil {
-		return Result{}, fmt.Errorf("%w: resolved Compose identity: %v", ErrInvalidProject, err)
-	}
-	return Result{Project: project, Services: services, EnvFiles: envFiles}, nil
+	return model, nil
 }
 
-func collectEnvFiles(services map[string]struct {
-	EnvFile json.RawMessage `json:"env_file"`
-}, names []string) ([]string, error) {
+func sortedServiceNames(services map[string]rawServiceModel) []string {
+	names := make([]string, 0, len(services))
+	for name := range services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func serviceModels(services map[string]rawServiceModel, active map[string]struct{}, names []string) ([]composeexec.Service, error) {
+	models := make([]composeexec.Service, 0, len(names))
+	for _, name := range names {
+		raw := services[name]
+		dependsOn, err := parseDependsOn(raw.DependsOn)
+		if err != nil {
+			return nil, fmt.Errorf("composeconfig: decode service %q depends_on: %w", name, err)
+		}
+		profiles := append([]string(nil), raw.Profiles...)
+		sort.Strings(profiles)
+		_, isActive := active[name]
+		models = append(models, composeexec.Service{
+			Name: name, Image: raw.Image, HasBuild: hasJSONValue(raw.Build), PullPolicy: raw.PullPolicy,
+			Profiles: profiles, DependsOn: dependsOn, Active: isActive,
+		})
+	}
+	return models, nil
+}
+
+// selectedActiveProfiles preserves the profiles selected for the active
+// Compose evaluation. Inferring them from active services is ambiguous because
+// a service may declare more than one profile.
+func selectedActiveProfiles(env []string, services map[string]rawServiceModel) []string {
+	if env == nil {
+		env = os.Environ()
+	}
+	value := ""
+	found := false
+	for _, entry := range env {
+		key, candidate, ok := strings.Cut(entry, "=")
+		if ok && key == "COMPOSE_PROFILES" {
+			value = candidate
+			found = true
+		}
+	}
+	if !found || strings.TrimSpace(value) == "" {
+		return nil
+	}
+	declared := make(map[string]struct{})
+	for _, service := range services {
+		for _, profile := range service.Profiles {
+			declared[profile] = struct{}{}
+		}
+	}
+	selected := make(map[string]struct{})
+	for _, profile := range strings.Split(value, ",") {
+		profile = strings.TrimSpace(profile)
+		if profile == "*" {
+			for name := range declared {
+				selected[name] = struct{}{}
+			}
+			continue
+		}
+		if _, ok := declared[profile]; ok {
+			selected[profile] = struct{}{}
+		}
+	}
+	profiles := make([]string, 0, len(selected))
+	for profile := range selected {
+		profiles = append(profiles, profile)
+	}
+	sort.Strings(profiles)
+	return profiles
+}
+
+func hasJSONValue(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) != 0 && !bytes.Equal(trimmed, []byte("null"))
+}
+
+func parseDependsOn(raw json.RawMessage) ([]string, error) {
+	if !hasJSONValue(raw) {
+		return nil, nil
+	}
+	trimmed := bytes.TrimSpace(raw)
+	var names []string
+	if trimmed[0] == '[' {
+		if err := json.Unmarshal(trimmed, &names); err != nil {
+			return nil, errors.New("invalid list")
+		}
+	} else {
+		var values map[string]json.RawMessage
+		if err := json.Unmarshal(trimmed, &values); err != nil {
+			return nil, errors.New("invalid map")
+		}
+		for name := range values {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+func resourceSources(kind string, resources map[string]rawResource) ([]ResourceSource, error) {
+	names := make([]string, 0, len(resources))
+	for name := range resources {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	result := make([]ResourceSource, 0, len(names))
+	for _, name := range names {
+		raw := resources[name]
+		external, err := externalResource(raw.External)
+		if err != nil {
+			return nil, fmt.Errorf("composeconfig: decode %s %q external metadata: %w", kind, name, err)
+		}
+		sourceType, source := "", ""
+		switch {
+		case raw.File != "":
+			sourceType, source = "file", raw.File
+		case raw.Environment != "":
+			sourceType, source = "environment", raw.Environment
+		case external:
+			sourceType, source = "external", raw.Name
+			if source == "" {
+				source = name
+			}
+		}
+		result = append(result, ResourceSource{Name: name, SourceType: sourceType, Source: source, External: external})
+	}
+	return result, nil
+}
+
+func externalResource(raw json.RawMessage) (bool, error) {
+	if !hasJSONValue(raw) {
+		return false, nil
+	}
+	var boolean bool
+	if err := json.Unmarshal(raw, &boolean); err == nil {
+		return boolean, nil
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err == nil {
+		return true, nil
+	}
+	return false, errors.New("invalid value")
+}
+
+func collectEnvFiles(services map[string]rawServiceModel, names []string) ([]string, error) {
 	seen := make(map[string]struct{})
 	result := make([]string, 0)
 	for _, name := range names {

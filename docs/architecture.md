@@ -675,6 +675,23 @@ Docker Compose 기능 → docker compose CLI
 
 **Process Group**: compose CLI 자식은 별도 process group으로 실행한다. 취소 시 프로세스 트리 전체를 정리할 수 있고, 세션 정리가 실행 중인 compose에 신호를 흘리지 않는다.
 
+**Compose build policy (v1)**: Dockpilot은 Image build를 수행하지 않는다.
+별도 Build action, Dockerfile/build-context 편집, build args, BuildKit 제어를
+제공하지 않으며 `build`는 effective Compose model의 조회 metadata일 뿐이다.
+
+- 모든 `compose.up`은 `up --detach --no-build`로 실행한다.
+- `image`와 `image + build` Service는 선언된 Image만 사용해 Pull/Up할 수 있다.
+- `build`-only 또는 `pull_policy: build` Service는 build-required이며 Pull과
+  service-level Up을 허용하지 않는다.
+- project-level Up의 effective target set에 build-required Service가 하나라도
+  있으면 전체 Up을 거부한다. 일부 Service를 조용히 제외하지 않는다.
+- Pull은 effective model에서 `image`가 선언된 Service 이름을 명시적으로 전달한다.
+  `--ignore-buildable`을 사용하지 않고 Pull 실패를 build로 fallback하지 않는다.
+
+즉 Dockpilot은 선택된 effective Service model을 선언된 Image만으로 충족할 수
+있을 때만 Compose mutation을 수행한다. 분류의 권위는 Docker Compose CLI가
+반환한 effective model이며 YAML 또는 CLI 오류 문자열을 별도로 해석하지 않는다.
+
 Compose 버전은 "v2"라는 major 이름에 기대지 않고 **Agent 이미지에 Dockpilot이 검증한 plugin 버전을 고정 번들**한다. Agent capability가 실제 bundled version을 보고하고, CI는 `Dockpilot release X → bundled Compose version Y` 조합으로 e2e 검증한다. Docker Engine은 여전히 가변이므로 **API version negotiation과 최소 엔진 버전 선언·기동 시 검사**는 유지한다.
 
 ### 8.2 Operation 타입
@@ -1722,7 +1739,7 @@ Operation output tail은 disk pressure에서 축출 가능하되 최소 결과(`
 
 **거부되는 Operation**: `compose.pull`, file write, `backup.create`, `backup.restore`, 새 수동 Backup, 자동 Snapshot이 필요한 변경, 대용량 staging이 필요한 작업
 
-`compose.pull`을 거부하는 이유: Docker Storage에 큰 이미지 데이터를 추가해 free-space 부족을 악화시킬 수 있다. `compose.up`은 compose 설정에 따라 image pull이 발생해 실패할 수 있으나 **Dockpilot은 이를 자동으로 변형하지 않는다.** storage warning을 표시하고 Docker/Compose 결과를 그대로 반환한다.
+`compose.pull`을 거부하는 이유: Docker Storage에 큰 이미지 데이터를 추가해 free-space 부족을 악화시킬 수 있다. `compose.up --no-build`도 Compose 설정에 따라 image pull이 발생해 실패할 수 있다. Dockpilot은 이를 build로 fallback하지 않으며 storage warning과 Docker/Compose 결과를 그대로 반환한다.
 
 **원인 구분 (필수)**:
 

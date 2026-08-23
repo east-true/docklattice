@@ -53,12 +53,12 @@ func (s *Store) Ingest(
 			execResult, err := tx.exec(ctx, `
 				INSERT INTO audit_events(
 					agent_id, incarnation, seq, occurred_at, kind, actor,
-					project_uid, operation_id, metadata_json
-				) VALUES (?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?)
+					project_uid, operation_id, resource_type, resource_id, action, metadata_json
+				) VALUES (?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?)
 				ON CONFLICT(agent_id, incarnation, seq) DO NOTHING
 			`, agentID, event.Cursor.Incarnation, event.Cursor.Seq,
 				formatTime(event.OccurredAt), event.Kind, event.Actor,
-				event.ProjectUID, event.OperationID, string(metadata))
+				event.ProjectUID, event.OperationID, event.ResourceType, event.ResourceID, event.Action, string(metadata))
 			if err != nil {
 				return err
 			}
@@ -100,14 +100,14 @@ func (s *Store) Ingest(
 }
 
 func verifyDuplicate(ctx context.Context, tx *connectionTx, agentID string, event Event, metadata json.RawMessage) error {
-	var occurredAt, kind, metadataJSON string
+	var occurredAt, kind, resourceType, resourceID, action, metadataJSON string
 	var actor, projectUID, operationID sql.NullString
 	err := tx.row(ctx, `
-		SELECT occurred_at, kind, actor, project_uid, operation_id, metadata_json
+		SELECT occurred_at, kind, actor, project_uid, operation_id, resource_type, resource_id, action, metadata_json
 		FROM audit_events
 		WHERE agent_id = ? AND incarnation = ? AND seq = ?
 	`, agentID, event.Cursor.Incarnation, event.Cursor.Seq).Scan(
-		&occurredAt, &kind, &actor, &projectUID, &operationID, &metadataJSON,
+		&occurredAt, &kind, &actor, &projectUID, &operationID, &resourceType, &resourceID, &action, &metadataJSON,
 	)
 	if err != nil {
 		return err
@@ -116,6 +116,7 @@ func verifyDuplicate(ctx context.Context, tx *connectionTx, agentID string, even
 		actor.String != event.Actor || actor.Valid != (event.Actor != "") ||
 		projectUID.String != event.ProjectUID || projectUID.Valid != (event.ProjectUID != "") ||
 		operationID.String != event.OperationID || operationID.Valid != (event.OperationID != "") ||
+		resourceType != event.ResourceType || resourceID != event.ResourceID || action != event.Action ||
 		!bytes.Equal([]byte(metadataJSON), metadata) {
 		return fmt.Errorf("%w: duplicate audit cursor has different content", ErrInvariant)
 	}

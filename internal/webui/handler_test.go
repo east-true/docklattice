@@ -15,41 +15,49 @@ import (
 )
 
 type testBackend struct {
-	dashboard         Dashboard
-	containers        []HostContainer
-	images            []HostImage
-	networks          []HostNetwork
-	volumes           []HostVolume
-	inventoryID       string
-	auditPage         AuditPage
-	auditRequest      AuditPageRequest
-	auditAgent        string
-	activityUID       string
-	env               []EnvironmentEntry
-	composeUID        string
-	composeQuery      ComposeQuery
-	compose           ComposeOutput
-	projectLogUID     string
-	projectLogRequest ProjectLogRequest
-	file              ProjectFile
-	backups           []Backup
-	op                Operation
-	err               error
-	request           OperationRequest
-	getAgent          string
-	getID             string
-	cancelAgent       string
-	cancelID          string
-	cancellation      OperationCancellation
-	fileRequest       FileWriteRequest
-	create            BackupCreateRequest
-	restore           BackupRestoreRequest
-	liveRequest       LiveRequest
-	logStream         LogStream
-	statsStream       StatsStream
-	matrixAgentID     string
-	matrixStream      MatrixStream
-	matrixErr         error
+	dashboard            Dashboard
+	containers           []HostContainer
+	images               []HostImage
+	networks             []HostNetwork
+	volumes              []HostVolume
+	containerDetails     HostContainer
+	imageDetails         HostImageDetails
+	networkDetails       HostNetworkDetails
+	volumeDetails        HostVolumeDetails
+	objectID             string
+	inventoryID          string
+	auditPage            AuditPage
+	auditRequest         AuditPageRequest
+	auditAgent           string
+	activityUID          string
+	env                  []EnvironmentEntry
+	runtime              ProjectRuntime
+	composeUID           string
+	composeQuery         ComposeQuery
+	compose              ComposeOutput
+	projectLogUID        string
+	projectLogRequest    ProjectLogRequest
+	file                 ProjectFile
+	backups              []Backup
+	op                   Operation
+	operationList        OperationList
+	operationListRequest OperationListRequest
+	err                  error
+	request              OperationRequest
+	getAgent             string
+	getID                string
+	cancelAgent          string
+	cancelID             string
+	cancellation         OperationCancellation
+	fileRequest          FileWriteRequest
+	create               BackupCreateRequest
+	restore              BackupRestoreRequest
+	liveRequest          LiveRequest
+	logStream            LogStream
+	statsStream          StatsStream
+	matrixAgentID        string
+	matrixStream         MatrixStream
+	matrixErr            error
 }
 
 func (b *testBackend) Dashboard(context.Context) (Dashboard, error) { return b.dashboard, b.err }
@@ -63,17 +71,33 @@ func (b *testBackend) HostContainers(_ context.Context, agentID string) ([]HostC
 	b.inventoryID = agentID
 	return append([]HostContainer(nil), b.containers...), b.err
 }
+func (b *testBackend) HostContainer(_ context.Context, agentID, objectID string) (HostContainer, error) {
+	b.inventoryID, b.objectID = agentID, objectID
+	return b.containerDetails, b.err
+}
 func (b *testBackend) HostImages(_ context.Context, agentID string) ([]HostImage, error) {
 	b.inventoryID = agentID
 	return append([]HostImage(nil), b.images...), b.err
+}
+func (b *testBackend) HostImage(_ context.Context, agentID, objectID string) (HostImageDetails, error) {
+	b.inventoryID, b.objectID = agentID, objectID
+	return b.imageDetails, b.err
 }
 func (b *testBackend) HostNetworks(_ context.Context, agentID string) ([]HostNetwork, error) {
 	b.inventoryID = agentID
 	return append([]HostNetwork(nil), b.networks...), b.err
 }
+func (b *testBackend) HostNetwork(_ context.Context, agentID, objectID string) (HostNetworkDetails, error) {
+	b.inventoryID, b.objectID = agentID, objectID
+	return b.networkDetails, b.err
+}
 func (b *testBackend) HostVolumes(_ context.Context, agentID string) ([]HostVolume, error) {
 	b.inventoryID = agentID
 	return append([]HostVolume(nil), b.volumes...), b.err
+}
+func (b *testBackend) HostVolume(_ context.Context, agentID, objectID string) (HostVolumeDetails, error) {
+	b.inventoryID, b.objectID = agentID, objectID
+	return b.volumeDetails, b.err
 }
 func (b *testBackend) HostAudit(_ context.Context, agentID string, request AuditPageRequest) (AuditPage, error) {
 	b.auditAgent, b.auditRequest = agentID, request
@@ -86,6 +110,9 @@ func (b *testBackend) ProjectActivity(_ context.Context, projectUID string, requ
 func (b *testBackend) ProjectEnvironment(context.Context, string) ([]EnvironmentEntry, error) {
 	result := append([]EnvironmentEntry(nil), b.env...)
 	return result, b.err
+}
+func (b *testBackend) ProjectRuntime(context.Context, string) (ProjectRuntime, error) {
+	return b.runtime, b.err
 }
 func (b *testBackend) ProjectComposePS(_ context.Context, projectUID string, request ComposeQuery) (ComposeOutput, error) {
 	b.composeUID, b.composeQuery = projectUID, request
@@ -120,6 +147,10 @@ func (b *testBackend) RestoreBackup(_ context.Context, request BackupRestoreRequ
 func (b *testBackend) StartOperation(_ context.Context, request OperationRequest) (Operation, error) {
 	b.request = request
 	return b.op, b.err
+}
+func (b *testBackend) ListOperations(_ context.Context, request OperationListRequest) (OperationList, error) {
+	b.operationListRequest = request
+	return b.operationList, b.err
 }
 func (b *testBackend) GetOperation(_ context.Context, agentID, operationID string) (Operation, error) {
 	b.getAgent, b.getID = agentID, operationID
@@ -194,9 +225,9 @@ func TestDashboardAndEmbeddedClient(t *testing.T) {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Dockpilot") ||
-			!strings.Contains(response.Body.String(), `id="file-form"`) || !strings.Contains(response.Body.String(), `id="backup-list-form"`) ||
-			!strings.Contains(response.Body.String(), `id="inventory-form"`) || !strings.Contains(response.Body.String(), `id="audit-form"`) || !strings.Contains(response.Body.String(), `id="project-logs-form"`) ||
-			!strings.Contains(response.Body.String(), `id="activity-form"`) {
+			!strings.Contains(response.Body.String(), `id="host-tree"`) || !strings.Contains(response.Body.String(), `id="inspector"`) ||
+			!strings.Contains(response.Body.String(), `id="confirm-dialog"`) || !strings.Contains(response.Body.String(), `id="project-logs-form"`) ||
+			!strings.Contains(response.Body.String(), `id="metrics-template"`) {
 			t.Fatalf("GET %s = %d %q", path, response.Code, response.Body.String())
 		}
 		if got := response.Header().Get("Content-Security-Policy"); !strings.Contains(got, "object-src 'none'") {
@@ -216,10 +247,14 @@ func TestDashboardAndEmbeddedClient(t *testing.T) {
 func TestTypedHostInventoryRoutesAreStrictAndCurated(t *testing.T) {
 	id := strings.Repeat("a", 64)
 	backend := &testBackend{
-		containers: []HostContainer{{ID: id, Names: []string{"/app"}, Image: "repo/app:latest", State: "running", Status: "Up"}},
-		images:     []HostImage{{ID: id, RepoTags: []string{"repo/app:latest"}, Containers: 1}},
-		networks:   []HostNetwork{{ID: id, Name: "bridge", Driver: "bridge", Scope: "local"}},
-		volumes:    []HostVolume{{Name: "data", Driver: "local", Scope: "local"}},
+		containers:       []HostContainer{{ID: id, Names: []string{"/app"}, Image: "repo/app:latest", State: "running", Status: "Up"}},
+		images:           []HostImage{{ID: id, RepoTags: []string{"repo/app:latest"}, Containers: 1}},
+		networks:         []HostNetwork{{ID: id, Name: "bridge", Driver: "bridge", Scope: "local"}},
+		volumes:          []HostVolume{{Name: "data", Driver: "local", Scope: "local"}},
+		containerDetails: HostContainer{ID: id, Labels: map[string]string{"role": "api"}},
+		imageDetails:     HostImageDetails{ID: id, Labels: map[string]string{"stage": "runtime"}},
+		networkDetails:   HostNetworkDetails{ID: id, Name: "bridge", Options: map[string]string{"mode": "nat"}},
+		volumeDetails:    HostVolumeDetails{Name: "data", Mountpoint: "/var/lib/docker/volumes/data/_data"},
 	}
 	handler := newTestHandler(t, backend)
 	for _, resource := range []string{"containers", "images", "networks", "volumes"} {
@@ -231,6 +266,18 @@ func TestTypedHostInventoryRoutesAreStrictAndCurated(t *testing.T) {
 			t.Fatalf("GET %s = %d %q id=%q", resource, response.Code, body, backend.inventoryID)
 		}
 	}
+	for _, resource := range []string{"containers", "images", "networks"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/hosts/agent-a/"+resource+"/"+id, nil))
+		if response.Code != http.StatusOK || backend.inventoryID != "agent-a" || backend.objectID != id {
+			t.Fatalf("GET %s Inspector = %d %q agent=%q object=%q", resource, response.Code, response.Body.String(), backend.inventoryID, backend.objectID)
+		}
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/hosts/agent-a/volumes/data", nil))
+	if response.Code != http.StatusOK || backend.objectID != "data" || !strings.Contains(response.Body.String(), "mountpoint") {
+		t.Fatalf("GET Volume Inspector = %d %q object=%q", response.Code, response.Body.String(), backend.objectID)
+	}
 
 	for _, test := range []struct {
 		method, path string
@@ -240,7 +287,7 @@ func TestTypedHostInventoryRoutesAreStrictAndCurated(t *testing.T) {
 		{http.MethodGet, "/api/v1/hosts/agent-a/images", http.StatusBadRequest},
 		{http.MethodPost, "/api/v1/hosts/agent-a/images", http.StatusMethodNotAllowed},
 		{http.MethodDelete, "/api/v1/hosts/agent-a/volumes", http.StatusMethodNotAllowed},
-		{http.MethodGet, "/api/v1/hosts/agent-a/images/extra", http.StatusBadRequest},
+		{http.MethodGet, "/api/v1/hosts/agent-a/images/extra/more", http.StatusBadRequest},
 		{http.MethodGet, "/api/v1/hosts//images", http.StatusBadRequest},
 	} {
 		response := httptest.NewRecorder()
@@ -255,7 +302,7 @@ func TestTypedHostInventoryRoutesAreStrictAndCurated(t *testing.T) {
 	}
 
 	backend.err = ErrUnavailable
-	response := httptest.NewRecorder()
+	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/hosts/agent-a/networks", nil))
 	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "CAPABILITY_UNAVAILABLE") {
 		t.Fatalf("unavailable response = %d %q", response.Code, response.Body.String())
@@ -280,9 +327,9 @@ func TestEmbeddedInventoryClientIsExplicitAndFailClosed(t *testing.T) {
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/app.js", nil))
 	body := response.Body.String()
 	for _, marker := range []string{
-		`#inventory-form`, `loadInventoryResource`, `inventoryController`,
-		`Unavailable — no inventory shown.`, `loadHistoryPage`, `MAX_RENDERED_AUDIT_EVENTS`,
-		`Stored canonical history remains available`, `Coverage is unknown`, `textContent`,
+		`renderInventory`, `routeController`, `connectionAvailable`,
+		`loadAudit`, `MAX_RENDERED_ROWS`, `Audit continuity is uncertain because coverage has not been established`,
+		`showError`, `textContent`,
 	} {
 		if response.Code != http.StatusOK || !strings.Contains(body, marker) {
 			t.Fatalf("embedded inventory client missing %q: status=%d", marker, response.Code)
@@ -290,12 +337,12 @@ func TestEmbeddedInventoryClientIsExplicitAndFailClosed(t *testing.T) {
 	}
 	// The inventory functions are registered as event handlers. Loading the
 	// dashboard itself must not contain a direct inventory fetch call.
-	loadStart := strings.Index(body, "async function load()")
+	loadStart := strings.Index(body, "async function loadDashboard(")
 	if loadStart < 0 {
 		t.Fatal("dashboard load function is missing")
 	}
-	loadEnd := strings.Index(body[loadStart:], "\n}\n\ndocument.querySelector(\"#inventory-agent\")")
-	if loadEnd < 0 || strings.Contains(body[loadStart:loadStart+loadEnd], "loadInventoryResource(") {
+	loadEnd := strings.Index(body[loadStart:], "\n}\n\nfunction operationTerminal")
+	if loadEnd < 0 || strings.Contains(body[loadStart:loadStart+loadEnd], "/containers") || strings.Contains(body[loadStart:loadStart+loadEnd], "/images") {
 		t.Fatal("dashboard load implicitly triggers host inventory")
 	}
 }
@@ -793,11 +840,14 @@ func TestEmbeddedLiveUIIsAccessibleAndUsesFetchWithoutReconnect(t *testing.T) {
 	html := index.Body.String()
 	for _, required := range []string{
 		`<label for="logs-agent">`, `role="log"`, `aria-live="polite"`,
-		`<label for="metrics-container">`, `role="img"`, `<title id="stats-chart-title">`,
+		`<label for="metrics-container">`, `id="metrics-hierarchy"`, `id="metrics-top"`,
 	} {
 		if !strings.Contains(html, required) {
 			t.Errorf("embedded UI missing accessible markup %q", required)
 		}
+	}
+	if strings.Contains(html, `<svg`) || strings.Contains(html, `stats-chart`) {
+		t.Fatal("Live Metrics UI reintroduced a forbidden chart/history view")
 	}
 	script := httptest.NewRecorder()
 	handler.ServeHTTP(script, httptest.NewRequest(http.MethodGet, "/app.js", nil))

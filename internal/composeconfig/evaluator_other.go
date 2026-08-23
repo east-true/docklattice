@@ -29,9 +29,20 @@ type Evaluator struct {
 }
 
 type Result struct {
-	Project  composeexec.Project
-	Services []string
-	EnvFiles []string
+	Project        composeexec.Project
+	Services       []string
+	ServiceModels  []composeexec.Service
+	ActiveProfiles []string
+	EnvFiles       []string
+	Secrets        []ResourceSource
+	Configs        []ResourceSource
+}
+
+type ResourceSource struct {
+	Name       string
+	SourceType string
+	Source     string
+	External   bool
 }
 
 func (Evaluator) Evaluate(context.Context, string, []string) (Result, error) {

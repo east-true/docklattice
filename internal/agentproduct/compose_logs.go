@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 
 	"github.com/east-true/dockpilot/internal/agentops"
@@ -26,17 +27,15 @@ var (
 // container logs. The typed Request fields prevent a project UID from being
 // treated as a container ID or an arbitrary Docker/Compose argument.
 type composeLogSource struct {
-	docker   logrelay.Source
-	compose  agentops.Compose
-	projects Projects
+	docker    logrelay.Source
+	inventory Docker
+	compose   agentops.Compose
+	projects  Projects
 }
 
 func (source composeLogSource) Stream(ctx context.Context, request logrelay.Request, emit func(logrelay.Chunk) error) error {
 	if request.ProjectUID == "" {
 		return source.docker.Stream(ctx, request, emit)
-	}
-	if request.ContainerID != "" {
-		return errors.New("agentproduct: Compose log request cannot include a container target")
 	}
 	if err := validateComposeLogRequest(request); err != nil {
 		return err
@@ -44,6 +43,18 @@ func (source composeLogSource) Stream(ctx context.Context, request logrelay.Requ
 	projectSnapshot, found := source.projects.ProjectSnapshot(request.ProjectUID)
 	if !found || projectSnapshot.Stale || !projectSnapshot.ComposeExecutable {
 		return errors.New("agentproduct: Compose project is unavailable")
+	}
+	if request.ContainerID != "" {
+		if len(request.Services) != 0 || source.inventory == nil {
+			return errors.New("agentproduct: Container is not attached to the Compose project")
+		}
+		container, err := source.inventory.Inspect(ctx, request.ContainerID)
+		if err != nil || filepath.Clean(container.Labels["com.docker.compose.project.working_dir"]) != filepath.Clean(projectSnapshot.WorkingDir) ||
+			container.Labels["com.docker.compose.project"] != projectSnapshot.Name {
+			return errors.New("agentproduct: Container is not attached to the Compose project")
+		}
+		request.ProjectUID = ""
+		return source.docker.Stream(ctx, request, emit)
 	}
 	if err := validateKnownServices(request.Services, projectSnapshot.Services); err != nil {
 		return err
@@ -68,6 +79,7 @@ func (source composeLogSource) Stream(ctx context.Context, request logrelay.Requ
 			Services:  append([]string(nil), request.Services...),
 			Flags: composeexec.Flags{
 				LogsFollow: request.Follow, LogsTail: int(request.TailLines), LogsTimestamps: request.Timestamps,
+				LogsSince: request.Since, LogsUntil: request.Until,
 			},
 			OutputTailBytes: 1,
 		}, output)
