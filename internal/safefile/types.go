@@ -43,6 +43,14 @@ type File struct {
 	LineEndings  LineEndings
 }
 
+// Digest is a content-free observation for configuration inputs that may
+// contain secrets. It lets discovery track drift without returning file bytes.
+type Digest struct {
+	RelativePath string
+	Size         int64
+	SHA256       string
+}
+
 type ValidationInput struct {
 	ProjectRoot        string
 	RelativePath       string

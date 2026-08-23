@@ -26,6 +26,20 @@ type fakeStreamingEngine struct {
 	logsBody     io.ReadCloser
 	logsOptions  client.ContainerLogsOptions
 	logsID       string
+	inspects     []client.ContainerInspectResult
+	inspectCalls int
+}
+
+func (e *fakeStreamingEngine) ContainerInspect(ctx context.Context, id string, options client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
+	e.inspectCalls++
+	if len(e.inspects) != 0 {
+		index := e.inspectCalls - 1
+		if index >= len(e.inspects) {
+			index = len(e.inspects) - 1
+		}
+		return e.inspects[index], nil
+	}
+	return e.fakeEngine.ContainerInspect(ctx, id, options)
 }
 
 func (e *fakeStreamingEngine) ContainerStats(_ context.Context, id string, options client.ContainerStatsOptions) (client.ContainerStatsResult, error) {
@@ -48,7 +62,7 @@ func TestMobyStatsSourceStreamsAndNormalizesSamples(t *testing.T) {
 		{
 			Read:        started.Add(2 * time.Second),
 			CPUStats:    container.CPUStats{CPUUsage: container.CPUUsage{TotalUsage: 150}, SystemUsage: 200, OnlineCPUs: 2},
-			MemoryStats: container.MemoryStats{Usage: 400, Limit: 1000},
+			MemoryStats: container.MemoryStats{Usage: 400, Limit: 1000, Stats: map[string]uint64{"inactive_file": 100}},
 			Networks: map[string]container.NetworkStats{
 				"eth0": {RxBytes: 10, TxBytes: 20}, "eth1": {RxBytes: 30, TxBytes: 40},
 			},
@@ -89,10 +103,60 @@ func TestMobyStatsSourceStreamsAndNormalizesSamples(t *testing.T) {
 		t.Fatalf("first CPU without baseline = %v", samples[0].CPUPercent)
 	}
 	got := samples[1]
-	if got.CPUPercent != 100 || got.MemoryUsage != 400 || got.MemoryLimit != 1000 || got.NetworkRX != 40 ||
+	if got.CPUPercent != 100 || got.MemoryUsage != 300 || got.MemoryLimit != 1000 || got.NetworkRX != 40 ||
 		got.NetworkTX != 60 || got.BlockRead != 50 || got.BlockWrite != 60 || got.RestartCount != 3 ||
 		got.Health != string(container.Healthy) || got.Uptime != 2*time.Second {
 		t.Fatalf("normalized stats = %+v", got)
+	}
+}
+
+func TestMobyStatsSourceRefreshesInspectMetadata(t *testing.T) {
+	started := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+	var encoded bytes.Buffer
+	for _, response := range []container.StatsResponse{{Read: started.Add(time.Second)}, {Read: started.Add(12 * time.Second)}} {
+		if err := json.NewEncoder(&encoded).Encode(response); err != nil {
+			t.Fatal(err)
+		}
+	}
+	engine := &fakeStreamingEngine{
+		fakeEngine: &fakeEngine{},
+		inspects: []client.ContainerInspectResult{
+			{Container: container.InspectResponse{RestartCount: 1, State: &container.State{StartedAt: started.Format(time.RFC3339Nano), Health: &container.Health{Status: container.Starting}}}},
+			{Container: container.InspectResponse{RestartCount: 2, State: &container.State{StartedAt: started.Add(5 * time.Second).Format(time.RFC3339Nano), Health: &container.Health{Status: container.Healthy}}}},
+		},
+		statsBody: io.NopCloser(bytes.NewReader(encoded.Bytes())),
+	}
+	source := &StatsSource{engine: engine, metadataRefreshInterval: 10 * time.Second}
+	times := []time.Time{started, started.Add(time.Second), started.Add(11 * time.Second)}
+	source.now = func() time.Time {
+		value := times[0]
+		times = times[1:]
+		return value
+	}
+	var samples []livestats.Sample
+	if err := source.Stream(context.Background(), workloadID, func(sample livestats.Sample) error {
+		samples = append(samples, sample)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if engine.inspectCalls != 2 || len(samples) != 2 || samples[0].Health != string(container.Starting) ||
+		samples[1].Health != string(container.Healthy) || samples[1].RestartCount != 2 || samples[1].Uptime != 7*time.Second {
+		t.Fatalf("inspect calls=%d samples=%+v", engine.inspectCalls, samples)
+	}
+}
+
+func TestDockerCLIMemoryUsageHandlesBothCgroupVersions(t *testing.T) {
+	for name, memory := range map[string]container.MemoryStats{
+		"v1": {Usage: 500, Stats: map[string]uint64{"total_inactive_file": 125}},
+		"v2": {Usage: 500, Stats: map[string]uint64{"inactive_file": 100}},
+	} {
+		if got := dockerCLIMemoryUsage(memory); got != map[string]uint64{"v1": 375, "v2": 400}[name] {
+			t.Fatalf("%s usage = %d", name, got)
+		}
+	}
+	if got := dockerCLIMemoryUsage(container.MemoryStats{Usage: 100, Stats: map[string]uint64{"inactive_file": 100}}); got != 100 {
+		t.Fatalf("invalid cache subtraction changed usage to %d", got)
 	}
 }
 

@@ -93,7 +93,6 @@ func TestScanFindsComposeFilesDeterministically(t *testing.T) {
 	want := []string{
 		filepath.Join(root, ".deploy", "docker-compose.yaml"),
 		filepath.Join(root, "a", "compose.yaml"),
-		filepath.Join(root, "a", "compose.yml"),
 		filepath.Join(root, "z", "docker-compose.yml"),
 	}
 	if !reflect.DeepEqual(paths(result.Files), want) {
@@ -371,8 +370,11 @@ func TestComposeFilenameTable(t *testing.T) {
 		{"compose.yml", true},
 		{"docker-compose.yaml", true},
 		{"docker-compose.yml", true},
+		{"compose.override.yaml", true},
+		{"compose.override.yml", true},
+		{"docker-compose.override.yaml", true},
+		{"docker-compose.override.yml", true},
 		{"Compose.yaml", false},
-		{"compose.override.yaml", false},
 		{"docker-compose.json", false},
 	}
 	for _, test := range tests {
@@ -382,5 +384,39 @@ func TestComposeFilenameTable(t *testing.T) {
 				t.Fatalf("compose name match = %v, want %v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestSelectDefaultComposeFilesUsesComposePrecedence(t *testing.T) {
+	root := "/srv/project"
+	candidates := []File{
+		{Path: filepath.Join(root, "docker-compose.yaml")},
+		{Path: filepath.Join(root, "compose.yml")},
+		{Path: filepath.Join(root, "compose.yaml")},
+		{Path: filepath.Join(root, "docker-compose.override.yml")},
+		{Path: filepath.Join(root, "compose.override.yaml")},
+		{Path: filepath.Join(root, "compose.override.yml")},
+	}
+	selected := selectDefaultComposeFiles(candidates)
+	if len(selected) != 2 || filepath.Base(selected[0].Path) != "compose.yaml" || filepath.Base(selected[1].Path) != "compose.override.yml" {
+		t.Fatalf("selected files = %#v", selected)
+	}
+}
+
+func TestScanIncludesDefaultOverrideAndIgnoresAlternativeBase(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"compose.yaml", "compose.yml", "compose.override.yaml"} {
+		touch(t, filepath.Join(root, name))
+	}
+	result, err := Scan(context.Background(), DefaultConfig(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, file := range result.Files {
+		names = append(names, filepath.Base(file.Path))
+	}
+	if !reflect.DeepEqual(names, []string{"compose.override.yaml", "compose.yaml"}) {
+		t.Fatalf("discovered files = %v", names)
 	}
 }

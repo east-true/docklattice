@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -36,8 +37,8 @@ const (
 )
 
 // Reference is source provenance only. Accessible says an fd-relative,
-// no-symlink stat succeeded. ReadOnly says the file was also safely read and
-// is eligible for the catalog's temporary read-only safefile approval.
+// no-symlink read succeeded. ReadOnly says the path is also inside workingDir
+// and eligible for the catalog's temporary project-file approval.
 type Reference struct {
 	Kind       Kind
 	Path       string
@@ -45,7 +46,8 @@ type Reference struct {
 	ReadOnly   bool
 }
 
-// File is one safely read referenced source. It contains no source content.
+// File is one safely observed Compose source or include environment input. It
+// contains only path, size, and digest; environment contents never escape.
 type File struct {
 	Path   string
 	Size   int64
@@ -73,11 +75,11 @@ func New() Analyzer {
 	return Analyzer{MaxFiles: DefaultMaxFiles, MaxEdges: DefaultMaxEdges, MaxDepth: DefaultMaxDepth}
 }
 
-// Analyze starts from already-discovered Compose files. It only follows
-// literal include and services.*.extends.file values that remain under both
-// the verified discovery root and the current project's working directory.
-// A reference outside working_dir is verified for accessibility only and is
-// never read or approved by this project.
+// Analyze starts from already-discovered Compose files. It follows literal
+// include and services.*.extends.file values anywhere under the verified
+// discovery root so every safely resolvable Compose input can participate in
+// drift detection. Only paths under the current project's working directory
+// are exposed as read-only project-file approvals.
 func (analyzer Analyzer) Analyze(ctx context.Context, discoveryRoot, workingDir string, files []string) (Result, error) {
 	limits := analyzer.limits()
 	if !canonicalDirectory(discoveryRoot) || !canonicalDirectory(workingDir) || !within(discoveryRoot, workingDir) {
@@ -118,20 +120,21 @@ func (analyzer Analyzer) Analyze(ctx context.Context, discoveryRoot, workingDir 
 		if _, complete := processed[node.path]; complete {
 			continue
 		}
-		if len(processed) == limits.maxFiles || node.depth > limits.maxDepth {
+		if len(processed) == limits.maxFiles || len(sourceFiles) == limits.maxFiles || node.depth > limits.maxDepth {
 			result.Complete = false
 			continue
 		}
 		processed[node.path] = struct{}{}
 
-		file, readErr := readProjectSource(ctx, workingDir, node.path)
+		file, readErr := readProjectSource(ctx, discoveryRoot, node.path)
 		if readErr != nil {
 			result.Complete = false
 			continue
 		}
 		sourceFiles[node.path] = File{Path: node.path, Size: int64(len(file.Content)), SHA256: file.SHA256}
-		markReadOnly(references, node.path)
-		if node.referenced {
+		insideWorkingDir := within(workingDir, node.path)
+		markObserved(references, node.path, insideWorkingDir)
+		if node.referenced && insideWorkingDir {
 			relative, relativeErr := filepath.Rel(workingDir, node.path)
 			if relativeErr != nil || !safeRelative(relative) {
 				clear(file.Content)
@@ -164,16 +167,45 @@ func (analyzer Analyzer) Analyze(ctx context.Context, discoveryRoot, workingDir 
 			}
 			if _, alreadyRead := sourceFiles[candidate]; alreadyRead {
 				reference.Accessible = true
-				reference.ReadOnly = true
+				reference.ReadOnly = within(workingDir, candidate)
 			}
-			if rawReference.kind == KindInclude {
-				includedDirs[filepath.Dir(candidate)] = struct{}{}
-			}
-			if !within(workingDir, candidate) {
-				if verifyAccessible(ctx, discoveryRoot, candidate) {
-					reference.Accessible = true
+			if rawReference.kind == KindInclude && rawReference.includeEnvironment {
+				projectDirectory := filepath.Dir(candidate)
+				if rawReference.projectDirectory != "" {
+					var projectDirectoryResolved bool
+					projectDirectory, projectDirectoryResolved = resolve(node.path, rawReference.projectDirectory)
+					if !projectDirectoryResolved || !within(discoveryRoot, projectDirectory) {
+						result.Complete = false
+						continue
+					}
 				}
-				continue
+				includedDirs[projectDirectory] = struct{}{}
+				envFiles := rawReference.envFiles
+				if !rawReference.envFileExplicit {
+					envFiles = []string{filepath.Join(projectDirectory, ".env")}
+				}
+				for _, envFile := range envFiles {
+					envPath := envFile
+					if !filepath.IsAbs(envPath) {
+						envPath = filepath.Clean(filepath.Join(filepath.Dir(node.path), envPath))
+					}
+					if !within(discoveryRoot, envPath) {
+						result.Complete = false
+						continue
+					}
+					envInput, found, envErr := digestInput(ctx, discoveryRoot, envPath, !rawReference.envFileExplicit)
+					if envErr != nil {
+						result.Complete = false
+						continue
+					}
+					if found {
+						if _, exists := sourceFiles[envInput.Path]; !exists && len(sourceFiles) == limits.maxFiles {
+							result.Complete = false
+							continue
+						}
+						sourceFiles[envInput.Path] = envInput
+					}
+				}
 			}
 			if _, prior := processed[candidate]; prior {
 				// A source edge back to an earlier file is valid syntax to parse but
@@ -228,16 +260,20 @@ type referenceKey struct {
 }
 
 type rawReference struct {
-	kind Kind
-	path string
+	kind               Kind
+	path               string
+	projectDirectory   string
+	envFiles           []string
+	envFileExplicit    bool
+	includeEnvironment bool
 }
 
-func readProjectSource(ctx context.Context, workingDir, path string) (safefile.File, error) {
-	relative, err := filepath.Rel(workingDir, path)
+func readProjectSource(ctx context.Context, discoveryRoot, path string) (safefile.File, error) {
+	relative, err := filepath.Rel(discoveryRoot, path)
 	if err != nil || !safeRelative(relative) {
-		return safefile.File{}, errors.New("source path escapes working directory")
+		return safefile.File{}, errors.New("source path escapes discovery root")
 	}
-	root, err := safefile.OpenRoot(workingDir, []safefile.ApprovedFile{{RelativePath: filepath.ToSlash(relative), Access: safefile.ReadOnly}})
+	root, err := safefile.OpenRoot(discoveryRoot, []safefile.ApprovedFile{{RelativePath: filepath.ToSlash(relative), Access: safefile.ReadOnly}})
 	if err != nil {
 		return safefile.File{}, err
 	}
@@ -245,17 +281,26 @@ func readProjectSource(ctx context.Context, workingDir, path string) (safefile.F
 	return root.Read(ctx, filepath.ToSlash(relative))
 }
 
-func verifyAccessible(ctx context.Context, discoveryRoot, path string) bool {
+func digestInput(ctx context.Context, discoveryRoot, path string, optional bool) (File, bool, error) {
 	relative, err := filepath.Rel(discoveryRoot, path)
 	if err != nil || !safeRelative(relative) {
-		return false
+		return File{}, false, errors.New("input path escapes discovery root")
 	}
-	root, err := safefile.OpenRoot(discoveryRoot, []safefile.ApprovedFile{{RelativePath: filepath.ToSlash(relative), Access: safefile.ReadOnly}})
+	approved := []safefile.ApprovedFile{{RelativePath: filepath.ToSlash(relative), Access: safefile.ReadOnly}}
+	root, err := safefile.OpenRoot(discoveryRoot, approved)
 	if err != nil {
-		return false
+		return File{}, false, err
 	}
 	defer root.Close()
-	return root.VerifyReadOnly(ctx, filepath.ToSlash(relative)) == nil
+	digest, err := root.DigestReadOnly(ctx, filepath.ToSlash(relative))
+	if err != nil {
+		var pathErr *safefile.PathError
+		if optional && errors.As(err, &pathErr) && errors.Is(pathErr.Err, os.ErrNotExist) {
+			return File{}, false, nil
+		}
+		return File{}, false, err
+	}
+	return File{Path: path, Size: digest.Size, SHA256: digest.SHA256}, true, nil
 }
 
 func extract(content []byte) ([]rawReference, error) {
@@ -284,13 +329,11 @@ func extract(content []byte) ([]rawReference, error) {
 	}
 	references := make([]rawReference, 0)
 	if includeFound {
-		paths, pathsErr := includePaths(include)
-		if pathsErr != nil {
-			return nil, pathsErr
+		includeRefs, includeErr := includeReferences(include)
+		if includeErr != nil {
+			return nil, includeErr
 		}
-		for _, path := range paths {
-			references = append(references, rawReference{kind: KindInclude, path: path})
-		}
+		references = append(references, includeRefs...)
 	}
 	services, servicesFound, err := uniqueMappingValue(root, "services")
 	if err != nil {
@@ -347,40 +390,84 @@ func uniqueMappingValue(mapping *yaml.Node, key string) (*yaml.Node, bool, error
 	return found, found != nil, nil
 }
 
-func includePaths(node *yaml.Node) ([]string, error) {
+func includeReferences(node *yaml.Node) ([]rawReference, error) {
 	switch node.Kind {
 	case yaml.ScalarNode:
-		return validateLiteralPaths([]string{literalPath(node)})
+		paths, err := validateLiteralPaths([]string{literalPath(node)})
+		return rawIncludeReferences(paths, "", nil, false), err
 	case yaml.SequenceNode:
-		result := make([]string, 0, len(node.Content))
+		result := make([]rawReference, 0, len(node.Content))
 		for _, entry := range node.Content {
-			switch entry.Kind {
-			case yaml.ScalarNode:
-				result = append(result, literalPath(entry))
-			case yaml.MappingNode:
-				path, found, err := uniqueMappingValue(entry, "path")
-				if err != nil || !found {
-					return nil, errors.New("include map requires one literal path")
-				}
-				paths, pathErr := includePaths(path)
-				if pathErr != nil {
-					return nil, pathErr
-				}
-				result = append(result, paths...)
-			default:
-				return nil, errors.New("include entry type is unsupported")
+			references, err := includeReferences(entry)
+			if err != nil {
+				return nil, err
 			}
+			result = append(result, references...)
 		}
-		return validateLiteralPaths(result)
+		return result, nil
 	case yaml.MappingNode:
 		path, found, err := uniqueMappingValue(node, "path")
 		if err != nil || !found {
 			return nil, errors.New("include map requires one literal path")
 		}
-		return includePaths(path)
+		paths, pathErr := literalPathList(path)
+		if pathErr != nil {
+			return nil, pathErr
+		}
+		projectDirectory := ""
+		if projectNode, projectFound, projectErr := uniqueMappingValue(node, "project_directory"); projectErr != nil {
+			return nil, projectErr
+		} else if projectFound {
+			values, valueErr := literalPathList(projectNode)
+			if valueErr != nil || len(values) != 1 {
+				return nil, errors.New("include project_directory must be one literal path")
+			}
+			projectDirectory = values[0]
+		}
+		var envFiles []string
+		envFileExplicit := false
+		if envNode, envFound, envErr := uniqueMappingValue(node, "env_file"); envErr != nil {
+			return nil, envErr
+		} else if envFound {
+			envFileExplicit = true
+			envFiles, envErr = literalPathList(envNode)
+			if envErr != nil {
+				return nil, envErr
+			}
+		}
+		return rawIncludeReferences(paths, projectDirectory, envFiles, envFileExplicit), nil
 	default:
 		return nil, errors.New("include value type is unsupported")
 	}
+}
+
+func literalPathList(node *yaml.Node) ([]string, error) {
+	values := make([]string, 0, 1)
+	switch node.Kind {
+	case yaml.ScalarNode:
+		values = append(values, literalPath(node))
+	case yaml.SequenceNode:
+		for _, entry := range node.Content {
+			if entry.Kind != yaml.ScalarNode {
+				return nil, errors.New("include path list must contain literal paths")
+			}
+			values = append(values, literalPath(entry))
+		}
+	default:
+		return nil, errors.New("include path must be a literal or list of literals")
+	}
+	return validateLiteralPaths(values)
+}
+
+func rawIncludeReferences(paths []string, projectDirectory string, envFiles []string, envFileExplicit bool) []rawReference {
+	result := make([]rawReference, 0, len(paths))
+	for index, path := range paths {
+		result = append(result, rawReference{
+			kind: KindInclude, path: path, projectDirectory: projectDirectory,
+			envFiles: append([]string(nil), envFiles...), envFileExplicit: envFileExplicit, includeEnvironment: index == 0,
+		})
+	}
+	return result
 }
 
 func extendsPaths(services *yaml.Node) ([]string, error) {
@@ -461,11 +548,11 @@ func safeRelative(path string) bool {
 	return path != "" && path != "." && !filepath.IsAbs(path) && path != ".." && !strings.HasPrefix(path, ".."+string(filepath.Separator)) && !strings.ContainsRune(path, 0)
 }
 
-func markReadOnly(references map[referenceKey]*Reference, path string) {
+func markObserved(references map[referenceKey]*Reference, path string, readOnly bool) {
 	for key, reference := range references {
 		if key.path == path {
 			reference.Accessible = true
-			reference.ReadOnly = true
+			reference.ReadOnly = readOnly
 		}
 	}
 }

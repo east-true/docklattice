@@ -41,8 +41,10 @@ type FilesystemProject struct {
 	IncludedWorkDirs []string
 }
 
-// DockerFact is a raw observation from public Compose container labels. The
-// config hash is carried for diagnostics only and never participates in drift.
+// DockerFact is a raw observation from Compose container labels. ProjectName
+// and Service come from the public canonical label contract; WorkingDir,
+// ConfigFiles, and ConfigHash are optional implementation diagnostics and
+// never participate in drift.
 type DockerFact struct {
 	ContainerID string
 	ProjectName string
@@ -201,8 +203,10 @@ func Merge(agentID string, filesystem []FilesystemProject, docker []DockerFact, 
 			byDir[dir] = len(projects) - 1
 			continue
 		}
-		// A missing working_dir has no architecture-defined stable project UID.
-		// Preserve it as a first-class read-only observation without inventing one.
+		// working_dir is an optional Compose implementation label. Without it,
+		// a public project-name label cannot safely prove filesystem identity:
+		// another stack may deliberately use the same name. Preserve the
+		// observation as unmanaged instead of guessing a mutable project UID.
 		projects = append(projects, Project{
 			AgentID: agentID, Name: fact.ProjectName, Services: sortedUnique([]string{fact.Service}),
 			ContainerIDs: []string{fact.ContainerID}, Managed: false,

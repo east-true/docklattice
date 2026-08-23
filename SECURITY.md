@@ -36,6 +36,12 @@ a security control — it exists so that exposing the port is a decision someone
 makes, rather than something that happens by accident. Put Dockpilot behind an
 authenticating reverse proxy, or reach it over a tunnel or VPN.
 
+For the Server image, the loopback boundary is the host-side Docker publish
+address, not the process address inside the container. Use
+`-p 127.0.0.1:8080:8080`, never an unqualified `-p 8080:8080`. If remote Agents
+must register, expose only `/api/v1/agent/` through a TLS reverse proxy and
+protect every browser/API path with authentication.
+
 **mTLS, a private CA, and certificate rotation are DO NOT BUILD for v1**
 (architecture section 18). Server transport uses a single server certificate the
 operator provides.

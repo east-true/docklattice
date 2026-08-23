@@ -31,6 +31,7 @@ services:
 	writeSource(t, filepath.Join(project, "parts", "nested.yaml"), "services: {}\n")
 	writeSource(t, filepath.Join(project, "shared", "base.yaml"), "services: {}\n")
 	writeSource(t, filepath.Join(root, "sibling", "compose.yaml"), "services: {}\n")
+	writeSource(t, filepath.Join(root, "sibling", ".env"), "INCLUDED_DEFAULT=one\n")
 
 	result, err := New().Analyze(context.Background(), root, project, []string{filepath.Join(project, "compose.yaml")})
 	if err != nil {
@@ -43,7 +44,7 @@ services:
 		"extends:base.yaml:true:true,include:child.yaml:true:true,include:nested.yaml:true:true,include:compose.yaml:true:false" {
 		t.Fatalf("references = %s", got)
 	}
-	if got := baseNames(result.Files); got != "compose.yaml,child.yaml,nested.yaml,base.yaml" {
+	if got := baseNames(result.Files); got != "compose.yaml,child.yaml,nested.yaml,base.yaml,.env,compose.yaml" {
 		t.Fatalf("safe source files = %s", got)
 	}
 	if got := joinBaseNames(result.IncludedWorkDirs); got != "parts,sibling" {
@@ -51,6 +52,64 @@ services:
 	}
 	if got := joinStrings(result.ReadOnlyPaths); got != "parts/child.yaml,parts/nested.yaml,shared/base.yaml" {
 		t.Fatalf("read-only approvals = %s", got)
+	}
+}
+
+func TestAnalyzeFingerprintsLongSyntaxIncludeEnvironment(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "project")
+	commons := filepath.Join(root, "commons")
+	envDir := filepath.Join(root, "env")
+	for _, directory := range []string{project, commons, filepath.Join(commons, "base"), envDir} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	main := filepath.Join(project, "compose.yaml")
+	writeSource(t, main, `
+include:
+  - path:
+      - ../commons/compose.yaml
+      - ../commons/override.yaml
+    project_directory: ../commons/base
+    env_file:
+      - ../env/common.env
+services: {}
+`)
+	writeSource(t, filepath.Join(commons, "compose.yaml"), "services: {}\n")
+	writeSource(t, filepath.Join(commons, "override.yaml"), "services: {}\n")
+	writeSource(t, filepath.Join(envDir, "common.env"), "INCLUDED=value\n")
+	result, err := New().Analyze(context.Background(), root, project, []string{main})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Complete || baseNames(result.Files) != "compose.yaml,override.yaml,common.env,compose.yaml" {
+		t.Fatalf("result = %#v file names=%s", result, baseNames(result.Files))
+	}
+	if got := referenceSummary(result.References); got != "include:compose.yaml:true:false,include:override.yaml:true:false" {
+		t.Fatalf("references = %s", got)
+	}
+	if got := joinBaseNames(result.IncludedWorkDirs); got != "base" {
+		t.Fatalf("included project directories = %s", got)
+	}
+}
+
+func TestAnalyzeMarksMissingExplicitIncludeEnvironmentIncomplete(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "project")
+	child := filepath.Join(root, "child")
+	if err := os.MkdirAll(project, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	main := filepath.Join(project, "compose.yaml")
+	writeSource(t, main, "include:\n  - path: ../child/compose.yaml\n    env_file: ../child/missing.env\nservices: {}\n")
+	writeSource(t, filepath.Join(child, "compose.yaml"), "services: {}\n")
+	result, err := New().Analyze(context.Background(), root, project, []string{main})
+	if err != nil || result.Complete {
+		t.Fatalf("result = %#v err=%v", result, err)
 	}
 }
 

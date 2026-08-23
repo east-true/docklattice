@@ -195,6 +195,26 @@ func TestVerifyReadOnlyDoesNotReadContentsOrFollowSymlinks(t *testing.T) {
 	}
 }
 
+func TestDigestReadOnlyReturnsOnlyStableMetadata(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "config"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, dir, "config/service.env", []byte("SECRET=value\n"), 0o600)
+	root, err := OpenRoot(dir, []ApprovedFile{{RelativePath: "config/service.env", Access: ReadOnly}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	digest, err := root.DigestReadOnly(context.Background(), "config/service.env")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if digest.RelativePath != "config/service.env" || digest.Size != int64(len("SECRET=value\n")) || digest.SHA256 != shaHex([]byte("SECRET=value\n")) {
+		t.Fatalf("digest = %+v", digest)
+	}
+}
+
 func TestTraversalAbsoluteNULAndSymlinksAreRejected(t *testing.T) {
 	t.Parallel()
 
