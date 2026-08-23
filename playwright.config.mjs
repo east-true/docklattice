@@ -10,10 +10,7 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: [
-    ["list"],
-    ["html", { open: "never" }],
-  ],
+  reporter: [["list"], ["html", { open: "never" }]],
   use: {
     baseURL,
     colorScheme: "light",
@@ -30,11 +27,13 @@ export default defineConfig({
     { name: "tablet-768", use: { viewport: { width: 768, height: 900 } } },
     { name: "mobile-375", use: { viewport: { width: 375, height: 812 } } },
   ],
-  webServer: externalBaseURL ? undefined : {
-    command: "node tests/ui/server.mjs",
-    url: baseURL,
-    reuseExistingServer: false,
-    stdout: "ignore",
-    stderr: "pipe",
-  },
+  webServer: externalBaseURL
+    ? undefined
+    : {
+        command: "node tests/ui/server.mjs",
+        url: baseURL,
+        reuseExistingServer: false,
+        stdout: "ignore",
+        stderr: "pipe",
+      },
 });

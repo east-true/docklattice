@@ -32,9 +32,9 @@ func TestMain(main *testing.M) {
 			os.Exit(0)
 		case "models":
 			if hasArg(os.Args[1:], "--profile", "*") {
-				_, _ = os.Stdout.WriteString(`{"name":"demo","services":{"api":{"image":"company/api:1.8","build":{"context":"."},"profiles":["prod"],"depends_on":{"db":{"condition":"service_started"}}},"db":{"image":"postgres:18"},"worker":{"build":{"context":"worker"},"profiles":["tools"]},"builder":{"image":"company/builder:1","build":{"context":"builder"},"pull_policy":"build"}},"secrets":{"token":{"file":"./token.txt"},"external_token":{"name":"shared-token","external":true}},"configs":{"settings":{"environment":"SETTINGS_FILE"}}}`)
+				_, _ = os.Stdout.WriteString(`{"name":"demo","services":{"api":{"image":"company/api:1.8","build":{"context":"."},"profiles":["debug","prod"],"depends_on":{"db":{"condition":"service_started"}}},"db":{"image":"postgres:18"},"worker":{"build":{"context":"worker"},"profiles":["tools"]},"builder":{"image":"company/builder:1","build":{"context":"builder"},"pull_policy":"build"}},"secrets":{"token":{"file":"./token.txt"},"external_token":{"name":"shared-token","external":true}},"configs":{"settings":{"environment":"SETTINGS_FILE"}}}`)
 			} else {
-				_, _ = os.Stdout.WriteString(`{"name":"demo","services":{"api":{"image":"company/api:1.8","build":{"context":"."},"profiles":["prod"],"depends_on":{"db":{"condition":"service_started"}}},"db":{"image":"postgres:18"}}}`)
+				_, _ = os.Stdout.WriteString(`{"name":"demo","services":{"api":{"image":"company/api:1.8","build":{"context":"."},"profiles":["debug","prod"],"depends_on":{"db":{"condition":"service_started"}}},"db":{"image":"postgres:18"}}}`)
 			}
 			os.Exit(0)
 		case "oversize":
@@ -89,7 +89,23 @@ func hasComposeConfigArgs(args []string) bool {
 func helperEvaluator(mode string) Evaluator {
 	return Evaluator{
 		DockerPath: os.Args[0], CancelGrace: 20 * time.Millisecond,
-		Env: append(os.Environ(), evaluatorHelper+"=1", "DOCKPILOT_COMPOSECONFIG_MODE="+mode),
+		Env: append(os.Environ(), evaluatorHelper+"=1", "DOCKPILOT_COMPOSECONFIG_MODE="+mode, "COMPOSE_PROFILES=prod"),
+	}
+}
+
+func TestSelectedActiveProfilesUsesTheActualEnvironmentSelection(t *testing.T) {
+	services := map[string]rawServiceModel{
+		"api":    {Profiles: []string{"debug", "test"}},
+		"worker": {Profiles: []string{"tools"}},
+	}
+	if got := fmt.Sprint(selectedActiveProfiles([]string{"COMPOSE_PROFILES=test"}, services)); got != "[test]" {
+		t.Fatalf("selected profiles = %s", got)
+	}
+	if got := fmt.Sprint(selectedActiveProfiles([]string{"COMPOSE_PROFILES=debug", "COMPOSE_PROFILES=tools,test"}, services)); got != "[test tools]" {
+		t.Fatalf("last selected profiles = %s", got)
+	}
+	if got := fmt.Sprint(selectedActiveProfiles([]string{"COMPOSE_PROFILES=*"}, services)); got != "[debug test tools]" {
+		t.Fatalf("wildcard selected profiles = %s", got)
 	}
 }
 

@@ -18,7 +18,10 @@ const server = createServer((request, response) => {
   const asset = assets.get(path);
   response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("Referrer-Policy", "no-referrer");
-  response.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+  response.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+  );
   if (!asset) {
     response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
     response.end("not found\n");

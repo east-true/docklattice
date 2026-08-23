@@ -148,7 +148,7 @@ Playwright gate:
 - each viewport attaches full-page screenshots to `playwright-report`, which
   can be viewed with `npm run test:ui:report` or exercised interactively with
   `npm run test:ui:open`;
-- the implementation run completed with 22 passed and 3 intentional
+- the implementation run completed with 27 passed and 3 intentional
   viewport-inapplicable skips.
 
 The Go integration and race suites, `go vet`, JavaScript syntax validation,

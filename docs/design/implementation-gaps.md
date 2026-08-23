@@ -605,7 +605,7 @@ Validation evidence:
 - installed Docker Compose v5.5.0 confirms `up --no-build`, Pull's explicit
   Service arguments, `--ignore-buildable` semantics, and the evaluated fixture
   model used by the implementation;
-- Playwright Chromium acceptance at 1440/1280/1024/768/375: 22 passed, with 3
+- Playwright Chromium acceptance at 1440/1280/1024/768/375: 27 passed, with 3
   intentional skips for the collapsible-navigation test outside its applicable
   narrow viewports.
 

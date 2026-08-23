@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -117,10 +118,11 @@ func (e Evaluator) Evaluate(ctx context.Context, workingDir string, files []stri
 		activeNames[name] = struct{}{}
 	}
 	services := sortedServiceNames(all.Services)
-	models, activeProfiles, err := serviceModels(all.Services, activeNames, services)
+	models, err := serviceModels(all.Services, activeNames, services)
 	if err != nil {
 		return Result{}, err
 	}
+	activeProfiles := selectedActiveProfiles(e.Env, all.Services)
 	envFiles, err := collectEnvFiles(all.Services, services)
 	if err != nil {
 		return Result{}, err
@@ -210,34 +212,69 @@ func sortedServiceNames(services map[string]rawServiceModel) []string {
 	return names
 }
 
-func serviceModels(services map[string]rawServiceModel, active map[string]struct{}, names []string) ([]composeexec.Service, []string, error) {
+func serviceModels(services map[string]rawServiceModel, active map[string]struct{}, names []string) ([]composeexec.Service, error) {
 	models := make([]composeexec.Service, 0, len(names))
-	profileSet := make(map[string]struct{})
 	for _, name := range names {
 		raw := services[name]
 		dependsOn, err := parseDependsOn(raw.DependsOn)
 		if err != nil {
-			return nil, nil, fmt.Errorf("composeconfig: decode service %q depends_on: %w", name, err)
+			return nil, fmt.Errorf("composeconfig: decode service %q depends_on: %w", name, err)
 		}
 		profiles := append([]string(nil), raw.Profiles...)
 		sort.Strings(profiles)
 		_, isActive := active[name]
-		if isActive {
-			for _, profile := range profiles {
-				profileSet[profile] = struct{}{}
-			}
-		}
 		models = append(models, composeexec.Service{
 			Name: name, Image: raw.Image, HasBuild: hasJSONValue(raw.Build), PullPolicy: raw.PullPolicy,
 			Profiles: profiles, DependsOn: dependsOn, Active: isActive,
 		})
 	}
-	activeProfiles := make([]string, 0, len(profileSet))
-	for profile := range profileSet {
-		activeProfiles = append(activeProfiles, profile)
+	return models, nil
+}
+
+// selectedActiveProfiles preserves the profiles selected for the active
+// Compose evaluation. Inferring them from active services is ambiguous because
+// a service may declare more than one profile.
+func selectedActiveProfiles(env []string, services map[string]rawServiceModel) []string {
+	if env == nil {
+		env = os.Environ()
 	}
-	sort.Strings(activeProfiles)
-	return models, activeProfiles, nil
+	value := ""
+	found := false
+	for _, entry := range env {
+		key, candidate, ok := strings.Cut(entry, "=")
+		if ok && key == "COMPOSE_PROFILES" {
+			value = candidate
+			found = true
+		}
+	}
+	if !found || strings.TrimSpace(value) == "" {
+		return nil
+	}
+	declared := make(map[string]struct{})
+	for _, service := range services {
+		for _, profile := range service.Profiles {
+			declared[profile] = struct{}{}
+		}
+	}
+	selected := make(map[string]struct{})
+	for _, profile := range strings.Split(value, ",") {
+		profile = strings.TrimSpace(profile)
+		if profile == "*" {
+			for name := range declared {
+				selected[name] = struct{}{}
+			}
+			continue
+		}
+		if _, ok := declared[profile]; ok {
+			selected[profile] = struct{}{}
+		}
+	}
+	profiles := make([]string, 0, len(selected))
+	for profile := range selected {
+		profiles = append(profiles, profile)
+	}
+	sort.Strings(profiles)
+	return profiles
 }
 
 func hasJSONValue(raw json.RawMessage) bool {

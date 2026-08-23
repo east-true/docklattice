@@ -209,6 +209,10 @@ an already running Dockpilot UI instead of the local asset server. The setup
 follows Playwright's official [web server](https://playwright.dev/docs/test-webserver)
 and [CI](https://playwright.dev/docs/ci) guidance.
 
+Run `npm run format` after editing the browser code. CI runs
+`npm run check:format` so the workbench, Playwright configuration, and UI tests
+remain consistently formatted and reviewable.
+
 Contract and safety-boundary checks, none of which need Docker:
 
 ```sh
