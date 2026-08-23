@@ -1,8 +1,9 @@
 # Dockpilot UI — Implementation Gap Report
 
-**Status:** Awaiting review; implementation is intentionally paused.
+**Status:** Revalidated after current `main` integration; awaiting final gate review.
 
-**Compared at:** `docs/final-ui-design` revision `a4205c0`
+**Compared at:** merged branch revision `58ad1dc50af1fbfda2550c2fd88c7aba7a6a890b`,
+including `main@22f21678f0400b1a81a1ff9fab083a90f011774a`
 
 **Scope:** `DESIGN.md`, `docs/design/web-ui.md`,
 `docs/design/web-ui-acceptance.md`, frozen product/interface contracts, and the
@@ -48,7 +49,7 @@ it must not turn live data into stored data or parse CLI/error text into facts.
 | Requested field or interaction | Class | Repository finding |
 |---|---|---|
 | Dockpilot wordmark, Search, Home, registered Docker hosts only | **Derivable** | `GET /api/v1/dashboard` returns all registered hosts; shell composition is client-only. |
-| Current Agent session availability in sidebar | **Supported** | `Host.state` is `ACTIVE`, `OFFLINE`, or `CLOSED`; capabilities remain separate. |
+| Current Agent session availability in sidebar | **Supported** | Use `Host.capabilities.connection.enabled` as the current availability fact. `Host.state` is only the session lifecycle (`ACTIVE`, `OFFLINE`, or `CLOSED`) and must not make a failed heartbeat look connected. |
 | Current session source IP, only while a session exists | **Minimal extension** | The registry exposes no peer/source address to `webui.Host`. Capture the gRPC peer address in current in-memory session metadata; never persist it. |
 | Exact host and Compose-project tabs | **Derivable** | Client routing only; Service must remain a filter/context, not a route depth. |
 | Explicit first-column object links | **Derivable** | Client routing and semantic HTML only. No whole-row-only navigation is needed. |
@@ -62,7 +63,7 @@ it must not turn live data into stored data or parse CLI/error text into facts.
 | Requested field or interaction | Class | Repository finding |
 |---|---|---|
 | Search, compact state filters, Needs attention, Docker-host table | **Derivable** | Dashboard hosts/projects contain the required base facts. These are controls/tables, not KPI cards. |
-| Host Agent, Docker Engine, Docker Compose, Discovery columns | **Supported** | `Host.state`, capabilities, and `project_scan` are present. Enabled capability reasons must remain warnings rather than becoming disabled state. |
+| Host Agent, Docker Engine, Docker Compose, Discovery columns | **Supported** | Agent availability comes from `capabilities.connection.enabled`; Docker/Compose/Discovery use their own capabilities and `project_scan`. `Host.state` may be secondary lifecycle evidence only. Enabled capability reasons remain warnings rather than disabled state. |
 | Engine unavailable, Compose unavailable, discovery failure/truncation | **Supported** | Capability and `ProjectScan` fields carry exact state/reason. |
 | Restore recovery, collision, missing/stale project, config changed/no baseline | **Supported** | `Project` exposes these explicit flags and drift vocabulary. |
 | Host Audit gap/continuity in Needs attention | **Derivable** | A bounded `GET /hosts/{id}/audit?limit=1` returns host-wide coverage even offline. The UI must show partial loading if one coverage request fails. A later dashboard aggregate endpoint is an optimization, not required semantics. |
@@ -100,7 +101,7 @@ it must not turn live data into stored data or parse CLI/error text into facts.
 |---|---|---|
 | Agent connection and capabilities | **Supported** | Connection, Docker, Compose, Discovery, Metrics, operation recovery, FS read/write are exposed with reasons. |
 | Last completed discovery scan and truncation evidence | **Supported** | Timestamp, stop reason, directories visited, and last path are present. |
-| Container total/running and CPU/memory capacity | **Supported through Live Metrics matrix** | `MatrixHostRow` has Engine-reported capacity and counts. Opening it starts viewer-scoped collection; a non-stream Host Summary snapshot would need an additive host-info query if collection must not start. |
+| Container total/running and CPU/memory capacity | **Minimal extension** | `MatrixHostRow` has these facts, but opening Matrix starts O(running Containers) viewer-scoped collection. Host Summary needs a bounded non-stream Engine-info snapshot; it must not subscribe to Live Metrics implicitly. |
 | Image count | **Derivable** | Count the current Host Images response and label it with that inventory check time. Do not cache it as host state. |
 | Docker API version and bundled Compose version | **Minimal extension** | Heartbeat already transports both, but `serverapi.liveHost` discards them. Add optional `Host` fields only. |
 | Docker Engine version | **Minimal extension** | `dockeradapter.Probe` knows it, but product heartbeat does not carry it. Add an optional capability/detail field. |
@@ -116,14 +117,14 @@ No Host OS utilization field is permitted. Engine capacity is not utilization.
 | Refresh current view | **Derivable** | Re-request dashboard/host data; this is not Discovery rescan. |
 | `Rescan projects` | **Supported** | `discovery.rescan` is an existing asynchronous Operation. |
 | Project name, working directory, managed/read-only state | **Supported** | Exact fields are present. |
-| Config drift, last verified, collision/stale/recovery attention | **Supported** | Exact explicit fields are present; never infer from Compose config-hash. |
-| Current attached Container count | **Supported** | `container_ids` is present. |
+| Config drift, last verified, collision/stale/recovery attention | **Supported** | Exact explicit fields are present; never infer from Compose config-hash. After `main@22f21678`, the current fingerprint safely includes selected Compose/default override inputs plus readable include/extends/`env_file` inputs, and incomplete inputs disable cache reuse. |
+| Observed attached Container count | **Supported with freshness qualification** | `container_ids` comes from the latest project observation. Call it current only when `present=true`, `stale=false`, and the observation is current; otherwise label it `Last known` with `last_verified_at` or omit a current count claim. |
 | Defined service count | **Minimal extension** | The Agent evaluates defined services, but the Server’s public `Project.services` currently stores runtime label-attached services and loses the defined set. Preserve separate `defined_services` and observed runtime services. |
 | Runtime summary: no Container/profile inactive/one-off/orphan | **Minimal extension** | Current Compose `ps` is bounded CLI text and must not be parsed. Add a structured Docker/Compose runtime view based on Docker facts plus the authoritative evaluated service/profile model. |
 | Project name/directory | **Supported** | Project fields are exact. |
-| Compose files and merge order | **Minimal extension** | Agent `Project.ComposeFiles` has ordered paths, but the project transport/storage/Web API omits them. Expose bounded content-free relative metadata. |
+| Compose files and merge order | **Minimal extension** | After `main@22f21678`, Agent discovery selects Docker Compose’s single default base plus optional default override and keeps base-before-override order. `Project.ComposeFiles` is authoritative but the project transport/storage/Web API still omits it; expose bounded content-free relative metadata. |
 | Included applications | **Derivable** for discovered child projects | Invert `included_by` across dashboard projects. Non-project include references remain source references, not invented applications. |
-| Include/extends references and source-graph completeness | **Supported** | Content-free `source_references` and `source_graph_complete` exist. |
+| Include/extends references and source-graph completeness | **Supported** | Content-free `source_references` and `source_graph_complete` exist. `main@22f21678` additionally hashes safe include/extends inputs and marks unreadable/out-of-root/ambiguous input incomplete rather than reusing cache. |
 | Active profiles | **Minimal extension** | Not represented in Compose evaluator result or API. Docker Compose must remain authority; do not parse files in the browser/Server. |
 | Known source references | **Supported** | Include/extends path, accessibility, and read-only facts exist. |
 | Pull/Up/Restart/Start/Stop/Down operations, project or service where valid | **Supported** | Generic operations and fixed Compose argv support project/service targeting; Down remains project-only. |
@@ -169,10 +170,10 @@ No Host OS utilization field is permitted. Engine capacity is not utilization.
 | Atomic single-file save and automatic snapshot | **Supported** | Agent owns validation/snapshot/rename/fsync semantics. UI must not claim multi-file transaction. |
 | Read-only view/copy and disabled Save reason | **Supported** | Project/host capabilities and source reference metadata provide state/reason; actual safe-file read remains authoritative. |
 | Save is not apply; offer Up after success | **Derivable** | UI copy/action only. Operation completion—not 202 acceptance—must trigger success follow-up. |
-| Source navigator: ordered Compose files | **Minimal extension** | Ordered `ComposeFiles` is not exposed, as noted above. |
+| Source navigator: ordered Compose files | **Minimal extension** | Default selection/order is now Docker-compatible in the Agent, but ordered `ComposeFiles` is still not exposed, as noted above. |
 | Included applications and extends references | **Supported/Derivable** | Source references exist; discovered include children can be joined by `included_by`. |
 | Interpolation `.env` entries | **Supported** | `/environment` returns masked/revealed Agent-fetched entries. It does not expose a source taxonomy beyond the managed environment. |
-| Service `env_file` metadata | **Minimal extension** | Agent Catalog already computes content-free path/readability facts, but project query/Web API drops them. |
+| Service `env_file` metadata | **Minimal extension** | Agent Catalog computes content-free path/readability facts and `main@22f21678` includes safely readable inputs in the fingerprint, but project query/Web API still drops the metadata. |
 | Compose secrets/configs source metadata | **Minimal extension** | Not modeled. Add only content-free source metadata from Docker Compose’s authoritative evaluated model. |
 | Resolved/interpolated configuration reveal | **Minimal extension** | Current Compose config endpoint always uses `--no-interpolate` and returns bounded transient text. Add an explicit reveal option if resolved output is adopted; never store it. |
 | Merge/include/extends categories remain distinct | **Derivable** after missing metadata is exposed | Category is presentation, but source kind and merge order must stay separate. |
@@ -258,7 +259,7 @@ No Host OS utilization field is permitted. Engine capacity is not utilization.
 |---|---|---|
 | Viewer-scoped collection lifecycle | **Supported** | `/api/v1/live/matrix` shares one Agent stream per watched host and stops after the last viewer. |
 | Host → project → service → Container hierarchy | **Supported** | Matrix frames provide the full joined hierarchy, including pending/unmapped rows. |
-| CPU, memory, cumulative network/block I/O, health/restarts/uptime | **Supported** | Exact live sample and aggregate fields exist. CPU may exceed 100%; unbounded memory is explicit. |
+| CPU, memory, cumulative network/block I/O, health/restarts/uptime | **Supported** | Exact live sample and aggregate fields exist. CPU may exceed 100%; unbounded memory is explicit. On Linux, `main@22f21678` now matches Docker CLI memory usage by subtracting cgroup v1 `total_inactive_file` or cgroup v2 `inactive_file`. |
 | Engine capacity and managed-filesystem capacity | **Supported** | Host row is Docker workload against Engine capacity; it is not Host OS utilization. |
 | Top Containers from the same frame | **Derivable** | Flatten current frame client-side; throttle/reorder less often than sample updates. No second collector. |
 | Network and block `/s` rates | **Derivable** | Compute delta over actual `observed_at` between frames; first/reset/decreasing counters are unavailable, not zero. |
@@ -338,15 +339,71 @@ wording and availability remain blocked until this decision is approved.
    P1 candidates. The UI should show honest unavailable/not-adopted states, not
    placeholders that imply support.
 
+## Minimal-extension approval slices
+
+The following slices prevent “Minimal extension” from becoming one implicit
+approval batch. Each extension remains additive and bounded; none changes the
+authority or persistence model.
+
+### A. Required to complete the final v1 screen contract
+
+- current in-memory Agent session source IP and observation time;
+- bounded global Operation listing with context, timestamps, phase, output-tail,
+  and cancelability facts;
+- bounded non-stream Host Summary Engine snapshot plus Docker Engine/API and
+  bundled Docker Compose versions;
+- distinct defined-service and observed-runtime facts, including
+  `No container`, `Profile inactive`, `One-off`, and `Orphan`;
+- authoritative ordered Compose file metadata, active profiles, `env_file`,
+  Compose secret/config source metadata, and explicit resolved-config reveal;
+- curated Container table context: Compose project/service, health, published
+  ports, and proactive self-protection reason;
+- project log Container selection and validated Since/Until controls;
+- bounded backup manifest path metadata for exact restore scope;
+- indexed Audit From/Until/Resource/Kind/Actor filters.
+
+These are the only extension items proposed for the implementation-completion
+gate. Product-policy items are excluded even when they also need fields.
+
+### B. Progressive detail and Inspector acceptance hardening
+
+- advanced Docker Engine detail: storage/logging/cgroup drivers, runtime, OS,
+  architecture, kernel, and Docker root directory;
+- curated Container Inspector diagnostics beyond the required table facts:
+  exit code, labels, lifecycle timestamps, OOM, restart count/policy,
+  stop signal/timeout, logging driver, command/entrypoint, mounts, and detailed
+  network attachments;
+- Image usage/reference mapping and curated Image Inspector;
+- Network multi-IPAM, attachment, options, labels, and Compose context;
+- Volume references/destinations, options, labels, mountpoint, and Compose
+  context;
+- bounded post-open log terminal reason where a safe diagnostic is available.
+
+This slice is required before claiming every Inspector/detail acceptance item,
+but it can follow the route/table foundation and must be reviewed separately
+from slice A.
+
+### C. Optional, P1, or product-decision work — deferred
+
+- Compose build/image classification and all Up/Pull build-policy behavior;
+- cross-host live Container search and host-scoped multi-Container logs;
+- observed Audit whitelist expansion;
+- Image/Volume disk-usage queries;
+- restore diff preview;
+- raw Container environment/inspect reveal;
+- Processes/threads metrics.
+
 ## Review decisions requested
 
 Before implementation, confirm:
 
-1. whether the five-step implementation boundary above is approved;
-2. whether additive “Minimal extension” items may be implemented while
-   preserving the frozen authority/storage rules;
-3. that Compose build policy and all P1 candidates remain deferred unless
-   separately approved.
+1. whether this revalidated report and five-step implementation boundary are
+   approved as the implementation gate;
+2. whether slice A extensions are approved for the final v1 screen contract;
+3. whether slice B should be included in the same implementation campaign or
+   reviewed as a separate follow-up;
+4. that slice C, Compose build policy, and all P1 candidates remain deferred
+   unless separately approved.
 
 ## Review judgment — 2026-08-23
 
@@ -405,3 +462,33 @@ separately approved. The authority/storage rules remain unchanged: Docker stays
 the authority for current runtime state, the filesystem for Compose file
 content, the Agent for execution/locks, and the Server canonical Audit archive
 for synchronized Audit history.
+
+## Revalidation response — 2026-08-23
+
+The conditional-review requirements above have been applied to the report, but
+this response does not self-approve the implementation gate.
+
+- `main@22f21678` was integrated into `docs/final-ui-design` by merge commit
+  `58ad1dc50af1fbfda2550c2fd88c7aba7a6a890b`; the previously published review
+  commit remains in history unchanged.
+- Sidebar availability now names
+  `capabilities.connection.enabled` as authority and treats `Host.state` only
+  as session lifecycle evidence.
+- Host Summary counts/capacity are reclassified to a bounded non-stream
+  **Minimal extension**; Matrix must not be opened implicitly.
+- `container_ids` is now described as an observed project attachment set with
+  `present`/`stale`/`last_verified_at` freshness qualification.
+- Docker-compatible default Compose base/override selection and order were
+  confirmed in Agent discovery. Ordered `ComposeFiles` remains a UI/API gap
+  because the project response still omits it.
+- Include/extends and service `env_file` inputs are safely digested into the
+  current fingerprint where readable; unsafe/incomplete inputs prevent cache
+  reuse. Source-reference metadata and `source_graph_complete` remain
+  supported, while `env_file` metadata exposure remains a Minimal extension.
+- Linux Live Metrics memory usage now follows Docker CLI-compatible cgroup v1
+  and v2 inactive-file subtraction, so the Supported classification remains.
+- Minimal extensions are now divided into final-contract, progressive-detail,
+  and optional/product-decision slices.
+
+Implementation remains paused pending an external review of this refreshed
+gate and explicit scope selection for slices A and B.
