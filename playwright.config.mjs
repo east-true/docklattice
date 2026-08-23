@@ -44,6 +44,13 @@ function systemChromeCandidates() {
           "Application",
           "chrome.exe",
         ),
+      process.env.LOCALAPPDATA &&
+        path.join(
+          process.env.LOCALAPPDATA,
+          "Chromium",
+          "Application",
+          "chrome.exe",
+        ),
     ].filter(Boolean);
   }
   return [];
