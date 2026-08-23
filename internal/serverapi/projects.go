@@ -34,9 +34,10 @@ type agentProjectList struct {
 	Status      agentProjectScanStatus   `json:"status"`
 }
 
-// agentDockerProjectFact contains public Compose label values exactly as the
-// Agent observed them. Server validation bounds the transport data, but never
-// recomputes or compares the internal Compose config-hash label.
+// agentDockerProjectFact contains Compose label values exactly as the Agent
+// observed them. Only project and service are public canonical labels; Server
+// validation bounds the optional implementation diagnostics, but never
+// recomputes or compares config-hash.
 type agentDockerProjectFact struct {
 	ContainerID string   `json:"container_id"`
 	ProjectName string   `json:"project_name"`
@@ -218,7 +219,7 @@ func validateProjectSnapshot(agentID string, snapshot agentProjectList) ([]valid
 
 		facts := make([]projectmodel.FileFact, len(item.Files))
 		for fileIndex, file := range item.Files {
-			if !canonicalAbsolutePath(file.Path) || !pathWithin(item.WorkingDir, file.Path) || file.Size < 0 ||
+			if !canonicalAbsolutePath(file.Path) || !pathWithin(item.Root, file.Path) || file.Size < 0 ||
 				!canonicalSHA256.MatchString(file.SHA256) || fileIndex > 0 && item.Files[fileIndex-1].Path >= file.Path {
 				return nil, &corruptDataError{boundary: "Agent project file facts", cause: errors.New("invalid or unsorted file fact")}
 			}
@@ -328,10 +329,10 @@ func mergeProjectFacts(agentID string, filesystem []validatedProjectSnapshot, do
 		return nil, err
 	}
 	result := make([]mergedProjectSnapshot, 0, len(merged))
-	dockerServices := make(map[string][]string)
+	dockerServiceByContainer := make(map[string]string, len(dockerFacts))
 	for _, fact := range dockerFacts {
-		if fact.WorkingDir != "" && fact.Service != "" {
-			dockerServices[fact.WorkingDir] = append(dockerServices[fact.WorkingDir], fact.Service)
+		if fact.Service != "" {
+			dockerServiceByContainer[fact.ContainerID] = fact.Service
 		}
 	}
 	for _, project := range merged {
@@ -351,9 +352,13 @@ func mergeProjectFacts(agentID string, filesystem []validatedProjectSnapshot, do
 				Services: append([]string(nil), project.Services...),
 			}}
 		}
+		runtimeServices := make([]string, 0, len(project.ContainerIDs))
+		for _, containerID := range project.ContainerIDs {
+			runtimeServices = append(runtimeServices, dockerServiceByContainer[containerID])
+		}
 		result = append(result, mergedProjectSnapshot{
 			snapshot: item, managed: project.Managed, unmanagedReason: project.UnmanagedReason,
-			containerIDs: append([]string(nil), project.ContainerIDs...), services: sortedProjectStrings(dockerServices[project.WorkingDir]),
+			containerIDs: append([]string(nil), project.ContainerIDs...), services: sortedProjectStrings(runtimeServices),
 			collision: project.NameCollision, includedBy: append([]string(nil), project.IncludedBy...),
 		})
 	}

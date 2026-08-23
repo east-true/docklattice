@@ -491,7 +491,8 @@ mTLS / 자체 CA / 인증서 로테이션은 v1에서 **DO NOT BUILD**.
 
 Agent가 보고하는 raw 사실:
 
-- **Docker측**: `com.docker.compose.project`, `.working_dir`, `.config_files`, `.service`, `.config-hash`
+- **Docker측**: 공개 계약인 `com.docker.compose.project`, `.service`와, 진단용
+  구현 라벨 `.working_dir`, `.config_files`, `.config-hash`
 - **FS측**: discovery root 하위 compose 파일의 canonical 절대경로, 파일별 `(size, mtime, sha256)`, `docker compose config`로 얻은 project name
 
 merge/identity 판단을 Server로 올려 Agent 로직을 줄이고, 여러 Agent에 걸친 판단(같은 name이 여러 host에 존재)을 가능하게 한다.
@@ -506,6 +507,14 @@ discovery roots (명시적 지정)
 ```
 
 `max_depth`를 강제하지 않는 이유: root를 관리자가 명시했고, 디렉터리 깊이는 환경마다 다르며, 임의 depth 제한이 정상 프로젝트를 놓치는 것이 더 나쁘다. 대신 **scan budget**을 둔다.
+
+한 directory에 기본 파일 후보가 여러 개 있으면 Compose의 기본 순서를 그대로
+적용해 하나만 선택한다: `compose.yaml`, `compose.yml`, `docker-compose.yml`,
+`docker-compose.yaml`. override도
+`compose.override.yml`, `compose.override.yaml`,
+`docker-compose.override.yml`, `docker-compose.override.yaml` 중 첫 파일 하나만
+base 뒤에 둔다. Dockpilot은 이후 명시적 `--file` 인자를 사용하므로 이 선택과
+순서를 자체적으로 보존해야 한다.
 
 ```
 per-scan budget: max_dirs_visited (기본 200,000), max_duration (기본 60s)
@@ -556,7 +565,7 @@ discovery boundary 마커는 **FUTURE** — 실제 요구가 확인되기 전에
 
 ### 7.4 Project Name — 재구현 금지
 
-compose project name 규칙은 `name:` 필드 > `COMPOSE_PROJECT_NAME` > `-p` > 디렉터리명 정규화 순이며 `.env`와 override 병합까지 얽힌다. **직접 파싱하지 않는다.**
+compose project name 규칙은 `-p` > `COMPOSE_PROJECT_NAME` > `name:` 필드 > 디렉터리명 정규화 순이며 `.env`와 override 병합까지 얽힌다. **직접 파싱하지 않는다.**
 
 ```
 docker compose -f <files> --project-directory <dir> config --format json
@@ -573,7 +582,11 @@ project_uid = hash(agent_id + canonical_working_dir)
 - `canonical_working_dir`: symlink 해석 후 절대경로, trailing slash 정규화
 - **project name을 identity에 넣지 않는다.** name은 `.env` 한 줄로 바뀌고, 그러면 UI에서 project가 사라졌다 나타난다. name은 표시용 속성이다.
 - working_dir이 바뀌면 새 project다(compose 입장에서도 다른 project).
-- Docker측 관측을 label `working_dir`로 FS측에 접합한다. label이 없거나 discovery root 밖을 가리키면 **"unmanaged compose project"** 로 표시(조회만 가능, 파일 편집 불가). 이 상태를 1급으로 다룬다 — 실제로 흔하다.
+- Docker측 관측을 label `working_dir`로 FS측에 접합한다. 이 구현 라벨이 없거나
+  discovery 결과 밖을 가리키면 **"unmanaged compose project"** 로 표시(조회만
+  가능, 파일 편집 불가)한다. 공개 `project` 이름만으로 filesystem identity를
+  추정하지 않는다. 다른 stack이 같은 이름을 쓸 수 있기 때문이다. 이 상태를
+  1급으로 다룬다 — 실제로 흔하다.
 
 ### 7.6 Project Name 충돌 감지 (CORE)
 
@@ -636,7 +649,7 @@ no baseline  : Dockpilot 적용 이력 없음
 
 `no baseline`을 `changed`로 뭉뚱그리면 Tier 1의 신뢰도가 첫날부터 떨어진다.
 
-**저장 위치**: Server의 project 행. `compose.up` 성공 시 Server가 미러에 결과를 기록하면서 fingerprint 집합도 확정한다. 기록 대상 파일 집합은 apply 시점에 compose가 실제로 사용한 파일 목록(`compose config`의 resolved config file 목록 + `.env`)이다.
+**저장 위치**: Server의 project 행. `compose.up` 성공 시 Server가 미러에 결과를 기록하면서 fingerprint 집합도 확정한다. 기록 대상은 선택된 base/override, project `.env`, include/extends source, service/include env file 중 Agent가 discovery root 안에서 안전하게 hash한 입력 집합이다. 해석 또는 hash가 불완전하면 Compose evaluation cache를 재사용하지 않는다.
 
 ---
 
@@ -945,16 +958,20 @@ source-provenance parser의 추가 경계:
 - `working_dir` 안의 include/extends source file은 모든 parent component와 target을
   `O_NOFOLLOW`로 다시 확인한 regular file일 때만 읽고, fingerprint에 넣으며,
   project의 temporary `ReadOnly` allowlist에 추가한다.
-- `working_dir` 밖이지만 discovery root 안인 참조는 fd-relative no-follow stat으로
-  접근 가능 여부만 확인한다. 부모 project가 내용을 읽거나 allowlist에 추가하지
-  않는다. 해당 directory가 별도 discovery project라면 그 project 화면에서만
-  정상 파일 접근을 판단한다.
+- `working_dir` 밖이지만 discovery root 안인 참조는 fd-relative no-follow로
+  읽고 SHA-256/크기만 fingerprint에 넣는다. 내용은 Server로 보내지 않고 부모
+  project의 파일 읽기 allowlist에도 추가하지 않는다. 해당 directory가 별도
+  discovery project라면 그 project 화면에서만 정상 파일 접근을 판단한다.
+- service `env_file`, include의 기본 `.env`, long-syntax `env_file`도 같은 방식으로
+  내용 없는 digest만 fingerprint에 포함한다. 안전하게 해석하거나 hash할 수 없는
+  입력이 하나라도 있으면 graph를 incomplete로 표시하고 evaluation cache를
+  재사용하지 않는다.
 
 근거: compose 파일은 **사용자가 편집 가능한 콘텐츠**다. 참조 경로를 그대로 신뢰하면 `include: /etc/...` 같은 경로로 Agent를 임의 파일 리더로 만들 수 있다. 또한 `include`는 `../commons/compose.yaml`처럼 부모 프로젝트 밖을 참조할 수 있고 포함된 파일마다 자체 프로젝트 디렉터리 기준으로 상대경로를 해석하므로, 부모 화면에서 이런 파일까지 쓰게 하면 다른 프로젝트와 공유된 설정을 예상치 못하게 변경할 수 있다.
 
 ```
 Parent Project
-  include ../commons/compose.yaml   → 읽기 메타데이터만
+  include ../commons/compose.yaml   → fingerprint digest만, 파일 API 접근 금지
 
 Commons Project
   자체 project로 discovery됨        → 자신의 화면에서 정상 편집
@@ -1544,6 +1561,12 @@ Docker stats stream → Agent(집계 없음, 통과) → Server(저장 없음, �
 ### 12.2 조회 대상
 
 **Container**: CPU usage, memory usage/limit, network RX/TX, block I/O, restart count, health, uptime
+
+Linux memory usage는 Docker CLI와 같은 working-set 근사값을 사용한다: Engine
+API의 cgroup total usage에서 v1 `total_inactive_file` 또는 v2 `inactive_file`을
+차감하되 cache가 usage 이상이면 원값을 유지한다. health/restart/start metadata는
+stats stream만으로 갱신되지 않으므로 stream 유지 중 10초마다 inspect를 다시
+조회하며, 일시적인 inspect 실패는 정상 stats sample을 폐기하지 않는다.
 
 **Host/Docker**: daemon availability, container counts, image counts, running/stopped — `docker info` + `docker ps`로 저렴하게. 대시보드가 열려 있을 때만 10초 주기.
 

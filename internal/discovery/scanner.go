@@ -34,12 +34,32 @@ var defaultIgnoredDirectories = map[string]struct{}{
 	"build":        {},
 }
 
-var composeFileNames = map[string]struct{}{
-	"compose.yaml":        {},
-	"compose.yml":         {},
-	"docker-compose.yaml": {},
-	"docker-compose.yml":  {},
-}
+// The order mirrors Docker Compose's default discovery contract. Dockpilot
+// always passes explicit --file arguments after discovery, so it must select
+// the same single base file and optional default override that Compose would
+// have selected implicitly. Passing every filename found in a directory would
+// merge alternatives that Compose normally treats as fallbacks.
+var (
+	defaultComposeFileNames = []string{
+		"compose.yaml",
+		"compose.yml",
+		"docker-compose.yml",
+		"docker-compose.yaml",
+	}
+	defaultComposeOverrideFileNames = []string{
+		"compose.override.yml",
+		"compose.override.yaml",
+		"docker-compose.override.yml",
+		"docker-compose.override.yaml",
+	}
+	composeFileNames = func() map[string]struct{} {
+		result := make(map[string]struct{}, len(defaultComposeFileNames)+len(defaultComposeOverrideFileNames))
+		for _, name := range append(append([]string(nil), defaultComposeFileNames...), defaultComposeOverrideFileNames...) {
+			result[name] = struct{}{}
+		}
+		return result
+	}()
+)
 
 // FileKind distinguishes the Compose configuration files supplied to the CLI
 // from companion files that Compose consumes implicitly. Both kinds contribute
@@ -394,6 +414,7 @@ func (s *Scanner) Scan(ctx context.Context) (Result, error) {
 		// A .env without a local Compose configuration is not a project. Keep
 		// companion files only when the directory was independently discovered
 		// as a managed Compose project.
+		composeFiles = selectDefaultComposeFiles(composeFiles)
 		if len(composeFiles) > 0 {
 			for _, candidateFile := range append(composeFiles, envFiles...) {
 				if previous, exists := found[candidateFile.Path]; !exists || moreSpecificRoot(current.root, previous.Root) {
@@ -428,7 +449,8 @@ func (s *Scanner) ScanProject(ctx context.Context, root, workingDir string) ([]F
 	}
 	sort.Slice(entries, func(left, right int) bool { return entries[left].Name() < entries[right].Name() })
 	files := make([]File, 0, len(entries))
-	composeFound := false
+	composeCandidates := make([]File, 0, len(entries))
+	envFiles := make([]File, 0, 1)
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -456,12 +478,19 @@ func (s *Scanner) ScanProject(ctx context.Context, root, workingDir string) ([]F
 		if err != nil {
 			return nil, err
 		}
-		files = append(files, File{Root: root, Path: path, Kind: kind, Size: facts.Size, ModTime: facts.ModTime, SHA256: facts.SHA256})
-		composeFound = composeFound || kind == FileKindCompose
+		candidateFile := File{Root: root, Path: path, Kind: kind, Size: facts.Size, ModTime: facts.ModTime, SHA256: facts.SHA256}
+		if kind == FileKindCompose {
+			composeCandidates = append(composeCandidates, candidateFile)
+		} else {
+			envFiles = append(envFiles, candidateFile)
+		}
 	}
-	if !composeFound {
+	composeFiles := selectDefaultComposeFiles(composeCandidates)
+	if len(composeFiles) == 0 {
 		return nil, &ScanError{Code: CodeFileUnstable, Path: workingDir, Err: errors.New("project no longer has a Compose configuration file")}
 	}
+	files = append(files, composeFiles...)
+	files = append(files, envFiles...)
 	sort.Slice(files, func(left, right int) bool { return files[left].Path < files[right].Path })
 	return files, nil
 }
@@ -486,6 +515,30 @@ func trackedFileKind(name string) (FileKind, bool) {
 		return FileKindEnv, true
 	}
 	return "", false
+}
+
+func selectDefaultComposeFiles(candidates []File) []File {
+	byName := make(map[string]File, len(candidates))
+	for _, candidate := range candidates {
+		byName[filepath.Base(candidate.Path)] = candidate
+	}
+	result := make([]File, 0, 2)
+	for _, name := range defaultComposeFileNames {
+		if candidate, found := byName[name]; found {
+			result = append(result, candidate)
+			break
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	for _, name := range defaultComposeOverrideFileNames {
+		if candidate, found := byName[name]; found {
+			result = append(result, candidate)
+			break
+		}
+	}
+	return result
 }
 
 func stopReasonForError(err error) StopReason {

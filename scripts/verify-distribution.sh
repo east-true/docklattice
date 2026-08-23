@@ -83,4 +83,14 @@ require_literal "io.dockpilot.docker-cli.version=\"${DOCKER_CLI_VERSION}\"" "$do
 require_literal "io.dockpilot.compose.version=\"${COMPOSE_VERSION}\"" "$dockerfile"
 require_literal "BundledComposeVersion: \"${COMPOSE_VERSION}\"" "$repo_dir/cmd/dockpilot/factories.go"
 
+# The browser/API has no authentication in v1. Documentation examples must
+# never regress to Docker's all-host-interface shorthand for port 8080.
+for install_doc in "$repo_dir/README.md" "$repo_dir/docs/operations/install.md"; do
+    require_literal '-p 127.0.0.1:8080:8080' "$install_doc"
+    if grep -qE '^[[:space:]]*-p 8080:8080([[:space:]]|$)' "$install_doc"; then
+        printf 'distribution verification failed: %s publicly publishes the unauthenticated UI\n' "$install_doc" >&2
+        exit 1
+    fi
+done
+
 printf 'distribution metadata is internally consistent\n'

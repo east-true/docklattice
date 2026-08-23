@@ -48,6 +48,62 @@ func (r *Root) Read(ctx context.Context, relativePath string) (File, error) {
 	return cloneFile(opened.file), nil
 }
 
+// DigestReadOnly hashes one allowlisted regular file without retaining or
+// returning its contents. The same descriptor-relative, no-symlink and stable
+// stat checks used by Read protect the observation.
+func (r *Root) DigestReadOnly(ctx context.Context, relativePath string) (Digest, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return Digest{}, ErrClosed
+	}
+	path, err := r.authorize(relativePath, false)
+	if err != nil {
+		return Digest{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return Digest{}, err
+	}
+	parent, _, err := r.walkParent(path)
+	if err != nil {
+		return Digest{}, err
+	}
+	defer unix.Close(parent)
+	name := filepath.Base(path)
+	fd, err := unix.Openat(parent, name, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return Digest{}, &PathError{Path: path, Reason: "open regular file without following symlinks", Err: err}
+	}
+	file := os.NewFile(uintptr(fd), name)
+	defer file.Close()
+	var before unix.Stat_t
+	if err := unix.Fstat(fd, &before); err != nil {
+		return Digest{}, &PathError{Path: path, Reason: "stat opened file", Err: err}
+	}
+	if before.Mode&unix.S_IFMT != unix.S_IFREG {
+		return Digest{}, &PathError{Path: path, Reason: "target is not a regular file"}
+	}
+	if before.Size > MaxFileSize {
+		return Digest{}, &SizeError{Path: path, Size: before.Size, Limit: MaxFileSize}
+	}
+	hash := sha256.New()
+	size, err := io.Copy(hash, io.LimitReader(file, MaxFileSize+1))
+	if err != nil {
+		return Digest{}, fmt.Errorf("safefile: hash %q: %w", path, err)
+	}
+	if size > MaxFileSize {
+		return Digest{}, &SizeError{Path: path, Size: size, Limit: MaxFileSize}
+	}
+	var after unix.Stat_t
+	if err := unix.Fstat(fd, &after); err != nil {
+		return Digest{}, &PathError{Path: path, Reason: "stat opened file after hash", Err: err}
+	}
+	if !sameStableStat(before, after) {
+		return Digest{}, &ConflictError{Path: path, Reason: "file changed while it was being hashed"}
+	}
+	return Digest{RelativePath: path, Size: size, SHA256: hex.EncodeToString(hash.Sum(nil))}, nil
+}
+
 // Write atomically replaces exactly one allowlisted existing file.
 func (r *Root) Write(ctx context.Context, request WriteRequest) (File, error) {
 	r.mu.Lock()

@@ -29,7 +29,13 @@ type logsEngine interface {
 	ContainerInspect(context.Context, string, client.ContainerInspectOptions) (client.ContainerInspectResult, error)
 }
 
-type StatsSource struct{ engine statsEngine }
+const defaultStatsMetadataRefreshInterval = 10 * time.Second
+
+type StatsSource struct {
+	engine                  statsEngine
+	metadataRefreshInterval time.Duration
+	now                     func() time.Time
+}
 type LogSource struct{ engine logsEngine }
 
 func (adapter *Adapter) LiveStatsSource() (*StatsSource, error) {
@@ -37,7 +43,7 @@ func (adapter *Adapter) LiveStatsSource() (*StatsSource, error) {
 	if !ok {
 		return nil, errors.New("Docker Engine adapter does not support stats streaming")
 	}
-	return &StatsSource{engine: engine}, nil
+	return &StatsSource{engine: engine, metadataRefreshInterval: defaultStatsMetadataRefreshInterval, now: time.Now}, nil
 }
 
 func (adapter *Adapter) LogRelaySource() (*LogSource, error) {
@@ -63,6 +69,15 @@ func (source *StatsSource) Stream(ctx context.Context, containerID string, emit 
 		return fmt.Errorf("Docker inspect stats target %s: %w", containerID, err)
 	}
 	metadata := inspectStatsMetadata(inspect.Container)
+	now := source.now
+	if now == nil {
+		now = time.Now
+	}
+	refreshInterval := source.metadataRefreshInterval
+	if refreshInterval <= 0 {
+		refreshInterval = defaultStatsMetadataRefreshInterval
+	}
+	lastMetadataRefresh := now()
 	result, err := source.engine.ContainerStats(ctx, containerID, client.ContainerStatsOptions{Stream: true})
 	if err != nil {
 		return fmt.Errorf("Docker stats %s: %w", containerID, err)
@@ -77,6 +92,16 @@ func (source *StatsSource) Stream(ctx context.Context, containerID string, emit 
 				return nil
 			}
 			return fmt.Errorf("decode Docker stats %s: %w", containerID, err)
+		}
+		observedNow := now()
+		if observedNow.Sub(lastMetadataRefresh) >= refreshInterval {
+			// Stats is a long-lived stream, while health and restart metadata
+			// live on inspect. Refresh them periodically without discarding an
+			// otherwise healthy stats stream on a transient inspect failure.
+			if refreshed, inspectErr := source.engine.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{}); inspectErr == nil {
+				metadata = inspectStatsMetadata(refreshed.Container)
+			}
+			lastMetadataRefresh = observedNow
 		}
 		sample := statsSample(containerID, response, previous, metadata)
 		previous = response.CPUStats
@@ -114,7 +139,7 @@ func statsSample(containerID string, response container.StatsResponse, previous 
 	}
 	sample := livestats.Sample{
 		ContainerID: containerID, ObservedAt: response.Read, CPUPercent: cpuPercent(response.CPUStats, baseline),
-		MemoryUsage: response.MemoryStats.Usage, MemoryLimit: response.MemoryStats.Limit,
+		MemoryUsage: dockerCLIMemoryUsage(response.MemoryStats), MemoryLimit: response.MemoryStats.Limit,
 		RestartCount: metadata.restartCount, Health: metadata.health,
 	}
 	if !metadata.startedAt.IsZero() && response.Read.After(metadata.startedAt) {
@@ -133,6 +158,22 @@ func statsSample(containerID string, response container.StatsResponse, previous 
 		}
 	}
 	return sample
+}
+
+// dockerCLIMemoryUsage matches the Linux docker stats display. The Engine API
+// reports total cgroup usage and cache separately; the CLI subtracts
+// total_inactive_file on cgroup v1 and inactive_file on cgroup v2.
+func dockerCLIMemoryUsage(memory container.MemoryStats) uint64 {
+	usage := memory.Usage
+	for _, key := range []string{"total_inactive_file", "inactive_file"} {
+		if cache, found := memory.Stats[key]; found {
+			if cache < usage {
+				return usage - cache
+			}
+			return usage
+		}
+	}
+	return usage
 }
 
 func cpuPercent(current, previous container.CPUStats) float64 {
