@@ -347,3 +347,61 @@ Before implementation, confirm:
    preserving the frozen authority/storage rules;
 3. that Compose build policy and all P1 candidates remain deferred unless
    separately approved.
+
+## Review judgment — 2026-08-23
+
+**Verdict:** Conditional approval of the analysis method and most findings; this
+revision is **not yet approved as the implementation gate**. Implementation
+should remain paused until the items below are corrected and the report is
+revalidated.
+
+### Why approval is conditional
+
+The report was produced against `docs/final-ui-design` revision `a4205c0`, but
+`main` has since advanced to `22f21678` (`fix: align Docker and Compose safety
+behavior (#6)`). That commit changes areas directly covered by this report,
+including Compose file ordering/source handling, `env_file` fingerprinting and
+source-graph completeness, and Docker-compatible Linux memory semantics. The
+branch must first incorporate current `main`, then this gap analysis must be
+rerun against the merged state.
+
+### Required corrections before implementation
+
+1. **Sidebar Agent availability must not be derived from `Host.state == ACTIVE`.**
+   `Host.state` is the session lifecycle state. A session may remain `ACTIVE`
+   while heartbeat fails and every capability is unavailable. Sidebar
+   Connected/Available semantics must use the explicit connection capability
+   (`Capabilities.Connection.Enabled`) or an equivalent authoritative current
+   connection fact.
+2. **Host Summary counts/capacity must not open Live Metrics implicitly.**
+   `Container total/running` and Engine CPU/memory capacity are available in the
+   Matrix host row, but subscribing to Matrix starts viewer-scoped collection.
+   A normal Host Summary must therefore use a bounded non-stream host/Engine
+   snapshot. Reclassify this requirement from `Supported through Live Metrics
+   matrix` to **Minimal extension** unless an existing non-stream authoritative
+   query is confirmed after rebasing.
+3. **`container_ids` must not be described as unqualified current runtime
+   state.** The project snapshot can be stale. Treat it as an observed attached
+   Container count and only label it current when the project observation is
+   itself current. Otherwise surface the freshness qualifier or avoid a current
+   count claim.
+4. **Re-run every classification affected by `main@22f21678`.** In particular,
+   re-check ordered Compose files, source/env metadata, source-graph completeness,
+   fingerprints, and Live Metrics memory semantics before keeping their current
+   Supported/Derivable/Minimal-extension labels.
+
+### Approval boundary
+
+After the rebase and corrections above, the five-step implementation boundary
+is acceptable in principle. However, `Minimal extension` items should not be
+approved as one undifferentiated batch. The refreshed report should separate:
+
+- **required for the final v1 UI contract**;
+- **required only for progressive detail/Inspector quality**; and
+- **optional/P1 or product-decision work**.
+
+Compose build policy and every existing P1 candidate remain deferred until
+separately approved. The authority/storage rules remain unchanged: Docker stays
+the authority for current runtime state, the filesystem for Compose file
+content, the Agent for execution/locks, and the Server canonical Audit archive
+for synchronized Audit history.
