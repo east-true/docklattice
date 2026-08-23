@@ -78,6 +78,16 @@ func TestDashboardCombinesOnlyAllowedCacheWithLiveSession(t *testing.T) {
 	if err != nil || host.ID != "agent-a" {
 		t.Fatalf("Host = %+v, %v", host, err)
 	}
+	if host.Capabilities.Discovery != active.Capabilities.Discovery ||
+		host.Capabilities.OperationRecovery != active.Capabilities.OperationRecovery {
+		t.Fatalf(
+			"Host reconciliation capabilities = discovery:%+v recovery:%+v, Dashboard = discovery:%+v recovery:%+v",
+			host.Capabilities.Discovery,
+			host.Capabilities.OperationRecovery,
+			active.Capabilities.Discovery,
+			active.Capabilities.OperationRecovery,
+		)
+	}
 	if _, err := backend.Host(ctx, "retired"); !errors.Is(err, webui.ErrNotFound) {
 		t.Fatalf("retired Host error = %v", err)
 	}
