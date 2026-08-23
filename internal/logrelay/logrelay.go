@@ -28,6 +28,8 @@ type Request struct {
 	ShowStdout  bool
 	ShowStderr  bool
 	Timestamps  bool
+	Since       string
+	Until       string
 }
 
 type StreamKind string
@@ -107,11 +109,14 @@ func (r *Relay) Open(ctx context.Context, request Request) (*Stream, error) {
 		return nil, errors.New("log stream context is required")
 	}
 	if request.ProjectUID != "" {
-		if request.ContainerID != "" || len(request.Services) > 256 {
-			return nil, errors.New("project logs require only a bounded project target and services")
+		if len(request.Services) > 256 || request.ContainerID != "" && len(request.Services) != 0 {
+			return nil, errors.New("project logs require a bounded project target and either services or one Container")
 		}
 	} else if request.ContainerID == "" || len(request.Services) != 0 {
 		return nil, errors.New("container logs require only a container ID")
+	}
+	if err := validateLogWindow(request.Since, request.Until); err != nil {
+		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -127,6 +132,33 @@ func (r *Relay) Open(ctx context.Context, request Request) (*Stream, error) {
 	}
 	go stream.run(r.config.Source, request)
 	return stream, nil
+}
+
+func validateLogWindow(sinceValue, untilValue string) error {
+	var since, until time.Time
+	var err error
+	if sinceValue != "" {
+		if len(sinceValue) > 64 {
+			return errors.New("log since time is invalid")
+		}
+		since, err = time.Parse(time.RFC3339Nano, sinceValue)
+		if err != nil {
+			return errors.New("log since time is invalid")
+		}
+	}
+	if untilValue != "" {
+		if len(untilValue) > 64 {
+			return errors.New("log until time is invalid")
+		}
+		until, err = time.Parse(time.RFC3339Nano, untilValue)
+		if err != nil {
+			return errors.New("log until time is invalid")
+		}
+	}
+	if !since.IsZero() && !until.IsZero() && since.After(until) {
+		return errors.New("log since time must not be after until time")
+	}
+	return nil
 }
 
 type queuedChunk struct {

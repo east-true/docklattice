@@ -14,10 +14,23 @@ import (
 // host. The daemon does run on the host, so asking it is the one way to state
 // host capacity that means the same thing in every deployment.
 type EngineInfo struct {
+	EngineVersion     string
 	CPUCapacity       uint32
 	MemoryCapacity    uint64
 	ContainersTotal   uint32
 	ContainersRunning uint32
+	Images            uint32
+	StorageDriver     string
+	LoggingDriver     string
+	CgroupDriver      string
+	CgroupVersion     string
+	DefaultRuntime    string
+	OperatingSystem   string
+	OSVersion         string
+	OSType            string
+	Architecture      string
+	KernelVersion     string
+	DockerRootDir     string
 }
 
 // infoEngine is optional at the constructor boundary for the same reason
@@ -43,10 +56,17 @@ func (adapter *Adapter) Info(ctx context.Context) (EngineInfo, error) {
 		return EngineInfo{}, fmt.Errorf("%w: engine info: %v", ErrUnavailable, err)
 	}
 	return EngineInfo{
+		EngineVersion:     result.Info.ServerVersion,
 		CPUCapacity:       countAsUint32(result.Info.NCPU),
 		MemoryCapacity:    countAsUint64(result.Info.MemTotal),
 		ContainersTotal:   countAsUint32(result.Info.Containers),
 		ContainersRunning: countAsUint32(result.Info.ContainersRunning),
+		Images:            countAsUint32(result.Info.Images),
+		StorageDriver:     result.Info.Driver, LoggingDriver: result.Info.LoggingDriver,
+		CgroupDriver: result.Info.CgroupDriver, CgroupVersion: result.Info.CgroupVersion,
+		DefaultRuntime: result.Info.DefaultRuntime, OperatingSystem: result.Info.OperatingSystem,
+		OSVersion: result.Info.OSVersion, OSType: result.Info.OSType, Architecture: result.Info.Architecture,
+		KernelVersion: result.Info.KernelVersion, DockerRootDir: result.Info.DockerRootDir,
 	}, nil
 }
 

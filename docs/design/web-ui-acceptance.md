@@ -36,7 +36,10 @@
 - [ ] Pull completion does not claim running Containers were updated.
 - [ ] Configuration save does not suggest Restart as the apply mechanism.
 - [ ] Down confirmation matches actual invocation semantics.
-- [ ] Build-capable behavior is blocked or explained according to a separately approved policy.
+- [ ] Every Up invocation includes `--no-build`; Dockpilot exposes no Build action or build fallback.
+- [ ] Pull explicitly targets effective Services with a declared Image; mixed `image` + `build` Services remain pullable without `--ignore-buildable`.
+- [ ] Build-only and `pull_policy: build` Services have explicit unavailable reasons for Pull and Service Up.
+- [ ] Project Up is unavailable when its effective target set contains any build-required Service; the UI never silently skips one.
 
 ## Files / sensitive values
 
@@ -127,3 +130,26 @@ Test representative states:
 - [ ] many hosts
 - [ ] many projects
 - [ ] long names/paths/digests
+
+## Automated implementation evidence — 2026-08-23
+
+The unchecked boxes above remain the human acceptance record, especially for
+real-Agent and destructive confirmation states. They are not silently marked
+complete by a fixture test. The implementation now also has a repeatable
+Playwright gate:
+
+- `npm run test:ui` serves the actual embedded UI assets with the production
+  Content Security Policy and intercepts API reads with bounded deterministic
+  fixtures;
+- Chromium runs at 1440, 1280, 1024, 768, and 375 pixel viewports;
+- the suite covers the host-only sidebar, Home attention/partial availability,
+  the no-build Compose policy and blocked Project Up, responsive navigation,
+  and the route-aware non-modal/full-width Container Inspector;
+- each viewport attaches full-page screenshots to `playwright-report`, which
+  can be viewed with `npm run test:ui:report` or exercised interactively with
+  `npm run test:ui:open`;
+- the implementation run completed with 22 passed and 3 intentional
+  viewport-inapplicable skips.
+
+The Go integration and race suites, `go vet`, JavaScript syntax validation,
+release-scope checks, and Docker Compose CLI option/model smoke check also pass.

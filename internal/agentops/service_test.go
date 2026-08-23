@@ -39,7 +39,10 @@ func (d *fakeDocker) Remove(context.Context, string, dockeradapter.RemoveOptions
 type fakeProjects struct{}
 
 func (fakeProjects) Project(context.Context, string) (composeexec.Project, bool, error) {
-	return composeexec.Project{WorkingDir: "/srv/p", Files: []string{"/srv/p/compose.yml"}, Name: "p"}, true, nil
+	return composeexec.Project{
+		WorkingDir: "/srv/p", Files: []string{"/srv/p/compose.yml"}, Name: "p",
+		Services: []composeexec.Service{{Name: "web", Image: "example/web:1", Active: true}},
+	}, true, nil
 }
 func (fakeProjects) FilesystemMutationAllowed(context.Context, string) (bool, string) {
 	return true, ""
@@ -212,6 +215,42 @@ func TestTimeoutUsesOperationCancelPath(t *testing.T) {
 	record := waitTerminal(t, engine, "op-timeout")
 	if record.Status != operation.StatusCanceled || record.CancelReason != operation.CancelReasonTimeout {
 		t.Fatalf("terminal = %#v", record)
+	}
+}
+
+func TestComposeBuildPolicySelectsImagesAndBlocksBuildRequiredTargets(t *testing.T) {
+	models := []composeexec.Service{
+		{Name: "api", Image: "company/api:1.8", HasBuild: true, Active: true},
+		{Name: "db", Image: "postgres:18", Active: true},
+		{Name: "worker", HasBuild: true, Active: true},
+		{Name: "tool", Image: "company/tool:1", HasBuild: true, PullPolicy: "build", Active: true},
+		{Name: "inactive", HasBuild: true, Profiles: []string{"debug"}},
+	}
+	services, err := composeMutationServices(operation.TypeComposePull, "", models)
+	if err != nil || strings.Join(services, ",") != "api,db" {
+		t.Fatalf("project Pull services = %v, %v", services, err)
+	}
+	if _, err := composeMutationServices(operation.TypeComposeUp, "", models); !errors.Is(err, ErrComposeBuildRequired) ||
+		!strings.Contains(err.Error(), "worker") || !strings.Contains(err.Error(), "tool") || strings.Contains(err.Error(), "inactive") {
+		t.Fatalf("project Up policy error = %v", err)
+	}
+	if services, err := composeMutationServices(operation.TypeComposeUp, "api", models); err != nil || strings.Join(services, ",") != "api" {
+		t.Fatalf("mixed Service Up = %v, %v", services, err)
+	}
+	for _, target := range []string{"worker", "tool", "inactive"} {
+		if _, err := composeMutationServices(operation.TypeComposeUp, target, models); err == nil {
+			t.Fatalf("Service Up %q unexpectedly allowed", target)
+		}
+	}
+}
+
+func TestComposeBuildPolicyChecksTargetDependencies(t *testing.T) {
+	models := []composeexec.Service{
+		{Name: "api", Image: "company/api:1.8", DependsOn: []string{"worker"}, Active: true},
+		{Name: "worker", HasBuild: true, Active: true},
+	}
+	if _, err := composeMutationServices(operation.TypeComposeUp, "api", models); !errors.Is(err, ErrComposeBuildRequired) || !strings.Contains(err.Error(), "worker") {
+		t.Fatalf("dependency policy error = %v", err)
 	}
 }
 

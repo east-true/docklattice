@@ -157,7 +157,7 @@ func New(config Config) (*Handler, error) {
 		return nil, err
 	}
 	logs, err := logrelay.New(logrelay.Config{
-		Source:           composeLogSource{docker: config.LogSource, compose: config.Compose, projects: config.Projects},
+		Source:           composeLogSource{docker: config.LogSource, inventory: config.Docker, compose: config.Compose, projects: config.Projects},
 		BytesPerSecond:   config.LogBytesPerSecond,
 		MaxBufferedBytes: config.LogBufferedBytes, MaxBufferedChunks: config.LogBufferedChunks,
 	})
@@ -257,11 +257,30 @@ func (h *Handler) ListActiveOperations(_ context.Context, _ producttransport.Ses
 }
 
 func operationResponse(record operation.Record) producttransport.OperationResponse {
+	canCancel, cancelReason := operationRecordCancelability(record)
 	return producttransport.OperationResponse{
 		Status: string(record.Status), Phase: string(record.Phase), Revision: record.Revision,
 		PartialEffectsPossible: record.PartialEffectsPossible, Error: record.Error,
 		OutputTail: append([]byte(nil), record.OutputTail...), OutputTruncated: record.OutputTruncated,
+		CancelMode: string(record.CancelMode), CanCancel: canCancel, CancelabilityReason: cancelReason,
+		RequestedAt: record.RequestedAt, StartedAt: record.StartedAt, FinishedAt: record.FinishedAt,
 	}
+}
+
+func operationRecordCancelability(record operation.Record) (bool, string) {
+	if record.Status.Terminal() {
+		return false, "operation is terminal"
+	}
+	if !record.CancelRequestedAt.IsZero() {
+		return false, "cancellation already requested"
+	}
+	if record.CancelMode == operation.CancelNone {
+		return false, "operation is not cancelable"
+	}
+	if record.CancelMode == operation.CancelBeforeCommit && !record.CommitStartedAt.IsZero() {
+		return false, "commit has started"
+	}
+	return true, ""
 }
 
 func validateOperationControlID(operationID string) error {

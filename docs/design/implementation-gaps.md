@@ -1,6 +1,7 @@
 # Dockpilot UI — Implementation Gap Report
 
-**Status:** Approved implementation gate; slices A and B approved, slice C deferred.
+**Status:** Approved implementation gate and Compose build policy; slices A and
+B implemented and validated, slice C deferred.
 
 **Initial comparison at:** `docs/final-ui-design@a4205c0`
 
@@ -15,8 +16,9 @@ current Server, Agent, API, and `internal/webui/**` implementation.
 This report is the implementation gate required by
 `docs/prompts/implementation-handoff.md`. A design request does not authorize an
 API, protobuf, persistence, Docker-operation, or product-policy change.
-Implementation may proceed only within the externally approved slice A then
-slice B boundary below. Slice C and unresolved product policy remain excluded.
+Implementation was constrained to the externally approved slice A then slice B
+boundary below. Slice C remains excluded; the separately approved Compose build
+policy is the only added mutation-policy decision.
 
 ## Classification
 
@@ -31,7 +33,7 @@ slice B boundary below. Slice C and unresolved product policy remain excluded.
 review. Only the items assigned to externally approved slices A and B are
 approved by this gate; slice C and product-decision items are not.
 
-## Current implementation baseline
+## Pre-implementation baseline
 
 The current browser assets are the pre-final-design implementation:
 
@@ -136,7 +138,7 @@ No Host OS utilization field is permitted. Engine capacity is not utilization.
 | Pull success follow-up (“running Containers unchanged”) | **Derivable** | Show only after `compose.pull` succeeds; it is explanatory product copy, not inferred runtime state. |
 | Restart does not apply config; save recommends Up, not Restart | **Derivable** | Frozen semantics and client copy. |
 | Down confirmation and retained Volume wording | **Derivable** | Current argv does not pass `--volumes`; describe exactly that behavior. |
-| Pullable/build-only/mixed service facts | **Minimal extension**, gated by **Product decision** | Current model does not expose image/build classification. Facts may be added read-only, but mutation behavior must wait for Compose build policy approval. |
+| Image-backed/build-only/build-required Service facts and mutation policy | **Minimal extension — approved slice A** | Extend the effective Compose model with content-free `image`, `build` presence, and `pull_policy` facts. Pull explicitly targets image-backed Services. Every Up uses `--no-build`; build-only or `pull_policy: build` Services cannot be Pull/Up targets and block Project Up rather than being silently skipped. |
 
 ## 7. Compose project → Containers and Host → Containers
 
@@ -304,19 +306,19 @@ The following are not implementation gaps:
 - Volume, bind-mount, database, or application-data backup;
 - raw shell/exec terminal or image-build platform.
 
-### Compose build policy — blocking mutation UX decision
+### Compose build policy — approved v1 decision
 
-The existing `compose.up` argv delegates to Docker Compose without a separately
-approved build policy. The final UI must not silently decide:
+Dockpilot v1 does not build Images and exposes no Build action or build tooling.
+Every Up invocation adds `--no-build`. Pull is issued with an explicit list of
+effective Services that declare `image`; it must not use `--ignore-buildable`,
+because mixed `image` + `build` Services remain image-backed. Pull failure never
+falls back to build.
 
-- whether Up may invoke build-capable behavior;
-- whether build-only services are blocked, allowed as ordinary Compose
-  behavior, or require a distinct action;
-- how mixed image/build projects describe Pull and Up;
-- whether any Compose build flags are exposed.
-
-Read-only image/build facts may be added after contract review, but final Up/Pull
-wording and availability remain blocked until this decision is approved.
+Build-only Services and Services with `pull_policy: build` are build-required:
+their Pull and Service Up actions are unavailable. If any build-required Service
+is in the effective Project Up target set, the whole Project Up is unavailable;
+Dockpilot never silently skips it. The effective Compose model is authoritative
+for this classification.
 
 ### P1 candidates requiring separate adoption
 
@@ -340,9 +342,9 @@ wording and availability remain blocked until this decision is approved.
    inspectors, ordered Compose/source metadata, structured Compose runtime
    facts, and safe log time options. Do not store Docker runtime/config content
    on the Server.
-5. **Defer all product-decision items:** especially Compose build behavior and
-   P1 candidates. The UI should show honest unavailable/not-adopted states, not
-   placeholders that imply support.
+5. **Apply only the separately approved Compose build decision and defer all
+   other product-decision/P1 items.** The UI must show honest
+   unavailable/not-adopted states, not placeholders that imply support.
 
 ## Minimal-extension approval slices
 
@@ -359,6 +361,8 @@ authority or persistence model.
   bundled Docker Compose versions;
 - distinct defined-service and observed-runtime facts, including
   `No container`, `Profile inactive`, `One-off`, and `Orphan`;
+- effective image-backed/build-only/build-required Service classification and
+  enforcement of explicit Pull targets plus always-`--no-build` Up;
 - authoritative ordered Compose file metadata, active profiles, `env_file`,
   Compose secret/config source metadata, and explicit resolved-config reveal;
 - curated Container table context: Compose project/service, health, published
@@ -390,7 +394,6 @@ from slice A.
 
 ### C. Optional, P1, or product-decision work — deferred
 
-- Compose build/image classification and all Up/Pull build-policy behavior;
 - cross-host live Container search and host-scoped multi-Container logs;
 - observed Audit whitelist expansion;
 - Image/Volume disk-usage queries;
@@ -539,3 +542,73 @@ Server canonical Audit archive for synchronized Audit history.
 Implementation may proceed with slice A followed by slice B. Final v1
 acceptance remains contingent on the separately resolved Compose build policy
 and successful acceptance validation.
+
+## Compose build policy decision — 2026-08-23
+
+**Verdict:** Approved for v1. The policy dependency named by the external review
+is resolved.
+
+Dockpilot executes Compose only when the effective selected Service model can
+be satisfied from declared Images without invoking a build. It never builds,
+never falls back to build, and never silently skips a build-required Service.
+
+- Every Up invocation uses `--no-build`.
+- An `image` Service and an `image` + `build` Service support Pull and Up through
+  the declared Image only.
+- A `build`-only Service does not support Pull or Service Up and blocks Project
+  Up when it belongs to that effective target set.
+- `image` + `build` + `pull_policy: build` is explicitly build-required and has
+  the same blocked behavior.
+- Pull passes the effective image-backed Service names explicitly; it does not
+  use `--ignore-buildable` and does not build on failure.
+- Dockpilot v1 exposes no separate Build action, Dockerfile/build-context
+  editing, build arguments, or BuildKit control.
+
+This decision moves the read-only classification and bounded mutation-policy
+facts into approved slice A. Slice C remains deferred unchanged otherwise.
+
+## Implementation completion — 2026-08-23
+
+**Verdict:** Approved slices A and B and the v1 Compose build policy are
+implemented. Slice C remains absent from the release path.
+
+Slice A was completed through additive bounded contracts for current session
+provenance, global Operations, one-shot Engine facts, effective Compose and
+runtime metadata, explicit no-build mutation admission, curated Container
+inventory, log range/Container selection, exact backup manifest paths, and
+indexed Audit filters. Docker runtime/config contents remain transient and
+Agent-authoritative; the Server stores only the already approved operational
+and Audit records plus content-free project facts.
+
+After the slice A contract tests passed, slice B was completed through curated
+Container, Image, Network, and Volume Inspector queries, advanced one-shot
+Engine details, running/stopped reference context, multi-IPAM and attachment
+facts, and bounded safe log terminal diagnostics. These reads fail closed for
+unsupported N-1 Agents and do not persist Docker inspect payloads.
+
+The browser implementation now follows the final host-first route hierarchy,
+light visual contract, exact host/project tabs, durable Operation visibility,
+current-vs-stored labeling, no-chart viewer-scoped Live Metrics, explicit
+first-column object links, and route-aware responsive Inspector behavior.
+Playwright is included as a development-only acceptance dependency so the real
+embedded assets can be inspected at the five required viewports with captured
+screenshots and an HTML report.
+
+Validation evidence:
+
+- `go test ./...`: pass;
+- `go test -count=1 -race ./...`: pass;
+- `go vet ./...`, `node --check internal/webui/assets/app.js`, and
+  `git diff --check`: pass;
+- every `scripts/verify-*.sh` static release/harness gate: pass, including the
+  release-scope proof that Slice C/FUTURE and Image-build behavior are absent;
+- installed Docker Compose v5.5.0 confirms `up --no-build`, Pull's explicit
+  Service arguments, `--ignore-buildable` semantics, and the evaluated fixture
+  model used by the implementation;
+- Playwright Chromium acceptance at 1440/1280/1024/768/375: 22 passed, with 3
+  intentional skips for the collapsible-navigation test outside its applicable
+  narrow viewports.
+
+The human checklist in `web-ui-acceptance.md` remains the source of record for
+real-Agent representative-state and destructive-action review; automated
+fixture evidence does not self-approve those manual states.

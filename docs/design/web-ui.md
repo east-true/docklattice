@@ -309,15 +309,55 @@ Named volumes will be retained.
 External networks and volumes will not be removed.
 ```
 
-### Build policy — OPEN PRODUCT DECISION
+### Compose build policy — v1
 
-Do not silently trigger a build-capable path without the product policy being decided.
+Dockpilot v1 never builds Images. It has no Build action and does not expose
+Dockerfile/build-context editing, build arguments, or BuildKit controls.
+`build` is read-only Compose metadata, not a mutation feature.
 
-Until decided, surface project/service facts such as:
+`Up` always invokes Compose with `--no-build`:
 
 ```text
-4 pullable services
-1 build-only service
+docker compose ... up --detach --no-build [service...]
+```
+
+Classify every Service from Docker Compose's effective model:
+
+| Effective Service model | Pull | Service Up | Project Up |
+|---|---|---|---|
+| `image` | Available | Available with `--no-build` | Included |
+| `image` + `build` | Available for the declared Image only | Available with `--no-build` | Included |
+| `build` only | Unavailable | Unavailable | Blocks the whole Project Up |
+| `image` + `build` + `pull_policy: build` | Unavailable | Unavailable | Blocks the whole Project Up |
+
+`pull_policy: build` is an explicit build requirement and must not be silently
+overridden. More generally, Dockpilot executes Compose only when the selected
+effective Service set can be satisfied from declared Images without invoking a
+build.
+
+For Pull, resolve the Services whose effective model declares `image` and pass
+their names explicitly:
+
+```text
+docker compose ... pull api db worker
+```
+
+Do not use `pull --ignore-buildable`: it would also exclude a Service that has
+both `image` and `build`. Pull never falls back to build. A failed Image pull is
+reported as `Pull failed`.
+
+Project Up is unavailable when any Service in its effective target set is
+build-only or otherwise build-required. Never silently skip that Service,
+because doing so would change the application and may break dependencies.
+Service-level Up remains available only for an image-backed, non-build-required
+Service.
+
+Example unavailable reason:
+
+```text
+This Compose project contains 1 build-only Service: worker.
+Dockpilot v1 does not build Images. Provide an Image for this Service before
+running the whole project with Dockpilot.
 ```
 
 ## 9. Compose project → Containers
@@ -741,16 +781,11 @@ Error copy should communicate:
 4. what the user can do next
 5. technical reason, progressively disclosed
 
-## 23. Open product decision
+## 23. Resolved product decision
 
 ### Compose build policy
 
-This remains unresolved and must be decided before mutation UX is implementation-final.
-
-Questions:
-
-- May `Up` invoke build-capable Compose behavior?
-- Are build-only services blocked, allowed, or supported as ordinary Compose behavior without a separate Build UI?
-- How should mixed pullable/build-only projects report Pull availability?
-
-Do not let implementation make this decision silently.
+The v1 Compose build policy in §8 is approved. Dockpilot never builds, never
+falls back to build, and never silently skips build-required Services. The UI
+must use effective-model facts and exact unavailable reasons; it must not infer
+build capability from filenames, Container names, or CLI error text.

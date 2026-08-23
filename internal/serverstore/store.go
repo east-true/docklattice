@@ -30,7 +30,7 @@ func Busy(err error) bool {
 
 const (
 	// CurrentSchemaVersion is the newest schema understood by this binary.
-	CurrentSchemaVersion = 6
+	CurrentSchemaVersion = 8
 	busyTimeoutMillis    = 5000
 	sqliteBusyCode       = 5
 )

@@ -102,8 +102,13 @@ func TestReverseGRPCAuthenticatedHeartbeatAndOffline(t *testing.T) {
 		t.Fatal(serverResult.err)
 	}
 	serverSession := serverResult.session
-	if agentSession.Info() != serverSession.Info() {
-		t.Fatalf("session identity differs: agent=%#v server=%#v", agentSession.Info(), serverSession.Info())
+	agentInfo, serverInfo := agentSession.Info(), serverSession.Info()
+	if serverInfo.SourceIP == "" {
+		t.Fatalf("server did not observe the transport source IP: %#v", serverInfo)
+	}
+	serverInfo.SourceIP = ""
+	if agentInfo != serverInfo {
+		t.Fatalf("session identity differs: agent=%#v server=%#v", agentInfo, serverSession.Info())
 	}
 	if serverSession.Info().Incarnation != 7 || len(serverSession.Info().SessionID) != 32 {
 		t.Fatalf("session info = %#v", serverSession.Info())

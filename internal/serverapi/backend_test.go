@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -118,7 +119,7 @@ func TestDashboardReconcilesVerifiedProjectsAndTierOneDriftWithoutRawFacts(t *te
 	insertAgent(t, ctx, store, agentID, "Agent", `{"fs_read":true,"fs_write":true}`)
 	at := time.Date(2026, 8, 15, 1, 2, 3, 0, time.UTC)
 	secret := "project-service-secret-never-persist"
-	project := testAgentProject(t, agentID, "/srv", "/srv/app", "app", strings.Repeat("a", 64), []string{secret})
+	project := testAgentProject(t, agentID, "/srv", "/srv/app", "app", strings.Repeat("a", 64), []string{"web"})
 	session := newFakeSession(agentID)
 	session.setProjectListPayload(projectListPayload(t, at, false, project))
 	if err := registry.Register(session); err != nil {
@@ -199,7 +200,7 @@ func TestDashboardMergesDockerFactsAndBlocksUnmanagedNameCollision(t *testing.T)
 	ctx, backend, store, registry := newTestBackend(t)
 	agentID := "11111111-1111-4111-8111-111111111111"
 	insertAgent(t, ctx, store, agentID, "Agent", `{"fs_read":true,"fs_write":true}`)
-	filesystem := testAgentProject(t, agentID, "/srv", "/srv/app", "shared", strings.Repeat("a", 64), []string{"secret-from-compose-config"})
+	filesystem := testAgentProject(t, agentID, "/srv", "/srv/app", "shared", strings.Repeat("a", 64), []string{"declared-api"})
 	payload, err := json.Marshal(agentProjectList{
 		Projects: []agentProjectSnapshot{filesystem},
 		DockerFacts: []agentDockerProjectFact{
@@ -256,7 +257,7 @@ func TestDashboardMergesDockerFactsAndBlocksUnmanagedNameCollision(t *testing.T)
 	if err := store.DB().QueryRowContext(ctx, `SELECT flags_json FROM projects WHERE project_uid = ?`, managed.UID).Scan(&flags); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(flags, "secret-from-compose-config") || strings.Contains(flags, "opaque-compose-config-hash") {
+	if !strings.Contains(flags, "declared-api") || strings.Contains(flags, "opaque-compose-config-hash") {
 		t.Fatalf("raw Compose data persisted in flags: %s", flags)
 	}
 }
@@ -663,6 +664,11 @@ func TestProjectComposeLogsAreLiveProjectScopedAndTyped(t *testing.T) {
 	if _, err := backend.OpenProjectLogs(ctx, "project-a", webui.ProjectLogRequest{TailLines: maxComposeLogTail + 1}); !errors.Is(err, webui.ErrInvalidRequest) {
 		t.Fatalf("large Compose tail error = %v", err)
 	}
+	session.info.ProtocolVersion = producttransport.PreviousProductProtocolVersion
+	if _, err := backend.OpenProjectLogs(ctx, "project-a", webui.ProjectLogRequest{Since: time.Now().UTC()}); !errors.Is(err, webui.ErrUnavailable) {
+		t.Fatalf("N-1 Since log request error = %v", err)
+	}
+	session.info.ProtocolVersion = producttransport.CurrentProductProtocolVersion
 	if _, err := store.DB().ExecContext(ctx, `UPDATE projects SET flags_json = '{"compose_executable":false}' WHERE project_uid = 'project-a'`); err != nil {
 		t.Fatal(err)
 	}
@@ -759,7 +765,7 @@ func TestBackupListCreateAndRestoreUseMetadataAndTypedOperations(t *testing.T) {
 	insertProject(t, ctx, store, "project-a", "agent-a", "project", `{}`)
 	backupID := "20260815T010203.000000000Z-0123456789abcdef"
 	session := newFakeSession("agent-a")
-	session.queryPayload = []byte(`[{"backup_id":"` + backupID + `","project_uid":"project-a","created_at":"2026-08-15T01:02:03Z","trigger":"manual","file_count":2,"size_bytes":100,"manifest_sha256":"` + strings.Repeat("c", 64) + `"}]`)
+	session.queryPayload = []byte(`[{"backup_id":"` + backupID + `","project_uid":"project-a","created_at":"2026-08-15T01:02:03Z","trigger":"manual","file_count":2,"size_bytes":100,"manifest_sha256":"` + strings.Repeat("c", 64) + `","paths":[".env","compose.yaml"]}]`)
 	session.operation = producttransport.OperationResponse{Status: "ACCEPTED", Phase: "QUEUED"}
 	if err := registry.Register(session); err != nil {
 		t.Fatal(err)
@@ -885,9 +891,14 @@ func TestStartOperationPersistsImmediateCanonicalAgentRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := webui.Operation{
-		ID: "op-1", Status: "ACCEPTED", Phase: "QUEUED", Revision: 7, PartialEffectsPossible: true,
+		ID: "op-1", AgentID: "agent-a", ProjectUID: "project-a", Kind: "compose.up", Target: "api",
+		Status: "ACCEPTED", Phase: "QUEUED", Revision: 7, PartialEffectsPossible: true,
 		Error: "current error", OutputTail: "current output", OutputTruncated: true,
 	}
+	if got.RequestedAt == nil {
+		t.Fatal("operation omitted canonical request time")
+	}
+	got.RequestedAt = nil
 	if got != want {
 		t.Fatalf("operation = %+v, want %+v", got, want)
 	}
@@ -1405,6 +1416,21 @@ func TestLiveAdaptersUseActiveSessionWithoutPersistingLogsOrStats(t *testing.T) 
 	}
 }
 
+func TestLogTerminalReasonsExposeOnlyBoundedSafeDiagnostics(t *testing.T) {
+	for raw, want := range map[string]string{
+		"Error response from daemon: configured logging driver does not support reading": "Container logging driver does not support log reads",
+		"agentproduct: Container is not attached to the Compose project":                 "Container is no longer attached to the Compose project",
+		"agentproduct: Compose project is unavailable":                                   "Compose project is unavailable",
+		"context deadline exceeded":                                                      "Log source timed out",
+		"context canceled":                                                               "Log stream canceled",
+		"credential=private-do-not-echo":                                                 "log stream ended",
+	} {
+		if got := safeLogTerminalReason(raw); got != want || strings.Contains(got, "private") {
+			t.Fatalf("safe terminal reason for %q = %q, want %q", raw, got, want)
+		}
+	}
+}
+
 type fakeSession struct {
 	mu                     sync.Mutex
 	info                   producttransport.SessionInfo
@@ -1423,6 +1449,7 @@ type fakeSession struct {
 	cancelOperation        producttransport.CancelOperationResponse
 	cancelErr              error
 	heartbeatBlocks        bool
+	heartbeatObservedAt    time.Time
 	heartbeats             int
 	queries                int
 	operations             int
@@ -1503,7 +1530,7 @@ func (s *fakeSession) Heartbeat(ctx context.Context) (producttransport.Heartbeat
 		<-ctx.Done()
 		return producttransport.Heartbeat{}, ctx.Err()
 	}
-	return producttransport.Heartbeat{Capability: capability}, nil
+	return producttransport.Heartbeat{Capability: capability, ObservedAt: s.heartbeatObservedAt}, nil
 }
 func (s *fakeSession) Query(_ context.Context, request producttransport.QueryRequest) (producttransport.QueryResponse, error) {
 	s.mu.Lock()
@@ -1662,11 +1689,25 @@ func testAgentProject(t *testing.T, agentID, root, workingDir, name, fileHash st
 		t.Fatal(err)
 	}
 	sort.Strings(services)
-	return agentProjectSnapshot{
+	defined := make([]agentComposeService, len(services))
+	for index, service := range services {
+		defined[index] = agentComposeService{
+			Name: service, Image: "example/" + service + ":1", Active: true,
+			PullAvailable: true, UpAvailable: true,
+		}
+	}
+	result := agentProjectSnapshot{
 		UID: uid, Root: root, WorkingDir: workingDir, Files: files, Name: name,
 		Services: append([]string(nil), services...), CurrentFingerprint: fingerprint,
 		ComposeExecutable: true, FilesystemWritable: true,
 	}
+	if len(defined) != 0 {
+		result.ComposeFiles = []string{"compose.yaml"}
+		result.DefinedServices = defined
+		result.PullServices = append([]string(nil), services...)
+		result.ProjectUpAvailable = true
+	}
+	return result
 }
 
 func projectListPayload(t *testing.T, scannedAt time.Time, truncated bool, projects ...agentProjectSnapshot) []byte {
@@ -1710,6 +1751,23 @@ func insertAgent(t *testing.T, ctx context.Context, store *serverstore.Store, id
 
 func insertProject(t *testing.T, ctx context.Context, store *serverstore.Store, uid, agentID, name, flags string) {
 	t.Helper()
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(flags), &decoded); err == nil {
+		if _, exists := decoded["defined_services"]; !exists {
+			decoded["compose_files"] = []string{"compose.yaml"}
+			decoded["defined_services"] = []map[string]any{{
+				"name": "api", "image": "example/api:1", "active": true,
+				"pull_available": true, "up_available": true,
+			}}
+			decoded["pull_services"] = []string{"api"}
+			decoded["project_up_available"] = true
+		}
+		encoded, err := json.Marshal(decoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		flags = string(encoded)
+	}
 	if _, err := store.DB().ExecContext(ctx, `
 		INSERT INTO projects(project_uid, agent_id, working_dir, name, flags_json, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?)
@@ -1773,7 +1831,7 @@ func TestRepeatedIdempotentCancelKeepsAnsweringWithTheSameRecord(t *testing.T) {
 			first = got
 			continue
 		}
-		if got != first {
+		if !reflect.DeepEqual(got, first) {
 			t.Fatalf("attempt %d returned a different record: %+v vs %+v", attempt, got, first)
 		}
 	}

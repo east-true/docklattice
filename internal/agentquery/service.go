@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -27,8 +28,12 @@ const (
 	QueryContainerList      = "container.list"
 	QueryContainerInspect   = "container.inspect"
 	QueryImageList          = "image.list"
+	QueryImageInspect       = "image.inspect"
 	QueryNetworkList        = "network.list"
+	QueryNetworkInspect     = "network.inspect"
 	QueryVolumeList         = "volume.list"
+	QueryVolumeInspect      = "volume.inspect"
+	QueryEngineInfo         = "engine.info"
 	QueryProjectList        = "project.list"
 	QueryProjectSnapshot    = "project.snapshot"
 	QueryProjectStatus      = "project.status"
@@ -59,6 +64,7 @@ var (
 	safeBackupID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 	envName      = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	serviceName  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+	volumeName   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$`)
 )
 
 type DockerReader interface {
@@ -70,6 +76,16 @@ type DockerInventoryReader interface {
 	ListImages(context.Context) ([]dockeradapter.Image, error)
 	ListNetworks(context.Context) ([]dockeradapter.Network, error)
 	ListVolumes(context.Context) ([]dockeradapter.Volume, error)
+}
+
+type DockerInfoReader interface {
+	Info(context.Context) (dockeradapter.EngineInfo, error)
+}
+
+type DockerDetailReader interface {
+	InspectImage(context.Context, string) (dockeradapter.ImageDetails, error)
+	InspectNetwork(context.Context, string) (dockeradapter.NetworkDetails, error)
+	InspectVolume(context.Context, string) (dockeradapter.VolumeDetails, error)
 }
 
 type ProjectCatalog interface {
@@ -98,6 +114,7 @@ type FileReader interface {
 // writable that every mutation will refuse.
 type BackupMetadataLister interface {
 	List(context.Context, string) ([]backup.Metadata, error)
+	LoadManifest(string, string) (backup.Manifest, error)
 	RecoveryBlocked(projectUID string) bool
 }
 
@@ -168,13 +185,53 @@ type ProjectSnapshotResponse struct {
 }
 
 type Container struct {
-	ID     string            `json:"id"`
-	Names  []string          `json:"names"`
-	Image  string            `json:"image"`
-	State  string            `json:"state"`
-	Status string            `json:"status"`
-	Labels map[string]string `json:"labels,omitempty"`
-	Mounts []Mount           `json:"mounts"`
+	ID                  string             `json:"id"`
+	Names               []string           `json:"names"`
+	Image               string             `json:"image"`
+	State               string             `json:"state"`
+	Status              string             `json:"status"`
+	Labels              map[string]string  `json:"labels,omitempty"`
+	Mounts              []Mount            `json:"mounts"`
+	Health              string             `json:"health,omitempty"`
+	ComposeProject      string             `json:"compose_project,omitempty"`
+	ComposeService      string             `json:"compose_service,omitempty"`
+	OneOff              bool               `json:"one_off"`
+	Ports               []PublishedPort    `json:"ports"`
+	Protected           bool               `json:"protected"`
+	ProtectionReason    string             `json:"protection_reason,omitempty"`
+	ImageID             string             `json:"image_id,omitempty"`
+	ExitCode            int                `json:"exit_code"`
+	CreatedAt           string             `json:"created_at,omitempty"`
+	StartedAt           string             `json:"started_at,omitempty"`
+	FinishedAt          string             `json:"finished_at,omitempty"`
+	OOMKilled           bool               `json:"oom_killed"`
+	RestartCount        int                `json:"restart_count"`
+	RestartPolicy       string             `json:"restart_policy,omitempty"`
+	RestartMaximumRetry int                `json:"restart_maximum_retry"`
+	StopSignal          string             `json:"stop_signal,omitempty"`
+	StopTimeout         *int               `json:"stop_timeout_seconds,omitempty"`
+	LoggingDriver       string             `json:"logging_driver,omitempty"`
+	Command             []string           `json:"command,omitempty"`
+	Entrypoint          []string           `json:"entrypoint,omitempty"`
+	ExposedPorts        []string           `json:"exposed_ports,omitempty"`
+	Networks            []ContainerNetwork `json:"networks,omitempty"`
+}
+
+type ContainerNetwork struct {
+	Name       string   `json:"name"`
+	NetworkID  string   `json:"network_id,omitempty"`
+	EndpointID string   `json:"endpoint_id,omitempty"`
+	IPv4       string   `json:"ipv4,omitempty"`
+	IPv6       string   `json:"ipv6,omitempty"`
+	MAC        string   `json:"mac,omitempty"`
+	Aliases    []string `json:"aliases,omitempty"`
+}
+
+type PublishedPort struct {
+	HostIP        string `json:"host_ip,omitempty"`
+	PublishedPort uint16 `json:"published_port,omitempty"`
+	TargetPort    uint16 `json:"target_port"`
+	Protocol      string `json:"protocol"`
 }
 
 type Mount struct {
@@ -210,25 +267,161 @@ type Volume struct {
 	CreatedAt string `json:"created_at,omitempty"`
 }
 
+type ObjectReference struct {
+	ContainerID    string `json:"container_id"`
+	ContainerName  string `json:"container_name,omitempty"`
+	ComposeProject string `json:"compose_project,omitempty"`
+	ComposeService string `json:"compose_service,omitempty"`
+	State          string `json:"state,omitempty"`
+	Destination    string `json:"destination,omitempty"`
+}
+
+type NetworkAttachment struct {
+	ObjectReference
+	EndpointID string `json:"endpoint_id,omitempty"`
+	IPv4       string `json:"ipv4,omitempty"`
+	IPv6       string `json:"ipv6,omitempty"`
+	MAC        string `json:"mac,omitempty"`
+}
+
+type ImageDetails struct {
+	ID           string            `json:"id"`
+	RepoTags     []string          `json:"repo_tags"`
+	RepoDigests  []string          `json:"repo_digests"`
+	Created      string            `json:"created,omitempty"`
+	Author       string            `json:"author,omitempty"`
+	Architecture string            `json:"architecture,omitempty"`
+	Variant      string            `json:"variant,omitempty"`
+	OS           string            `json:"os,omitempty"`
+	OSVersion    string            `json:"os_version,omitempty"`
+	Size         int64             `json:"size_bytes"`
+	Entrypoint   []string          `json:"entrypoint,omitempty"`
+	Command      []string          `json:"command,omitempty"`
+	ExposedPorts []string          `json:"exposed_ports,omitempty"`
+	WorkingDir   string            `json:"working_dir,omitempty"`
+	User         string            `json:"user,omitempty"`
+	Labels       map[string]string `json:"labels,omitempty"`
+	LayerCount   int               `json:"layer_count"`
+	UsedBy       []ObjectReference `json:"used_by"`
+}
+
+type IPAMConfig struct {
+	Subnet       string            `json:"subnet,omitempty"`
+	IPRange      string            `json:"ip_range,omitempty"`
+	Gateway      string            `json:"gateway,omitempty"`
+	AuxAddresses map[string]string `json:"aux_addresses,omitempty"`
+}
+
+type NetworkDetails struct {
+	ID             string              `json:"id"`
+	Name           string              `json:"name"`
+	Created        string              `json:"created,omitempty"`
+	Scope          string              `json:"scope"`
+	Driver         string              `json:"driver"`
+	EnableIPv4     bool                `json:"enable_ipv4"`
+	EnableIPv6     bool                `json:"enable_ipv6"`
+	Internal       bool                `json:"internal"`
+	Attachable     bool                `json:"attachable"`
+	Ingress        bool                `json:"ingress"`
+	ConfigOnly     bool                `json:"config_only"`
+	IPAMDriver     string              `json:"ipam_driver,omitempty"`
+	IPAM           []IPAMConfig        `json:"ipam"`
+	Options        map[string]string   `json:"options,omitempty"`
+	Labels         map[string]string   `json:"labels,omitempty"`
+	ComposeProject string              `json:"compose_project,omitempty"`
+	ComposeNetwork string              `json:"compose_network,omitempty"`
+	Attachments    []NetworkAttachment `json:"attachments"`
+}
+
+type VolumeDetails struct {
+	Name           string            `json:"name"`
+	Driver         string            `json:"driver"`
+	Scope          string            `json:"scope"`
+	CreatedAt      string            `json:"created_at,omitempty"`
+	Mountpoint     string            `json:"mountpoint,omitempty"`
+	Options        map[string]string `json:"options,omitempty"`
+	Labels         map[string]string `json:"labels,omitempty"`
+	ComposeProject string            `json:"compose_project,omitempty"`
+	ComposeVolume  string            `json:"compose_volume,omitempty"`
+	References     []ObjectReference `json:"references"`
+}
+
+// EngineSummary is a bounded, one-shot Engine snapshot. It intentionally
+// stays separate from the viewer-scoped live metrics matrix.
+type EngineSummary struct {
+	Version           string `json:"version,omitempty"`
+	CPUCapacity       uint32 `json:"cpu_capacity"`
+	MemoryCapacity    uint64 `json:"memory_capacity_bytes"`
+	ContainersTotal   uint32 `json:"containers_total"`
+	ContainersRunning uint32 `json:"containers_running"`
+	Images            uint32 `json:"images"`
+	StorageDriver     string `json:"storage_driver,omitempty"`
+	LoggingDriver     string `json:"logging_driver,omitempty"`
+	CgroupDriver      string `json:"cgroup_driver,omitempty"`
+	CgroupVersion     string `json:"cgroup_version,omitempty"`
+	DefaultRuntime    string `json:"default_runtime,omitempty"`
+	OperatingSystem   string `json:"operating_system,omitempty"`
+	OSVersion         string `json:"os_version,omitempty"`
+	OSType            string `json:"os_type,omitempty"`
+	Architecture      string `json:"architecture,omitempty"`
+	KernelVersion     string `json:"kernel_version,omitempty"`
+	DockerRootDir     string `json:"docker_root_dir,omitempty"`
+}
+
 type Project struct {
-	UID                 string            `json:"project_uid"`
-	Root                string            `json:"root"`
-	WorkingDir          string            `json:"working_dir"`
-	Files               []FileFact        `json:"files"`
-	Name                string            `json:"name"`
-	Services            []string          `json:"services"`
-	IncludedWorkDirs    []string          `json:"included_work_dirs,omitempty"`
-	SourceReferences    []SourceReference `json:"source_references,omitempty"`
-	SourceGraphComplete bool              `json:"source_graph_complete"`
-	CurrentFingerprint  string            `json:"current_fingerprint"`
-	ComposeExecutable   bool              `json:"compose_executable"`
-	FilesystemWritable  bool              `json:"filesystem_writable"`
-	CapabilityReason    string            `json:"capability_reason,omitempty"`
-	Stale               bool              `json:"stale"`
+	UID                 string             `json:"project_uid"`
+	Root                string             `json:"root"`
+	WorkingDir          string             `json:"working_dir"`
+	Files               []FileFact         `json:"files"`
+	Name                string             `json:"name"`
+	Services            []string           `json:"services"`
+	ComposeFiles        []string           `json:"compose_files"`
+	DefinedServices     []ServiceModel     `json:"defined_services"`
+	ActiveProfiles      []string           `json:"active_profiles,omitempty"`
+	EnvFiles            []EnvFileReference `json:"env_files,omitempty"`
+	Secrets             []ResourceSource   `json:"secrets,omitempty"`
+	Configs             []ResourceSource   `json:"configs,omitempty"`
+	PullServices        []string           `json:"pull_services,omitempty"`
+	ProjectUpAvailable  bool               `json:"project_up_available"`
+	ProjectUpReason     string             `json:"project_up_reason,omitempty"`
+	IncludedWorkDirs    []string           `json:"included_work_dirs,omitempty"`
+	SourceReferences    []SourceReference  `json:"source_references,omitempty"`
+	SourceGraphComplete bool               `json:"source_graph_complete"`
+	CurrentFingerprint  string             `json:"current_fingerprint"`
+	ComposeExecutable   bool               `json:"compose_executable"`
+	FilesystemWritable  bool               `json:"filesystem_writable"`
+	CapabilityReason    string             `json:"capability_reason,omitempty"`
+	Stale               bool               `json:"stale"`
 	// RestoreRecoveryRequired is set when a failed restore could not be rolled
 	// back. The project's files are in an unknown state, the Agent refuses to
 	// change them, and an operator has to resolve it by hand.
 	RestoreRecoveryRequired bool `json:"restore_recovery_required,omitempty"`
+}
+
+type ServiceModel struct {
+	Name              string   `json:"name"`
+	Image             string   `json:"image,omitempty"`
+	HasBuild          bool     `json:"has_build"`
+	PullPolicy        string   `json:"pull_policy,omitempty"`
+	Profiles          []string `json:"profiles,omitempty"`
+	DependsOn         []string `json:"depends_on,omitempty"`
+	Active            bool     `json:"active"`
+	BuildRequired     bool     `json:"build_required"`
+	PullAvailable     bool     `json:"pull_available"`
+	UpAvailable       bool     `json:"up_available"`
+	UnavailableReason string   `json:"unavailable_reason,omitempty"`
+}
+
+type EnvFileReference struct {
+	Path     string `json:"path"`
+	Readable bool   `json:"readable"`
+}
+
+type ResourceSource struct {
+	Name       string `json:"name"`
+	SourceType string `json:"source_type,omitempty"`
+	Source     string `json:"source,omitempty"`
+	External   bool   `json:"external"`
 }
 
 // SourceReference is content-free Compose include/extends provenance. It is
@@ -262,6 +455,7 @@ type BackupMetadata struct {
 	FileCount      int            `json:"file_count"`
 	SizeBytes      int64          `json:"size_bytes"`
 	ManifestSHA256 string         `json:"manifest_sha256"`
+	Paths          []string       `json:"paths"`
 }
 
 // ComposePSRequest and ComposeConfigRequest are closed, project-scoped query
@@ -273,6 +467,7 @@ type ComposePSRequest struct {
 
 type ComposeConfigRequest struct {
 	Services []string `json:"services"`
+	Reveal   bool     `json:"reveal,omitempty"`
 }
 
 // ComposeOutput is transient CLI text. The Agent does not cache or persist it
@@ -305,13 +500,29 @@ func (s *Service) Query(ctx context.Context, _ producttransport.SessionInfo, req
 		if err = requireEmpty(request); err == nil {
 			value, err = s.imageList(ctx)
 		}
+	case QueryImageInspect:
+		if err = requireTargetOnly(request); err == nil {
+			value, err = s.imageInspect(ctx, request.Target)
+		}
 	case QueryNetworkList:
 		if err = requireEmpty(request); err == nil {
 			value, err = s.networkList(ctx)
 		}
+	case QueryNetworkInspect:
+		if err = requireTargetOnly(request); err == nil {
+			value, err = s.networkInspect(ctx, request.Target)
+		}
 	case QueryVolumeList:
 		if err = requireEmpty(request); err == nil {
 			value, err = s.volumeList(ctx)
+		}
+	case QueryVolumeInspect:
+		if err = requireTargetOnly(request); err == nil {
+			value, err = s.volumeInspect(ctx, request.Target)
+		}
+	case QueryEngineInfo:
+		if err = requireEmpty(request); err == nil {
+			value, err = s.engineInfo(ctx)
 		}
 	case QueryProjectList:
 		if err = requireEmpty(request); err == nil {
@@ -358,6 +569,25 @@ func (s *Service) Query(ctx context.Context, _ producttransport.SessionInfo, req
 		return producttransport.QueryResponse{}, err
 	}
 	return marshalResponse(value)
+}
+
+func (s *Service) engineInfo(ctx context.Context) (EngineSummary, error) {
+	reader, ok := s.config.Docker.(DockerInfoReader)
+	if !ok {
+		return EngineSummary{}, errors.New("agentquery: Docker Engine info reader is unavailable")
+	}
+	info, err := reader.Info(ctx)
+	if err != nil {
+		return EngineSummary{}, err
+	}
+	return EngineSummary{
+		Version: info.EngineVersion, CPUCapacity: info.CPUCapacity, MemoryCapacity: info.MemoryCapacity,
+		ContainersTotal: info.ContainersTotal, ContainersRunning: info.ContainersRunning, Images: info.Images,
+		StorageDriver: info.StorageDriver, LoggingDriver: info.LoggingDriver, CgroupDriver: info.CgroupDriver,
+		CgroupVersion: info.CgroupVersion, DefaultRuntime: info.DefaultRuntime, OperatingSystem: info.OperatingSystem,
+		OSVersion: info.OSVersion, OSType: info.OSType, Architecture: info.Architecture, KernelVersion: info.KernelVersion,
+		DockerRootDir: info.DockerRootDir,
+	}, nil
 }
 
 func validateEnvelope(request producttransport.QueryRequest) error {
@@ -490,6 +720,150 @@ func (s *Service) volumeList(ctx context.Context) ([]Volume, error) {
 	return result, nil
 }
 
+func (s *Service) details() (DockerDetailReader, error) {
+	reader, ok := s.config.Docker.(DockerDetailReader)
+	if !ok {
+		return nil, errors.New("agentquery: Docker detail reader is unavailable")
+	}
+	return reader, nil
+}
+
+func (s *Service) imageInspect(ctx context.Context, id string) (ImageDetails, error) {
+	if !validDockerObjectID(id) {
+		return ImageDetails{}, fmt.Errorf("%w: invalid Image ID", ErrInvalidRequest)
+	}
+	reader, err := s.details()
+	if err != nil {
+		return ImageDetails{}, err
+	}
+	details, err := reader.InspectImage(ctx, id)
+	if err != nil {
+		return ImageDetails{}, err
+	}
+	containers, err := s.config.Docker.List(ctx)
+	if err != nil {
+		return ImageDetails{}, err
+	}
+	if len(containers) > maxInventoryItems {
+		return ImageDetails{}, ErrResponseTooLarge
+	}
+	result := ImageDetails{ID: details.ID, RepoTags: append([]string(nil), details.RepoTags...), RepoDigests: append([]string(nil), details.RepoDigests...),
+		Created: details.Created, Author: details.Author, Architecture: details.Architecture, Variant: details.Variant, OS: details.OS,
+		OSVersion: details.OSVersion, Size: details.Size, Entrypoint: append([]string(nil), details.Entrypoint...), Command: append([]string(nil), details.Command...),
+		ExposedPorts: append([]string(nil), details.ExposedPorts...), WorkingDir: details.WorkingDir, User: details.User,
+		Labels: cloneStringMap(details.Labels), LayerCount: details.LayerCount, UsedBy: []ObjectReference{}}
+	for _, container := range containers {
+		if strings.TrimPrefix(container.ImageID, "sha256:") != strings.TrimPrefix(details.ID, "sha256:") {
+			continue
+		}
+		result.UsedBy = append(result.UsedBy, containerReference(container, ""))
+	}
+	sort.Strings(result.RepoTags)
+	sort.Strings(result.RepoDigests)
+	sort.Strings(result.ExposedPorts)
+	sort.Slice(result.UsedBy, func(i, j int) bool { return result.UsedBy[i].ContainerID < result.UsedBy[j].ContainerID })
+	return result, nil
+}
+
+func (s *Service) networkInspect(ctx context.Context, id string) (NetworkDetails, error) {
+	if !canonicalID.MatchString(id) {
+		return NetworkDetails{}, fmt.Errorf("%w: invalid Network ID", ErrInvalidRequest)
+	}
+	reader, err := s.details()
+	if err != nil {
+		return NetworkDetails{}, err
+	}
+	details, err := reader.InspectNetwork(ctx, id)
+	if err != nil {
+		return NetworkDetails{}, err
+	}
+	containers, err := s.config.Docker.List(ctx)
+	if err != nil {
+		return NetworkDetails{}, err
+	}
+	if len(containers) > maxInventoryItems || len(details.Containers) > maxInventoryItems || len(details.IPAM) > 256 {
+		return NetworkDetails{}, ErrResponseTooLarge
+	}
+	byID := make(map[string]dockeradapter.Container, len(containers))
+	for _, container := range containers {
+		byID[container.ID] = container
+	}
+	result := NetworkDetails{ID: details.ID, Name: details.Name, Created: details.Created, Scope: details.Scope, Driver: details.Driver,
+		EnableIPv4: details.EnableIPv4, EnableIPv6: details.EnableIPv6, Internal: details.Internal, Attachable: details.Attachable,
+		Ingress: details.Ingress, ConfigOnly: details.ConfigOnly, IPAMDriver: details.IPAMDriver, Options: cloneStringMap(details.Options), Labels: cloneStringMap(details.Labels),
+		ComposeProject: details.Labels["com.docker.compose.project"], ComposeNetwork: details.Labels["com.docker.compose.network"], IPAM: make([]IPAMConfig, len(details.IPAM)), Attachments: []NetworkAttachment{}}
+	for index, item := range details.IPAM {
+		result.IPAM[index] = IPAMConfig{Subnet: item.Subnet, IPRange: item.IPRange, Gateway: item.Gateway, AuxAddresses: cloneStringMap(item.AuxAddresses)}
+	}
+	for _, attachment := range details.Containers {
+		container := byID[attachment.ContainerID]
+		reference := containerReference(container, "")
+		reference.ContainerID = attachment.ContainerID
+		if reference.ContainerName == "" {
+			reference.ContainerName = attachment.Name
+		}
+		result.Attachments = append(result.Attachments, NetworkAttachment{ObjectReference: reference, EndpointID: attachment.EndpointID, IPv4: attachment.IPv4, IPv6: attachment.IPv6, MAC: attachment.MAC})
+	}
+	sort.Slice(result.Attachments, func(i, j int) bool { return result.Attachments[i].ContainerID < result.Attachments[j].ContainerID })
+	return result, nil
+}
+
+func (s *Service) volumeInspect(ctx context.Context, name string) (VolumeDetails, error) {
+	if !volumeName.MatchString(name) {
+		return VolumeDetails{}, fmt.Errorf("%w: invalid Volume name", ErrInvalidRequest)
+	}
+	reader, err := s.details()
+	if err != nil {
+		return VolumeDetails{}, err
+	}
+	details, err := reader.InspectVolume(ctx, name)
+	if err != nil {
+		return VolumeDetails{}, err
+	}
+	containers, err := s.config.Docker.List(ctx)
+	if err != nil {
+		return VolumeDetails{}, err
+	}
+	if len(containers) > maxInventoryItems {
+		return VolumeDetails{}, ErrResponseTooLarge
+	}
+	result := VolumeDetails{Name: details.Name, Driver: details.Driver, Scope: details.Scope, CreatedAt: details.CreatedAt, Mountpoint: details.Mountpoint, Options: cloneStringMap(details.Options), Labels: cloneStringMap(details.Labels),
+		ComposeProject: details.Labels["com.docker.compose.project"], ComposeVolume: details.Labels["com.docker.compose.volume"], References: []ObjectReference{}}
+	for _, container := range containers {
+		for _, mount := range container.Mounts {
+			if mount.Type == "volume" && mount.Source == name {
+				result.References = append(result.References, containerReference(container, mount.Destination))
+			}
+		}
+	}
+	sort.Slice(result.References, func(i, j int) bool {
+		if result.References[i].ContainerID != result.References[j].ContainerID {
+			return result.References[i].ContainerID < result.References[j].ContainerID
+		}
+		return result.References[i].Destination < result.References[j].Destination
+	})
+	return result, nil
+}
+
+func containerReference(container dockeradapter.Container, destination string) ObjectReference {
+	name := ""
+	if len(container.Names) > 0 {
+		name = strings.TrimPrefix(container.Names[0], "/")
+	}
+	return ObjectReference{ContainerID: container.ID, ContainerName: name, ComposeProject: container.Labels["com.docker.compose.project"], ComposeService: container.Labels["com.docker.compose.service"], State: container.State, Destination: destination}
+}
+
+func cloneStringMap(value map[string]string) map[string]string {
+	if value == nil {
+		return nil
+	}
+	result := make(map[string]string, len(value))
+	for key, item := range value {
+		result[key] = item
+	}
+	return result
+}
+
 func validDockerObjectID(value string) bool {
 	return canonicalID.MatchString(strings.TrimPrefix(value, "sha256:"))
 }
@@ -566,10 +940,22 @@ func (s *Service) backupList(ctx context.Context, request producttransport.Query
 			!validBackupTrigger(item.Trigger) {
 			return nil, errors.New("agentquery: backup reader returned invalid metadata")
 		}
+		manifest, manifestErr := s.config.Backups.LoadManifest(item.ProjectUID, item.BackupID)
+		if manifestErr != nil || len(manifest.Files) != item.FileCount || len(manifest.Files) > 4096 {
+			return nil, errors.New("agentquery: backup manifest metadata is unavailable or inconsistent")
+		}
+		paths := make([]string, len(manifest.Files))
+		for fileIndex, file := range manifest.Files {
+			if !validRelativeManifestPath(file.RelPath) {
+				return nil, errors.New("agentquery: backup manifest returned an invalid path")
+			}
+			paths[fileIndex] = filepath.ToSlash(file.RelPath)
+		}
+		sort.Strings(paths)
 		result[index] = BackupMetadata{
 			BackupID: item.BackupID, ProjectUID: item.ProjectUID, CreatedAt: item.CreatedAt.UTC(),
 			Trigger: item.Trigger, FileCount: item.FileCount, SizeBytes: item.SizeBytes,
-			ManifestSHA256: item.ManifestSHA256,
+			ManifestSHA256: item.ManifestSHA256, Paths: paths,
 		}
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -579,6 +965,14 @@ func (s *Service) backupList(ctx context.Context, request producttransport.Query
 		return result[i].BackupID < result[j].BackupID
 	})
 	return result, nil
+}
+
+func validRelativeManifestPath(value string) bool {
+	if value == "" || len(value) > 4096 || !utf8.ValidString(value) || filepath.IsAbs(value) {
+		return false
+	}
+	cleaned := filepath.Clean(value)
+	return cleaned == value && cleaned != "." && cleaned != ".." && !strings.HasPrefix(cleaned, ".."+string(filepath.Separator))
 }
 
 func (s *Service) composePS(ctx context.Context, request producttransport.QueryRequest) (ComposeOutput, error) {
@@ -613,7 +1007,7 @@ func (s *Service) composeConfig(ctx context.Context, request producttransport.Qu
 	return s.runComposeQuery(ctx, request.Target, composeexec.Spec{
 		Operation: composeexec.OperationConfig,
 		Services:  append([]string(nil), input.Services...),
-		Flags:     composeexec.Flags{ConfigNoInterpolate: true},
+		Flags:     composeexec.Flags{ConfigNoInterpolate: !input.Reveal},
 	})
 }
 
@@ -674,15 +1068,47 @@ func containerResponse(value dockeradapter.Container) Container {
 		labels = nil
 	}
 	result := Container{
-		ID: value.ID, Names: append([]string(nil), value.Names...), Image: value.Image,
+		ID: value.ID, Names: append([]string(nil), value.Names...), Image: value.Image, ImageID: value.ImageID,
 		State: value.State, Status: value.Status, Labels: labels, Mounts: mounts,
+		Health: value.Health, ComposeProject: value.Labels["com.docker.compose.project"],
+		ComposeService: value.Labels["com.docker.compose.service"],
+		OneOff:         strings.EqualFold(value.Labels["com.docker.compose.oneoff"], "true"),
+		Ports:          make([]PublishedPort, len(value.Ports)), Protected: value.Protected, ProtectionReason: value.ProtectionReason,
+		ExitCode: value.ExitCode, CreatedAt: value.CreatedAt, StartedAt: value.StartedAt, FinishedAt: value.FinishedAt,
+		OOMKilled: value.OOMKilled, RestartCount: value.RestartCount, RestartPolicy: value.RestartPolicy,
+		RestartMaximumRetry: value.RestartMaximumRetry, StopSignal: value.StopSignal, StopTimeout: value.StopTimeout,
+		LoggingDriver: value.LoggingDriver, Command: append([]string(nil), value.Command...),
+		Entrypoint: append([]string(nil), value.Entrypoint...), ExposedPorts: append([]string(nil), value.ExposedPorts...),
+		Networks: make([]ContainerNetwork, len(value.Networks)),
 	}
+	for index, port := range value.Ports {
+		result.Ports[index] = PublishedPort{HostIP: port.HostIP, PublishedPort: port.PublishedPort, TargetPort: port.TargetPort, Protocol: port.Protocol}
+	}
+	for index, network := range value.Networks {
+		result.Networks[index] = ContainerNetwork{Name: network.Name, NetworkID: network.NetworkID, EndpointID: network.EndpointID,
+			IPv4: network.IPv4, IPv6: network.IPv6, MAC: network.MAC, Aliases: append([]string(nil), network.Aliases...)}
+		sort.Strings(result.Networks[index].Aliases)
+	}
+	sort.Strings(result.ExposedPorts)
+	sort.Slice(result.Networks, func(i, j int) bool { return result.Networks[i].Name < result.Networks[j].Name })
 	sort.Strings(result.Names)
 	sort.Slice(result.Mounts, func(i, j int) bool {
 		if result.Mounts[i].Destination != result.Mounts[j].Destination {
 			return result.Mounts[i].Destination < result.Mounts[j].Destination
 		}
 		return result.Mounts[i].Source < result.Mounts[j].Source
+	})
+	sort.Slice(result.Ports, func(i, j int) bool {
+		if result.Ports[i].TargetPort != result.Ports[j].TargetPort {
+			return result.Ports[i].TargetPort < result.Ports[j].TargetPort
+		}
+		if result.Ports[i].PublishedPort != result.Ports[j].PublishedPort {
+			return result.Ports[i].PublishedPort < result.Ports[j].PublishedPort
+		}
+		if result.Ports[i].Protocol != result.Ports[j].Protocol {
+			return result.Ports[i].Protocol < result.Ports[j].Protocol
+		}
+		return result.Ports[i].HostIP < result.Ports[j].HostIP
 	})
 	return result
 }
@@ -737,10 +1163,52 @@ func projectResponse(project agentprojects.Project, recoveryBlocked bool) Projec
 	result := Project{
 		UID: project.UID, Root: project.Root, WorkingDir: project.WorkingDir, Files: files,
 		Name: project.Name, Services: append([]string(nil), project.Services...),
+		ActiveProfiles:   append([]string(nil), project.ActiveProfiles...),
 		IncludedWorkDirs: append([]string(nil), project.IncludedWorkDirs...), SourceGraphComplete: project.SourceGraphComplete,
 		CurrentFingerprint: project.CurrentFingerprint, ComposeExecutable: project.ComposeExecutable,
 		FilesystemWritable: project.FilesystemWritable, CapabilityReason: project.CapabilityReason, Stale: project.Stale,
 		RestoreRecoveryRequired: recoveryBlocked,
+	}
+	result.ComposeFiles = make([]string, 0, len(project.ComposeFiles))
+	for _, path := range project.ComposeFiles {
+		relative, err := filepath.Rel(project.WorkingDir, path)
+		if err == nil && relative != "." && !filepath.IsAbs(relative) && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			result.ComposeFiles = append(result.ComposeFiles, filepath.ToSlash(relative))
+		}
+	}
+	policy, policyErr := composeexec.EvaluateV1Policy(project.ServiceModels)
+	decisionByName := make(map[string]composeexec.ServiceDecision, len(policy.Services))
+	for _, decision := range policy.Services {
+		decisionByName[decision.Name] = decision
+	}
+	result.DefinedServices = make([]ServiceModel, 0, len(project.ServiceModels))
+	for _, model := range project.ServiceModels {
+		decision := decisionByName[model.Name]
+		result.DefinedServices = append(result.DefinedServices, ServiceModel{
+			Name: model.Name, Image: model.Image, HasBuild: model.HasBuild, PullPolicy: model.PullPolicy,
+			Profiles: append([]string(nil), model.Profiles...), DependsOn: append([]string(nil), model.DependsOn...),
+			Active: model.Active, BuildRequired: model.BuildRequired(), PullAvailable: decision.PullAvailable,
+			UpAvailable: decision.UpAvailable, UnavailableReason: decision.UnavailableReason,
+		})
+	}
+	if policyErr == nil {
+		result.PullServices = append([]string(nil), policy.PullServices...)
+		result.ProjectUpAvailable = policy.ProjectUpAvailable
+		result.ProjectUpReason = policy.ProjectUpReason
+	} else {
+		result.ProjectUpReason = "effective Compose Service policy is unavailable"
+	}
+	result.EnvFiles = make([]EnvFileReference, len(project.EnvFiles))
+	for index, reference := range project.EnvFiles {
+		result.EnvFiles[index] = EnvFileReference{Path: displayProjectPath(project.WorkingDir, reference.Path), Readable: reference.Readable}
+	}
+	result.Secrets = make([]ResourceSource, len(project.Secrets))
+	for index, source := range project.Secrets {
+		result.Secrets[index] = ResourceSource(source)
+	}
+	result.Configs = make([]ResourceSource, len(project.Configs))
+	for index, source := range project.Configs {
+		result.Configs[index] = ResourceSource(source)
 	}
 	result.SourceReferences = make([]SourceReference, len(project.SourceReferences))
 	for index, reference := range project.SourceReferences {
@@ -750,6 +1218,8 @@ func projectResponse(project agentprojects.Project, recoveryBlocked bool) Projec
 	}
 	sort.Slice(result.Files, func(i, j int) bool { return result.Files[i].Path < result.Files[j].Path })
 	sort.Strings(result.Services)
+	sort.Strings(result.ActiveProfiles)
+	sort.Slice(result.DefinedServices, func(i, j int) bool { return result.DefinedServices[i].Name < result.DefinedServices[j].Name })
 	sort.Strings(result.IncludedWorkDirs)
 	sort.Slice(result.SourceReferences, func(left, right int) bool {
 		if result.SourceReferences[left].Kind != result.SourceReferences[right].Kind {
@@ -758,6 +1228,17 @@ func projectResponse(project agentprojects.Project, recoveryBlocked bool) Projec
 		return result.SourceReferences[left].Path < result.SourceReferences[right].Path
 	})
 	return result
+}
+
+func displayProjectPath(workingDir, path string) string {
+	if !filepath.IsAbs(path) {
+		return filepath.ToSlash(path)
+	}
+	relative, err := filepath.Rel(workingDir, path)
+	if err == nil && relative != "." && !filepath.IsAbs(relative) && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return filepath.ToSlash(relative)
+	}
+	return filepath.ToSlash(path)
 }
 
 func scanStatusResponse(status agentprojects.ScanStatus) ScanStatus {

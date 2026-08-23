@@ -26,6 +26,9 @@ type agentComposeOutput struct {
 }
 
 func (b *Backend) ProjectComposePS(ctx context.Context, projectUID string, request webui.ComposeQuery) (webui.ComposeOutput, error) {
+	if request.Reveal {
+		return webui.ComposeOutput{}, fmt.Errorf("%w: reveal is valid only for compose config", webui.ErrInvalidRequest)
+	}
 	if err := validateComposeQuery(request); err != nil {
 		return webui.ComposeOutput{}, err
 	}
@@ -49,6 +52,14 @@ func (b *Backend) OpenProjectLogs(ctx context.Context, projectUID string, reques
 	if err := validateComposeQuery(webui.ComposeQuery{Services: request.Services}); err != nil {
 		return nil, err
 	}
+	if request.ContainerID != "" {
+		if !canonicalContainerID.MatchString(request.ContainerID) || len(request.Services) != 0 {
+			return nil, fmt.Errorf("%w: project logs select either one Container or services", webui.ErrInvalidRequest)
+		}
+	}
+	if !request.Since.IsZero() && !request.Until.IsZero() && request.Since.After(request.Until) {
+		return nil, fmt.Errorf("%w: log since time must not be after until time", webui.ErrInvalidRequest)
+	}
 	access, err := b.projectAccess(ctx, projectUID, projectRead)
 	if err != nil {
 		return nil, err
@@ -60,13 +71,30 @@ func (b *Backend) OpenProjectLogs(ctx context.Context, projectUID string, reques
 		}
 		return nil, fmt.Errorf("%w: %s", webui.ErrUnavailable, reason)
 	}
+	if request.ContainerID != "" {
+		found := false
+		for _, containerID := range access.flags.ContainerIDs {
+			if containerID == request.ContainerID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("%w: Container is not attached to this project", webui.ErrNotFound)
+		}
+	}
 	session, err := b.activeSession(access.agentID)
 	if err != nil {
 		return nil, err
 	}
+	if session.Info().ProtocolVersion == producttransport.PreviousProductProtocolVersion &&
+		(request.ContainerID != "" || !request.Since.IsZero() || !request.Until.IsZero()) {
+		return nil, fmt.Errorf("%w: selected Container and Since/Until log controls require the current Dockpilot Agent", webui.ErrUnavailable)
+	}
 	stream, err := session.OpenLogs(ctx, producttransport.LogRequest{
-		ProjectUID: projectUID, Services: append([]string(nil), request.Services...), Follow: request.Follow,
+		ProjectUID: projectUID, ContainerID: request.ContainerID, Services: append([]string(nil), request.Services...), Follow: request.Follow,
 		TailLines: request.TailLines, ShowStdout: true, ShowStderr: true, Timestamps: request.Timestamps,
+		Since: formatOptionalTime(request.Since), Until: formatOptionalTime(request.Until),
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -114,7 +142,8 @@ func (b *Backend) projectComposeQuery(ctx context.Context, projectUID, kind stri
 	payload, err := json.Marshal(struct {
 		Services []string `json:"services"`
 		All      bool     `json:"all,omitempty"`
-	}{Services: services, All: request.All})
+		Reveal   bool     `json:"reveal,omitempty"`
+	}{Services: services, All: request.All, Reveal: request.Reveal})
 	if err != nil {
 		return webui.ComposeOutput{}, fmt.Errorf("serverapi: encode Compose query: %w", err)
 	}

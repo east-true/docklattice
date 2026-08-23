@@ -31,3 +31,8 @@ AGENTS.local.md
 .agent/
 .agents/
 .codex/
+
+# Playwright dependencies and local browser-test evidence.
+/node_modules/
+/playwright-report/
+/test-results/

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 type Operation string
@@ -29,7 +30,6 @@ const (
 	PullPolicyAlways  PullPolicy = "always"
 	PullPolicyMissing PullPolicy = "missing"
 	PullPolicyNever   PullPolicy = "never"
-	PullPolicyBuild   PullPolicy = "build"
 )
 
 type ConfigOutput string
@@ -52,9 +52,35 @@ type Project struct {
 	WorkingDir string
 	Files      []string
 	Name       string
+	// Services is the bounded effective Compose model used by the Agent to
+	// enforce Dockpilot's no-build mutation policy. Build metadata never becomes
+	// an executable build surface.
+	Services []Service
 	// EnvFile is an Agent-resolved validation-only override. It is never
 	// populated directly from a remote absolute path.
 	EnvFile string
+}
+
+// Service is content-free execution policy metadata resolved by Docker
+// Compose. Active means the Service belongs to a project-level invocation with
+// the currently active profiles. A targeted Service may bring dependencies
+// into scope, so DependsOn is retained for policy validation.
+type Service struct {
+	Name       string
+	Image      string
+	HasBuild   bool
+	PullPolicy string
+	Profiles   []string
+	DependsOn  []string
+	Active     bool
+}
+
+func (service Service) BuildRequired() bool {
+	return service.Image == "" || service.HasBuild && service.PullPolicy == "build"
+}
+
+func (service Service) ImageBacked() bool {
+	return service.Image != "" && !service.BuildRequired()
 }
 
 // Flags is intentionally closed: adding a Compose flag requires an explicit
@@ -66,6 +92,8 @@ type Flags struct {
 	LogsFollow     bool
 	LogsTail       int
 	LogsTimestamps bool
+	LogsSince      string
+	LogsUntil      string
 	PSAll          bool
 	ConfigOutput   ConfigOutput
 	// ConfigNoInterpolate is available only for a browser-facing, read-only
@@ -111,7 +139,9 @@ func BuildArgs(spec Spec) ([]string, error) {
 
 	switch spec.Operation {
 	case OperationUp:
-		args = append(args, "--detach")
+		// Dockpilot v1 never builds Images. This flag is unconditional rather
+		// than caller-selectable so no API path can accidentally opt into build.
+		args = append(args, "--detach", "--no-build")
 		if spec.Flags.RemoveOrphans {
 			args = append(args, "--remove-orphans")
 		}
@@ -134,6 +164,12 @@ func BuildArgs(spec Spec) ([]string, error) {
 		}
 		if spec.Flags.LogsTimestamps {
 			args = append(args, "--timestamps")
+		}
+		if spec.Flags.LogsSince != "" {
+			args = append(args, "--since", spec.Flags.LogsSince)
+		}
+		if spec.Flags.LogsUntil != "" {
+			args = append(args, "--until", spec.Flags.LogsUntil)
 		}
 	case OperationPS:
 		if spec.Flags.PSAll {
@@ -207,15 +243,32 @@ func validateFlags(operation Operation, flags Flags) error {
 		return fmt.Errorf("%w: force-recreate is not valid for %s", ErrInvalidSpec, operation)
 	}
 	if flags.Pull != PullPolicyDefault {
-		if operation != OperationUp || (flags.Pull != PullPolicyAlways && flags.Pull != PullPolicyMissing && flags.Pull != PullPolicyNever && flags.Pull != PullPolicyBuild) {
+		if operation != OperationUp || (flags.Pull != PullPolicyAlways && flags.Pull != PullPolicyMissing && flags.Pull != PullPolicyNever) {
 			return fmt.Errorf("%w: invalid pull policy", ErrInvalidSpec)
 		}
 	}
-	if (flags.LogsFollow || flags.LogsTail != 0 || flags.LogsTimestamps) && operation != OperationLogs {
+	if (flags.LogsFollow || flags.LogsTail != 0 || flags.LogsTimestamps || flags.LogsSince != "" || flags.LogsUntil != "") && operation != OperationLogs {
 		return fmt.Errorf("%w: log flags are not valid for %s", ErrInvalidSpec, operation)
 	}
 	if flags.LogsTail < 0 {
 		return fmt.Errorf("%w: logs tail must be non-negative", ErrInvalidSpec)
+	}
+	var since, until time.Time
+	var err error
+	if flags.LogsSince != "" {
+		since, err = time.Parse(time.RFC3339Nano, flags.LogsSince)
+		if err != nil {
+			return fmt.Errorf("%w: invalid logs since time", ErrInvalidSpec)
+		}
+	}
+	if flags.LogsUntil != "" {
+		until, err = time.Parse(time.RFC3339Nano, flags.LogsUntil)
+		if err != nil {
+			return fmt.Errorf("%w: invalid logs until time", ErrInvalidSpec)
+		}
+	}
+	if !since.IsZero() && !until.IsZero() && since.After(until) {
+		return fmt.Errorf("%w: logs since must not be after until", ErrInvalidSpec)
 	}
 	if flags.PSAll && operation != OperationPS {
 		return fmt.Errorf("%w: ps-all is not valid for %s", ErrInvalidSpec, operation)

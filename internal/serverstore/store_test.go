@@ -198,8 +198,8 @@ func TestV1DatabaseUpgradesSequentiallyToCurrent(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(versions, []int{1, 2, 3, 4, 5, 6}) {
-		t.Fatalf("migration versions = %v, want [1 2 3 4 5 6]", versions)
+	if !slices.Equal(versions, []int{1, 2, 3, 4, 5, 6, 7, 8}) {
+		t.Fatalf("migration versions = %v, want [1 2 3 4 5 6 7 8]", versions)
 	}
 	columns := tableColumns(t, ctx, store.DB(), "server_archive_coverage")
 	if !slices.Contains(columns, "reason") {

@@ -22,6 +22,7 @@ func (h LogRelayHandler) StreamLogs(ctx context.Context, _ SessionInfo, request 
 		ContainerID: request.ContainerID, ProjectUID: request.ProjectUID, Services: append([]string(nil), request.Services...),
 		Follow: request.Follow, TailLines: request.TailLines,
 		ShowStdout: request.ShowStdout, ShowStderr: request.ShowStderr, Timestamps: request.Timestamps,
+		Since: request.Since, Until: request.Until,
 	})
 	if err != nil {
 		return err

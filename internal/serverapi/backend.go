@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/east-true/dockpilot/internal/auditstore"
+	"github.com/east-true/dockpilot/internal/composeexec"
 	"github.com/east-true/dockpilot/internal/producttransport"
 	"github.com/east-true/dockpilot/internal/projectmodel"
 	"github.com/east-true/dockpilot/internal/servermatrix"
@@ -30,6 +31,7 @@ const (
 	QueryProjectBackups     = "backup.list"
 	QueryComposePS          = "compose.ps"
 	QueryComposeConfig      = "compose.config"
+	QueryEngineInfo         = "engine.info"
 	maxProjectFileBytes     = 1 << 20
 	maxComposeOutputBytes   = 128 << 10
 	// Reserve room for OperationRequest's IDs, target, type and protobuf
@@ -132,27 +134,36 @@ type storedCapabilities struct {
 }
 
 type projectFlags struct {
-	Managed                 bool                   `json:"managed"`
-	UnmanagedReason         string                 `json:"unmanaged_reason,omitempty"`
-	ContainerIDs            []string               `json:"container_ids,omitempty"`
-	Services                []string               `json:"services,omitempty"`
-	IncludedBy              []string               `json:"included_by,omitempty"`
-	SourceReferences        []agentSourceReference `json:"source_references,omitempty"`
-	SourceGraphComplete     bool                   `json:"source_graph_complete,omitempty"`
-	IncludedWorkDirs        []string               `json:"included_work_dirs,omitempty"`
-	ReadOnly                bool                   `json:"read_only"`
-	Collision               bool                   `json:"collision"`
-	Missing                 bool                   `json:"missing,omitempty"`
-	Stale                   bool                   `json:"stale,omitempty"`
-	ComposeExecutable       bool                   `json:"compose_executable,omitempty"`
-	FilesystemWritable      bool                   `json:"filesystem_writable,omitempty"`
-	RestoreRecoveryRequired bool                   `json:"restore_recovery_required,omitempty"`
-	CapabilityReason        string                 `json:"capability_reason,omitempty"`
-	CurrentFingerprint      string                 `json:"current_fingerprint,omitempty"`
-	LastVerifiedFingerprint string                 `json:"last_verified_fingerprint,omitempty"`
-	LastVerifiedAt          string                 `json:"last_verified_at,omitempty"`
-	LastObservedAt          string                 `json:"last_observed_at,omitempty"`
-	Drift                   string                 `json:"drift,omitempty"`
+	Managed                 bool                    `json:"managed"`
+	UnmanagedReason         string                  `json:"unmanaged_reason,omitempty"`
+	ContainerIDs            []string                `json:"container_ids,omitempty"`
+	Services                []string                `json:"services,omitempty"`
+	ComposeFiles            []string                `json:"compose_files,omitempty"`
+	DefinedServices         []agentComposeService   `json:"defined_services,omitempty"`
+	ActiveProfiles          []string                `json:"active_profiles,omitempty"`
+	EnvFiles                []agentEnvFileReference `json:"env_files,omitempty"`
+	Secrets                 []agentComposeResource  `json:"secrets,omitempty"`
+	Configs                 []agentComposeResource  `json:"configs,omitempty"`
+	PullServices            []string                `json:"pull_services,omitempty"`
+	ProjectUpAvailable      bool                    `json:"project_up_available,omitempty"`
+	ProjectUpReason         string                  `json:"project_up_reason,omitempty"`
+	IncludedBy              []string                `json:"included_by,omitempty"`
+	SourceReferences        []agentSourceReference  `json:"source_references,omitempty"`
+	SourceGraphComplete     bool                    `json:"source_graph_complete,omitempty"`
+	IncludedWorkDirs        []string                `json:"included_work_dirs,omitempty"`
+	ReadOnly                bool                    `json:"read_only"`
+	Collision               bool                    `json:"collision"`
+	Missing                 bool                    `json:"missing,omitempty"`
+	Stale                   bool                    `json:"stale,omitempty"`
+	ComposeExecutable       bool                    `json:"compose_executable,omitempty"`
+	FilesystemWritable      bool                    `json:"filesystem_writable,omitempty"`
+	RestoreRecoveryRequired bool                    `json:"restore_recovery_required,omitempty"`
+	CapabilityReason        string                  `json:"capability_reason,omitempty"`
+	CurrentFingerprint      string                  `json:"current_fingerprint,omitempty"`
+	LastVerifiedFingerprint string                  `json:"last_verified_fingerprint,omitempty"`
+	LastVerifiedAt          string                  `json:"last_verified_at,omitempty"`
+	LastObservedAt          string                  `json:"last_observed_at,omitempty"`
+	Drift                   string                  `json:"drift,omitempty"`
 }
 
 func (b *Backend) Dashboard(ctx context.Context) (webui.Dashboard, error) {
@@ -227,7 +238,133 @@ func (b *Backend) Host(ctx context.Context, agentID string) (webui.Host, error) 
 	if err != nil {
 		return webui.Host{}, err
 	}
-	return b.liveHost(ctx, agent), nil
+	host := b.liveHost(ctx, agent)
+	if !host.Capabilities.Docker.Enabled {
+		host.EngineSummaryReason = host.Capabilities.Docker.Reason
+		return host, nil
+	}
+	session, err := b.activeSession(agentID)
+	if err != nil {
+		host.EngineSummaryReason = err.Error()
+		return host, nil
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, hostProbeTimeout)
+	defer cancel()
+	response, err := session.Query(queryCtx, producttransport.QueryRequest{Kind: QueryEngineInfo})
+	defer clear(response.Payload)
+	if err != nil {
+		host.EngineSummaryReason = "Engine summary unavailable"
+		return host, nil
+	}
+	if queryCtx.Err() != nil || len(response.Payload) > producttransport.DefaultMaxMessageBytes {
+		host.EngineSummaryReason = "Engine summary response was invalid"
+		return host, nil
+	}
+	var summary webui.EngineSummary
+	if err := decodeStrictJSON(response.Payload, &summary); err != nil || !validEngineSummary(summary) {
+		host.EngineSummaryReason = "Engine summary response was invalid"
+		return host, nil
+	}
+	host.EngineSummary = &summary
+	return host, nil
+}
+
+func validEngineSummary(summary webui.EngineSummary) bool {
+	if summary.ContainersRunning > summary.ContainersTotal {
+		return false
+	}
+	for _, value := range []string{summary.Version, summary.StorageDriver, summary.LoggingDriver, summary.CgroupDriver,
+		summary.CgroupVersion, summary.DefaultRuntime, summary.OperatingSystem, summary.OSVersion, summary.OSType,
+		summary.Architecture, summary.KernelVersion, summary.DockerRootDir} {
+		if !validInventoryString(value, 4096, false) {
+			return false
+		}
+	}
+	return true
+}
+
+// ListOperations returns the Server's bounded canonical operation index. It
+// contains request context and last synchronized Agent facts, but never treats
+// the index as proof that cancellation can reach a disconnected Agent.
+func (b *Backend) ListOperations(ctx context.Context, request webui.OperationListRequest) (webui.OperationList, error) {
+	limit := request.Limit
+	if limit == 0 {
+		limit = 100
+	}
+	if limit < 1 || limit > 200 {
+		return webui.OperationList{}, fmt.Errorf("%w: operation limit must be between 1 and 200", webui.ErrInvalidRequest)
+	}
+	rows, err := b.store.DB().QueryContext(ctx, `
+		SELECT id, agent_id, project_uid, kind, status, phase, revision, summary_json,
+		       COALESCE(output_tail, X''), output_truncated, requested_at, started_at, finished_at
+		FROM operations
+		ORDER BY COALESCE(requested_at, '') DESC, id DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return webui.OperationList{}, fmt.Errorf("serverapi: list operations: %w", err)
+	}
+	defer rows.Close()
+	result := webui.OperationList{Operations: make([]webui.Operation, 0, limit)}
+	for rows.Next() {
+		operation, err := scanOperation(rows)
+		if err != nil {
+			return webui.OperationList{}, err
+		}
+		if operation.CanCancel {
+			session, ok := b.registry.Current(operation.AgentID)
+			if !ok || session.State() != producttransport.StateActive {
+				operation.CanCancel = false
+				operation.CancelabilityReason = "Agent is offline"
+			} else if _, ok := session.(producttransport.OperationControlSession); !ok {
+				operation.CanCancel = false
+				operation.CancelabilityReason = "Agent does not support operation control"
+			}
+		}
+		result.Operations = append(result.Operations, operation)
+	}
+	if err := rows.Err(); err != nil {
+		return webui.OperationList{}, fmt.Errorf("serverapi: list operations: %w", err)
+	}
+	return result, nil
+}
+
+type rowScanner interface {
+	Scan(...any) error
+}
+
+func scanOperation(scanner rowScanner) (webui.Operation, error) {
+	var operation webui.Operation
+	var project sql.NullString
+	var revision int64
+	var rawSummary string
+	var requestedAt, startedAt, finishedAt sql.NullString
+	if err := scanner.Scan(&operation.ID, &operation.AgentID, &project, &operation.Kind, &operation.Status, &operation.Phase,
+		&revision, &rawSummary, &operation.OutputTail, &operation.OutputTruncated, &requestedAt, &startedAt, &finishedAt); err != nil {
+		return webui.Operation{}, fmt.Errorf("serverapi: scan operation: %w", err)
+	}
+	if revision < 0 || !utf8.ValidString(operation.OutputTail) {
+		return webui.Operation{}, &corruptDataError{boundary: "operations", cause: errors.New("invalid operation row")}
+	}
+	operation.Revision, operation.ProjectUID = uint64(revision), project.String
+	var summary operationSummary
+	if err := decodeStrictJSON([]byte(rawSummary), &summary); err != nil || summary.Version != 1 {
+		return webui.Operation{}, &corruptDataError{boundary: "operations.summary_json", cause: errors.New("invalid operation summary")}
+	}
+	operation.Target = summary.Target
+	operation.PartialEffectsPossible, operation.Error = summary.PartialEffectsPossible, summary.Error
+	operation.CancelMode, operation.CanCancel, operation.CancelabilityReason = summary.CancelMode, summary.CanCancel, summary.CancelabilityReason
+	var err error
+	if operation.RequestedAt, err = parseNullableTime(requestedAt); err != nil {
+		return webui.Operation{}, &corruptDataError{boundary: "operations.requested_at", cause: err}
+	}
+	if operation.StartedAt, err = parseNullableTime(startedAt); err != nil {
+		return webui.Operation{}, &corruptDataError{boundary: "operations.started_at", cause: err}
+	}
+	if operation.FinishedAt, err = parseNullableTime(finishedAt); err != nil {
+		return webui.Operation{}, &corruptDataError{boundary: "operations.finished_at", cause: err}
+	}
+	return operation, nil
 }
 
 func (b *Backend) ProjectEnvironment(ctx context.Context, projectUID string) ([]webui.EnvironmentEntry, error) {
@@ -273,6 +410,64 @@ func (b *Backend) ProjectEnvironment(ctx context.Context, projectUID string) ([]
 	return entries, nil
 }
 
+func (b *Backend) ProjectRuntime(ctx context.Context, projectUID string) (webui.ProjectRuntime, error) {
+	access, err := b.projectAccess(ctx, projectUID, projectRead)
+	if err != nil {
+		return webui.ProjectRuntime{}, err
+	}
+	containers, err := b.HostContainers(ctx, access.agentID)
+	if err != nil {
+		return webui.ProjectRuntime{}, err
+	}
+	attached := make(map[string]struct{}, len(access.flags.ContainerIDs))
+	for _, id := range access.flags.ContainerIDs {
+		attached[id] = struct{}{}
+	}
+	known := make(map[string]int, len(access.flags.DefinedServices))
+	result := webui.ProjectRuntime{
+		ProjectUID: projectUID, Services: make([]webui.ServiceRuntime, len(access.flags.DefinedServices)), Orphans: []webui.HostContainer{},
+	}
+	if value, parseErr := parseOptionalTimestamp(access.flags.LastObservedAt); parseErr == nil {
+		result.ObservedAt = value
+	}
+	for index, service := range access.flags.DefinedServices {
+		known[service.Name] = index
+		status := "No container"
+		if !service.Active {
+			status = "Profile inactive"
+		}
+		result.Services[index] = webui.ServiceRuntime{
+			Name: service.Name, Status: status, ProfileInactive: !service.Active, Containers: []webui.HostContainer{},
+		}
+	}
+	for _, container := range containers {
+		if _, found := attached[container.ID]; !found {
+			continue
+		}
+		index, found := known[container.ComposeService]
+		if !found {
+			container.Orphan = true
+			result.Orphans = append(result.Orphans, container)
+			continue
+		}
+		result.Services[index].Containers = append(result.Services[index].Containers, container)
+		result.Services[index].Status = "Observed"
+	}
+	return result, nil
+}
+
+func parseOptionalTimestamp(value string) (*time.Time, error) {
+	if value == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return nil, err
+	}
+	parsed = parsed.UTC()
+	return &parsed, nil
+}
+
 type projectFilePayload struct {
 	RelativePath string `json:"relative_path"`
 }
@@ -288,13 +483,14 @@ type agentProjectFile struct {
 }
 
 type agentBackup struct {
-	BackupID       string `json:"backup_id"`
-	ProjectUID     string `json:"project_uid"`
-	CreatedAt      string `json:"created_at"`
-	Trigger        string `json:"trigger"`
-	FileCount      int    `json:"file_count"`
-	SizeBytes      int64  `json:"size_bytes"`
-	ManifestSHA256 string `json:"manifest_sha256"`
+	BackupID       string   `json:"backup_id"`
+	ProjectUID     string   `json:"project_uid"`
+	CreatedAt      string   `json:"created_at"`
+	Trigger        string   `json:"trigger"`
+	FileCount      int      `json:"file_count"`
+	SizeBytes      int64    `json:"size_bytes"`
+	ManifestSHA256 string   `json:"manifest_sha256"`
+	Paths          []string `json:"paths"`
 }
 
 func (b *Backend) ProjectFile(ctx context.Context, projectUID, relativePath string) (webui.ProjectFile, error) {
@@ -380,15 +576,18 @@ func (b *Backend) ProjectBackups(ctx context.Context, projectUID string) ([]webu
 	for index, item := range decoded {
 		createdAt, parseErr := time.Parse(time.RFC3339Nano, item.CreatedAt)
 		_, duplicate := seen[item.BackupID]
+		pathsAvailable := item.Paths != nil
 		if parseErr != nil || createdAt.IsZero() || !validOpaqueID(item.BackupID) || item.ProjectUID != projectUID ||
 			!validBackupTrigger(item.Trigger) || item.FileCount < 0 || item.SizeBytes < 0 ||
-			!canonicalSHA256.MatchString(item.ManifestSHA256) || duplicate {
+			!canonicalSHA256.MatchString(item.ManifestSHA256) || duplicate || len(item.Paths) > 4096 ||
+			pathsAvailable && len(item.Paths) != item.FileCount || pathsAvailable && !validManagedPaths(item.Paths) {
 			return nil, &corruptDataError{boundary: "Agent backup response", cause: errors.New("invalid or duplicate backup metadata")}
 		}
 		seen[item.BackupID] = struct{}{}
 		result[index] = webui.Backup{
 			ID: item.BackupID, ProjectUID: item.ProjectUID, CreatedAt: createdAt, Trigger: item.Trigger,
 			FileCount: item.FileCount, SizeBytes: item.SizeBytes, ManifestSHA256: item.ManifestSHA256,
+			Paths: append([]string(nil), item.Paths...), PathsAvailable: pathsAvailable,
 		}
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -581,7 +780,45 @@ func (b *Backend) StartOperation(ctx context.Context, request webui.OperationReq
 	if err := b.authorizeOperationTarget(ctx, request.AgentID, request.ProjectUID); err != nil {
 		return webui.Operation{}, err
 	}
+	if err := b.authorizeComposeBuildPolicy(ctx, request.AgentID, request.ProjectUID, request.Kind, request.Target); err != nil {
+		return webui.Operation{}, err
+	}
 	return b.dispatchOperation(ctx, request.AgentID, request.ID, request.ProjectUID, request.Kind, request.Target, nil)
+}
+
+func (b *Backend) authorizeComposeBuildPolicy(ctx context.Context, agentID, projectUID, kind, target string) error {
+	if kind != "compose.up" && kind != "compose.pull" {
+		return nil
+	}
+	if projectUID == "" {
+		return fmt.Errorf("%w: Compose Up/Pull requires project_uid", webui.ErrInvalidRequest)
+	}
+	access, err := b.projectAccess(ctx, projectUID, projectRead)
+	if err != nil {
+		return err
+	}
+	if access.agentID != agentID {
+		return fmt.Errorf("%w: operation target is not in the Server cache", webui.ErrNotFound)
+	}
+	models := make([]composeexec.Service, len(access.flags.DefinedServices))
+	for index, service := range access.flags.DefinedServices {
+		models[index] = composeexec.Service{
+			Name: service.Name, Image: service.Image, HasBuild: service.HasBuild, PullPolicy: service.PullPolicy,
+			Profiles: append([]string(nil), service.Profiles...), DependsOn: append([]string(nil), service.DependsOn...), Active: service.Active,
+		}
+	}
+	policy, err := composeexec.EvaluateV1Policy(models)
+	if err != nil {
+		return fmt.Errorf("%w: effective Compose build policy facts are unavailable", webui.ErrConflict)
+	}
+	operation := composeexec.OperationUp
+	if kind == "compose.pull" {
+		operation = composeexec.OperationPull
+	}
+	if _, err := policy.Targets(operation, target); err != nil {
+		return fmt.Errorf("%w: %v", webui.ErrConflict, err)
+	}
+	return nil
 }
 
 func (b *Backend) dispatchOperation(ctx context.Context, agentID, operationID, projectUID, kind, target string, payload []byte) (webui.Operation, error) {
@@ -623,14 +860,50 @@ func operationFromAgent(operationID string, response producttransport.OperationR
 	if response.Revision > uint64(^uint64(0)>>1) || response.Status == "" || len(response.Status) > 128 ||
 		response.Phase == "" || len(response.Phase) > 128 || len(response.Error) > producttransport.DefaultMaxMessageBytes ||
 		len(response.OutputTail) > maxOperationOutputBytes || !utf8.Valid(response.OutputTail) ||
-		!utf8.ValidString(response.Status) || !utf8.ValidString(response.Phase) || !utf8.ValidString(response.Error) {
+		!utf8.ValidString(response.Status) || !utf8.ValidString(response.Phase) || !utf8.ValidString(response.Error) ||
+		!validCancelMode(response.CancelMode) || len(response.CancelabilityReason) > 1024 || !utf8.ValidString(response.CancelabilityReason) ||
+		!validOperationTimes(response.RequestedAt, response.StartedAt, response.FinishedAt) {
 		return webui.Operation{}, &corruptDataError{boundary: "Agent operation response", cause: errors.New("invalid or oversized operation record")}
 	}
 	return webui.Operation{
 		ID: operationID, Status: response.Status, Phase: response.Phase, Revision: response.Revision,
 		PartialEffectsPossible: response.PartialEffectsPossible, Error: response.Error,
 		OutputTail: string(response.OutputTail), OutputTruncated: response.OutputTruncated,
+		CancelMode: response.CancelMode, CanCancel: response.CanCancel, CancelabilityReason: response.CancelabilityReason,
+		RequestedAt: timePointer(response.RequestedAt), StartedAt: timePointer(response.StartedAt), FinishedAt: timePointer(response.FinishedAt),
 	}, nil
+}
+
+func validCancelMode(value string) bool {
+	switch value {
+	case "", "NONE", "SAFE", "BEST_EFFORT_PARTIAL", "BEFORE_COMMIT":
+		return true
+	default:
+		return false
+	}
+}
+
+func validOperationTimes(requested, started, finished time.Time) bool {
+	if !requested.IsZero() && requested.Year() < 2000 || !started.IsZero() && started.Year() < 2000 || !finished.IsZero() && finished.Year() < 2000 {
+		return false
+	}
+	if !requested.IsZero() && !started.IsZero() && started.Before(requested) {
+		return false
+	}
+	if !finished.IsZero() {
+		if !started.IsZero() && finished.Before(started) || started.IsZero() && !requested.IsZero() && finished.Before(requested) {
+			return false
+		}
+	}
+	return true
+}
+
+func timePointer(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	value = value.UTC()
+	return &value
 }
 
 // GetOperation reconciles the Server cache with the Agent-authoritative
@@ -731,6 +1004,9 @@ type operationSummary struct {
 	Target                 string `json:"target,omitempty"`
 	PartialEffectsPossible bool   `json:"partial_effects_possible"`
 	Error                  string `json:"error,omitempty"`
+	CancelMode             string `json:"cancel_mode,omitempty"`
+	CanCancel              bool   `json:"can_cancel,omitempty"`
+	CancelabilityReason    string `json:"cancelability_reason,omitempty"`
 }
 
 func (b *Backend) checkOperationSpec(ctx context.Context, agentID, operationID, projectUID, kind, target string) error {
@@ -788,6 +1064,7 @@ func (b *Backend) mergeOperation(ctx context.Context, spec operationSpec, incomi
 	defer b.unlockOperationMerge()
 	summaryBytes, err := json.Marshal(operationSummary{
 		Version: 1, Target: spec.Target, PartialEffectsPossible: incoming.PartialEffectsPossible, Error: incoming.Error,
+		CancelMode: incoming.CancelMode, CanCancel: incoming.CanCancel, CancelabilityReason: incoming.CancelabilityReason,
 	})
 	if err != nil {
 		return webui.Operation{}, fmt.Errorf("serverapi: encode operation summary: %w", err)
@@ -798,13 +1075,19 @@ func (b *Backend) mergeOperation(ctx context.Context, spec operationSpec, incomi
 		project = spec.ProjectUID
 	}
 	if insert {
+		requestedAt := time.Now().UTC()
+		if incoming.RequestedAt != nil {
+			requestedAt = incoming.RequestedAt.UTC()
+		}
 		_, err = b.store.DB().ExecContext(ctx, `
 			INSERT INTO operations(
 				id, agent_id, project_uid, kind, status, phase, revision, actor,
-				requested_at, summary_json, output_tail, output_truncated
-			) VALUES(?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
+				requested_at, started_at, finished_at, summary_json, output_tail, output_truncated
+			) VALUES(?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				status = excluded.status, phase = excluded.phase, revision = excluded.revision,
+				started_at = COALESCE(excluded.started_at, operations.started_at),
+				finished_at = COALESCE(excluded.finished_at, operations.finished_at),
 				summary_json = excluded.summary_json, output_tail = excluded.output_tail,
 				output_truncated = excluded.output_truncated
 			WHERE operations.agent_id = excluded.agent_id
@@ -813,17 +1096,21 @@ func (b *Backend) mergeOperation(ctx context.Context, spec operationSpec, incomi
 			  AND COALESCE(json_extract(operations.summary_json, '$.target'), '') = ?
 			  AND operations.revision < excluded.revision
 		`, spec.ID, spec.AgentID, project, spec.Kind, incoming.Status, incoming.Phase, incoming.Revision,
-			time.Now().UTC().Format(time.RFC3339Nano), string(summaryBytes), []byte(incoming.OutputTail), incoming.OutputTruncated,
+			requestedAt.Format(time.RFC3339Nano), nullableTime(incoming.StartedAt), nullableTime(incoming.FinishedAt),
+			string(summaryBytes), []byte(incoming.OutputTail), incoming.OutputTruncated,
 			spec.Target)
 	} else {
 		_, err = b.store.DB().ExecContext(ctx, `
 			UPDATE operations SET
-				status = ?, phase = ?, revision = ?, summary_json = ?, output_tail = ?, output_truncated = ?
+				status = ?, phase = ?, revision = ?,
+				started_at = COALESCE(?, started_at), finished_at = COALESCE(?, finished_at),
+				summary_json = ?, output_tail = ?, output_truncated = ?
 			WHERE id = ? AND agent_id = ?
 			  AND COALESCE(project_uid, '') = ? AND kind = ?
 			  AND COALESCE(json_extract(summary_json, '$.target'), '') = ?
 			  AND revision < ?
-		`, incoming.Status, incoming.Phase, incoming.Revision, string(summaryBytes), []byte(incoming.OutputTail),
+		`, incoming.Status, incoming.Phase, incoming.Revision, nullableTime(incoming.StartedAt), nullableTime(incoming.FinishedAt),
+			string(summaryBytes), []byte(incoming.OutputTail),
 			incoming.OutputTruncated, spec.ID, spec.AgentID, spec.ProjectUID, spec.Kind, spec.Target, incoming.Revision)
 	}
 	if err != nil {
@@ -836,10 +1123,30 @@ func (b *Backend) mergeOperation(ctx context.Context, spec operationSpec, incomi
 	if storedSpec.AgentID != spec.AgentID || storedSpec.ProjectUID != spec.ProjectUID || storedSpec.Kind != spec.Kind || storedSpec.Target != spec.Target {
 		return webui.Operation{}, fmt.Errorf("%w: operation ID is already bound to a different Agent or request", webui.ErrConflict)
 	}
-	if canonical.Revision == incoming.Revision && canonical != incoming {
+	if canonical.Revision == incoming.Revision && !sameAgentOperation(canonical, incoming) {
 		return webui.Operation{}, fmt.Errorf("%w: Agent changed an operation without increasing its revision", webui.ErrConflict)
 	}
 	return canonical, nil
+}
+
+func nullableTime(value *time.Time) any {
+	if value == nil || value.IsZero() {
+		return nil
+	}
+	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func sameAgentOperation(stored, incoming webui.Operation) bool {
+	return stored.Status == incoming.Status && stored.Phase == incoming.Phase && stored.Revision == incoming.Revision &&
+		stored.PartialEffectsPossible == incoming.PartialEffectsPossible && stored.Error == incoming.Error &&
+		stored.OutputTail == incoming.OutputTail && stored.OutputTruncated == incoming.OutputTruncated &&
+		stored.CancelMode == incoming.CancelMode && stored.CanCancel == incoming.CanCancel && stored.CancelabilityReason == incoming.CancelabilityReason &&
+		timePointerEqualWhenKnown(stored.RequestedAt, incoming.RequestedAt) &&
+		timePointerEqualWhenKnown(stored.StartedAt, incoming.StartedAt) && timePointerEqualWhenKnown(stored.FinishedAt, incoming.FinishedAt)
+}
+
+func timePointerEqualWhenKnown(stored, incoming *time.Time) bool {
+	return incoming == nil || stored != nil && stored.Equal(*incoming)
 }
 
 func (b *Backend) lockOperationMerge(ctx context.Context) error {
@@ -854,32 +1161,28 @@ func (b *Backend) lockOperationMerge(ctx context.Context) error {
 func (b *Backend) unlockOperationMerge() { <-b.operationMergeGate }
 
 func (b *Backend) loadStoredOperation(ctx context.Context, operationID string) (webui.Operation, operationSpec, error) {
-	var operation webui.Operation
-	var spec operationSpec
-	var project sql.NullString
-	var revision int64
-	var rawSummary string
-	err := b.store.DB().QueryRowContext(ctx, `
+	operation, err := scanOperation(b.store.DB().QueryRowContext(ctx, `
 		SELECT id, agent_id, project_uid, kind, status, phase, revision, summary_json,
-		       COALESCE(output_tail, X''), output_truncated
+		       COALESCE(output_tail, X''), output_truncated, requested_at, started_at, finished_at
 		FROM operations WHERE id = ?
-	`, operationID).Scan(&operation.ID, &spec.AgentID, &project, &spec.Kind, &operation.Status, &operation.Phase,
-		&revision, &rawSummary, &operation.OutputTail, &operation.OutputTruncated)
+	`, operationID))
 	if err != nil {
-		return webui.Operation{}, operationSpec{}, fmt.Errorf("serverapi: load canonical operation: %w", err)
+		return webui.Operation{}, operationSpec{}, err
 	}
-	if revision < 0 || !utf8.ValidString(operation.OutputTail) {
-		return webui.Operation{}, operationSpec{}, &corruptDataError{boundary: "operations", cause: errors.New("invalid operation row")}
-	}
-	operation.Revision = uint64(revision)
-	spec.ID, spec.ProjectUID = operation.ID, project.String
-	var summary operationSummary
-	if err := decodeStrictJSON([]byte(rawSummary), &summary); err != nil || summary.Version != 1 {
-		return webui.Operation{}, operationSpec{}, &corruptDataError{boundary: "operations.summary_json", cause: errors.New("invalid operation summary")}
-	}
-	spec.Target = summary.Target
-	operation.PartialEffectsPossible, operation.Error = summary.PartialEffectsPossible, summary.Error
+	spec := operationSpec{ID: operation.ID, AgentID: operation.AgentID, ProjectUID: operation.ProjectUID, Kind: operation.Kind, Target: operation.Target}
 	return operation, spec, nil
+}
+
+func parseNullableTime(value sql.NullString) (*time.Time, error) {
+	if !value.Valid || value.String == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value.String)
+	if err != nil {
+		return nil, err
+	}
+	parsed = parsed.UTC()
+	return &parsed, nil
 }
 
 func (b *Backend) activeOperationControlSession(agentID string) (producttransport.OperationControlSession, error) {
@@ -905,6 +1208,7 @@ func (b *Backend) OpenLogs(ctx context.Context, request webui.LiveRequest) (webu
 	stream, err := session.OpenLogs(ctx, producttransport.LogRequest{
 		ContainerID: request.ContainerID, Follow: request.Follow, TailLines: request.TailLines,
 		ShowStdout: request.ShowStdout, ShowStderr: request.ShowStderr, Timestamps: request.Timestamps,
+		Since: formatOptionalTime(request.Since), Until: formatOptionalTime(request.Until),
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -913,6 +1217,13 @@ func (b *Backend) OpenLogs(ctx context.Context, request webui.LiveRequest) (webu
 		return nil, &liveUnavailableError{agentID: request.AgentID, action: "logs", cause: err}
 	}
 	return &liveLogStream{stream: stream}, nil
+}
+
+func formatOptionalTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
 }
 
 func (b *Backend) OpenStats(ctx context.Context, request webui.LiveRequest) (webui.StatsStream, error) {
@@ -978,13 +1289,31 @@ func (s *liveLogStream) Recv(ctx context.Context) (webui.LogEvent, error) {
 	}
 	clientError := ""
 	if event.Error != "" {
-		clientError = "log stream ended"
+		clientError = safeLogTerminalReason(event.Error)
 	}
 	return webui.LogEvent{
 		Data: append([]byte(nil), event.Data...), Stream: event.Stream, LineCount: event.LineCount,
 		Timestamp: event.Timestamp, DroppedBytes: event.DroppedBytes, DroppedLines: event.DroppedLines,
 		Terminal: event.Terminal, Error: clientError,
 	}, nil
+}
+
+func safeLogTerminalReason(raw string) string {
+	normalized := strings.ToLower(raw)
+	switch {
+	case strings.Contains(normalized, "logging driver") && (strings.Contains(normalized, "does not support") || strings.Contains(normalized, "not supported")):
+		return "Container logging driver does not support log reads"
+	case strings.Contains(normalized, "container is not attached to the compose project"):
+		return "Container is no longer attached to the Compose project"
+	case strings.Contains(normalized, "compose project is unavailable"):
+		return "Compose project is unavailable"
+	case strings.Contains(normalized, "context deadline exceeded"):
+		return "Log source timed out"
+	case strings.Contains(normalized, "context canceled") || strings.Contains(normalized, "logs canceled"):
+		return "Log stream canceled"
+	default:
+		return "log stream ended"
+	}
 }
 
 func (s *liveLogStream) Close() error {
@@ -1154,11 +1483,44 @@ func (b *Backend) loadProjects(ctx context.Context) ([]webui.Project, error) {
 			}
 			project.LastVerifiedAt = &verifiedAt
 		}
+		if flags.LastObservedAt != "" {
+			observedAt, err := time.Parse(time.RFC3339Nano, flags.LastObservedAt)
+			if err != nil || observedAt.IsZero() {
+				return nil, &corruptDataError{boundary: "projects.flags_json", cause: errors.New("invalid last observed timestamp")}
+			}
+			project.LastObservedAt = &observedAt
+		}
 		project.Collision = flags.Collision
 		project.Managed = managedProject(flags)
 		project.UnmanagedReason = flags.UnmanagedReason
 		project.ContainerIDs = append([]string(nil), flags.ContainerIDs...)
 		project.Services = append([]string(nil), flags.Services...)
+		project.ComposeFiles = append([]string(nil), flags.ComposeFiles...)
+		project.DefinedServices = make([]webui.ComposeService, len(flags.DefinedServices))
+		for index, service := range flags.DefinedServices {
+			project.DefinedServices[index] = webui.ComposeService{
+				Name: service.Name, Image: service.Image, HasBuild: service.HasBuild, PullPolicy: service.PullPolicy,
+				Profiles: append([]string(nil), service.Profiles...), DependsOn: append([]string(nil), service.DependsOn...),
+				Active: service.Active, BuildRequired: service.BuildRequired, PullAvailable: service.PullAvailable,
+				UpAvailable: service.UpAvailable, UnavailableReason: service.UnavailableReason,
+			}
+		}
+		project.ActiveProfiles = append([]string(nil), flags.ActiveProfiles...)
+		project.EnvFiles = make([]webui.EnvFileReference, len(flags.EnvFiles))
+		for index, reference := range flags.EnvFiles {
+			project.EnvFiles[index] = webui.EnvFileReference{Path: reference.Path, Readable: reference.Readable}
+		}
+		project.Secrets = make([]webui.ComposeResource, len(flags.Secrets))
+		for index, source := range flags.Secrets {
+			project.Secrets[index] = webui.ComposeResource{Name: source.Name, SourceType: source.SourceType, Source: source.Source, External: source.External}
+		}
+		project.Configs = make([]webui.ComposeResource, len(flags.Configs))
+		for index, source := range flags.Configs {
+			project.Configs[index] = webui.ComposeResource{Name: source.Name, SourceType: source.SourceType, Source: source.Source, External: source.External}
+		}
+		project.PullServices = append([]string(nil), flags.PullServices...)
+		project.ProjectUpAvailable = flags.ProjectUpAvailable
+		project.ProjectUpReason = flags.ProjectUpReason
 		project.IncludedBy = append([]string(nil), flags.IncludedBy...)
 		project.SourceReferences = make([]webui.SourceReference, len(flags.SourceReferences))
 		for index, reference := range flags.SourceReferences {
@@ -1296,6 +1658,17 @@ func validManagedPath(path string) bool {
 	return strings.HasPrefix(path, "compose.") && strings.HasSuffix(path, ".yaml") && len(path) > len("compose..yaml")
 }
 
+func validManagedPaths(paths []string) bool {
+	previous := ""
+	for index, path := range paths {
+		if !validManagedPath(path) || index > 0 && path <= previous {
+			return false
+		}
+		previous = path
+	}
+	return true
+}
+
 func fileWriteKind(path string) (string, bool) {
 	if path == ".env" || strings.HasPrefix(path, ".env.") && len(path) > len(".env.") {
 		return "env.write", true
@@ -1393,6 +1766,7 @@ func (b *Backend) liveHost(ctx context.Context, agent agentRow) webui.Host {
 		host.Capabilities = disabledCapabilities("agent offline")
 		return host
 	}
+	host.SessionSourceIP = session.Info().SourceIP
 	state := session.State()
 	host.State = string(state)
 	if state != producttransport.StateActive {
@@ -1410,7 +1784,13 @@ func (b *Backend) liveHost(ctx context.Context, agent agentRow) webui.Host {
 		host.Capabilities = disabledCapabilities("heartbeat unavailable")
 		return host
 	}
+	observedAt := heartbeat.ObservedAt.UTC()
+	if !observedAt.IsZero() {
+		host.SessionObservedAt = &observedAt
+	}
 	capability := heartbeat.Capability
+	host.DockerAPIVersion = capability.DockerAPIVersion
+	host.DockerComposeVersion = capability.BundledComposeVersion
 	host.Capabilities.Connection = webCapability(capability.ConnectionReady, capability.Reason, "connection not ready")
 	if !capability.ConnectionReady {
 		host.Capabilities.Docker = webCapability(false, capability.Reason, "connection not ready")

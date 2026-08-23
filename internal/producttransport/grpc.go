@@ -271,6 +271,7 @@ func (a *ServerAcceptor) Accept(ctx context.Context) (ControlSession, error) {
 		_ = conn.Close()
 		return nil, err
 	}
+	info.SourceIP = remoteIP(raw.RemoteAddr())
 	dialer := &singleConnDialer{conn: conn}
 	client, err := grpc.NewClient("passthrough:///dockpilot-product-agent",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -300,6 +301,21 @@ func (a *ServerAcceptor) Accept(ctx context.Context) (ControlSession, error) {
 	client.Connect()
 	go runHeartbeatLoop(session, a.config.HeartbeatInterval, a.config.HeartbeatTimeout, a.config.TickerFactory, a.config.LivenessObserver)
 	return session, nil
+}
+
+func remoteIP(address net.Addr) string {
+	if address == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(address.String())
+	if err != nil {
+		return ""
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return ""
+	}
+	return ip.String()
 }
 
 func (a *ServerAcceptor) Registry() *SessionRegistry { return a.config.Registry }
@@ -534,6 +550,7 @@ func (s *controlSession) OpenLogs(ctx context.Context, request LogRequest) (LogR
 		ContainerId: request.ContainerID, ProjectUid: request.ProjectUID, Services: append([]string(nil), request.Services...),
 		Follow: request.Follow, TailLines: request.TailLines,
 		ShowStdout: request.ShowStdout, ShowStderr: request.ShowStderr, Timestamps: request.Timestamps,
+		Since: request.Since, Until: request.Until,
 	})
 	if err != nil {
 		return nil, err
@@ -1004,6 +1021,9 @@ func operationResponseToWire(response OperationResponse) *pb.OperationResponse {
 		Status: response.Status, Phase: response.Phase, Revision: response.Revision,
 		PartialEffectsPossible: response.PartialEffectsPossible, Error: response.Error,
 		OutputTail: append([]byte(nil), response.OutputTail...), OutputTruncated: response.OutputTruncated,
+		CancelMode: response.CancelMode, CanCancel: response.CanCancel, CancelabilityReason: response.CancelabilityReason,
+		RequestedAtUnixNano: timeToUnixNano(response.RequestedAt), StartedAtUnixNano: timeToUnixNano(response.StartedAt),
+		FinishedAtUnixNano: timeToUnixNano(response.FinishedAt),
 	}
 }
 
@@ -1015,7 +1035,24 @@ func operationResponseFromWire(response *pb.OperationResponse) OperationResponse
 		Status: response.GetStatus(), Phase: response.GetPhase(), Revision: response.GetRevision(),
 		PartialEffectsPossible: response.GetPartialEffectsPossible(), Error: response.GetError(),
 		OutputTail: append([]byte(nil), response.GetOutputTail()...), OutputTruncated: response.GetOutputTruncated(),
+		CancelMode: response.GetCancelMode(), CanCancel: response.GetCanCancel(), CancelabilityReason: response.GetCancelabilityReason(),
+		RequestedAt: unixNanoToTime(response.GetRequestedAtUnixNano()), StartedAt: unixNanoToTime(response.GetStartedAtUnixNano()),
+		FinishedAt: unixNanoToTime(response.GetFinishedAtUnixNano()),
 	}
+}
+
+func timeToUnixNano(value time.Time) int64 {
+	if value.IsZero() {
+		return 0
+	}
+	return value.UTC().UnixNano()
+}
+
+func unixNanoToTime(value int64) time.Time {
+	if value <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, value).UTC()
 }
 
 func validateOperationControlID(operationID string) error {
@@ -1078,6 +1115,7 @@ func (s *agentService) streamLogs(request *pb.LogStreamRequest, stream grpc.Serv
 		ContainerID: request.GetContainerId(), ProjectUID: request.GetProjectUid(), Services: append([]string(nil), request.GetServices()...),
 		Follow: request.GetFollow(), TailLines: request.GetTailLines(),
 		ShowStdout: request.GetShowStdout(), ShowStderr: request.GetShowStderr(), Timestamps: request.GetTimestamps(),
+		Since: request.GetSince(), Until: request.GetUntil(),
 	}, grpcLogSender{stream: stream, maxMessageBytes: s.maxMessageBytes})
 	if errors.Is(err, ErrHandlerUnavailable) {
 		return status.Error(codes.Unimplemented, err.Error())

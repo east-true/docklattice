@@ -41,22 +41,97 @@ type Capabilities struct {
 }
 
 type Host struct {
-	ID           string       `json:"id"`
-	DisplayName  string       `json:"display_name"`
-	State        string       `json:"state"`
-	Capabilities Capabilities `json:"capabilities"`
-	ProjectScan  *ProjectScan `json:"project_scan,omitempty"`
+	ID                   string         `json:"id"`
+	DisplayName          string         `json:"display_name"`
+	State                string         `json:"state"`
+	Capabilities         Capabilities   `json:"capabilities"`
+	ProjectScan          *ProjectScan   `json:"project_scan,omitempty"`
+	SessionSourceIP      string         `json:"session_source_ip,omitempty"`
+	SessionObservedAt    *time.Time     `json:"session_observed_at,omitempty"`
+	DockerAPIVersion     string         `json:"docker_api_version,omitempty"`
+	DockerComposeVersion string         `json:"docker_compose_version,omitempty"`
+	EngineSummary        *EngineSummary `json:"engine_summary,omitempty"`
+	EngineSummaryReason  string         `json:"engine_summary_reason,omitempty"`
 }
 
-// HostContainer, HostImage, HostNetwork, and HostVolume are deliberately curated live views.
-// Docker labels, network options, volume options, and volume mountpoints are
-// not part of the Server API and therefore cannot be reflected to browsers.
+type EngineSummary struct {
+	Version           string `json:"version,omitempty"`
+	CPUCapacity       uint32 `json:"cpu_capacity"`
+	MemoryCapacity    uint64 `json:"memory_capacity_bytes"`
+	ContainersTotal   uint32 `json:"containers_total"`
+	ContainersRunning uint32 `json:"containers_running"`
+	Images            uint32 `json:"images"`
+	StorageDriver     string `json:"storage_driver,omitempty"`
+	LoggingDriver     string `json:"logging_driver,omitempty"`
+	CgroupDriver      string `json:"cgroup_driver,omitempty"`
+	CgroupVersion     string `json:"cgroup_version,omitempty"`
+	DefaultRuntime    string `json:"default_runtime,omitempty"`
+	OperatingSystem   string `json:"operating_system,omitempty"`
+	OSVersion         string `json:"os_version,omitempty"`
+	OSType            string `json:"os_type,omitempty"`
+	Architecture      string `json:"architecture,omitempty"`
+	KernelVersion     string `json:"kernel_version,omitempty"`
+	DockerRootDir     string `json:"docker_root_dir,omitempty"`
+}
+
+// HostContainer, HostImage, HostNetwork, and HostVolume are deliberately
+// curated live views. Lists stay minimal; the explicit Inspector methods add
+// bounded diagnostic fields without exposing raw Docker inspect payloads.
 type HostContainer struct {
-	ID     string   `json:"id"`
-	Names  []string `json:"names"`
-	Image  string   `json:"image"`
-	State  string   `json:"state"`
-	Status string   `json:"status"`
+	ID                  string             `json:"id"`
+	Names               []string           `json:"names"`
+	Image               string             `json:"image"`
+	State               string             `json:"state"`
+	Status              string             `json:"status"`
+	Health              string             `json:"health,omitempty"`
+	ComposeProject      string             `json:"compose_project,omitempty"`
+	ComposeService      string             `json:"compose_service,omitempty"`
+	OneOff              bool               `json:"one_off"`
+	Orphan              bool               `json:"orphan"`
+	Ports               []PublishedPort    `json:"ports"`
+	Protected           bool               `json:"protected"`
+	ProtectionReason    string             `json:"protection_reason,omitempty"`
+	ImageID             string             `json:"image_id,omitempty"`
+	ExitCode            int                `json:"exit_code"`
+	CreatedAt           string             `json:"created_at,omitempty"`
+	StartedAt           string             `json:"started_at,omitempty"`
+	FinishedAt          string             `json:"finished_at,omitempty"`
+	OOMKilled           bool               `json:"oom_killed"`
+	RestartCount        int                `json:"restart_count"`
+	RestartPolicy       string             `json:"restart_policy,omitempty"`
+	RestartMaximumRetry int                `json:"restart_maximum_retry"`
+	StopSignal          string             `json:"stop_signal,omitempty"`
+	StopTimeout         *int               `json:"stop_timeout_seconds,omitempty"`
+	LoggingDriver       string             `json:"logging_driver,omitempty"`
+	Command             []string           `json:"command,omitempty"`
+	Entrypoint          []string           `json:"entrypoint,omitempty"`
+	ExposedPorts        []string           `json:"exposed_ports,omitempty"`
+	Labels              map[string]string  `json:"labels,omitempty"`
+	Mounts              []ContainerMount   `json:"mounts,omitempty"`
+	Networks            []ContainerNetwork `json:"networks,omitempty"`
+}
+
+type ContainerMount struct {
+	Type        string `json:"type"`
+	Source      string `json:"source"`
+	Destination string `json:"destination"`
+	ReadWrite   bool   `json:"read_write"`
+}
+type ContainerNetwork struct {
+	Name       string   `json:"name"`
+	NetworkID  string   `json:"network_id,omitempty"`
+	EndpointID string   `json:"endpoint_id,omitempty"`
+	IPv4       string   `json:"ipv4,omitempty"`
+	IPv6       string   `json:"ipv6,omitempty"`
+	MAC        string   `json:"mac,omitempty"`
+	Aliases    []string `json:"aliases,omitempty"`
+}
+
+type PublishedPort struct {
+	HostIP        string `json:"host_ip,omitempty"`
+	PublishedPort uint16 `json:"published_port,omitempty"`
+	TargetPort    uint16 `json:"target_port"`
+	Protocol      string `json:"protocol"`
 }
 
 type HostImage struct {
@@ -85,6 +160,80 @@ type HostVolume struct {
 	CreatedAt string `json:"created_at,omitempty"`
 }
 
+type ObjectReference struct {
+	ContainerID    string `json:"container_id"`
+	ContainerName  string `json:"container_name,omitempty"`
+	ComposeProject string `json:"compose_project,omitempty"`
+	ComposeService string `json:"compose_service,omitempty"`
+	State          string `json:"state,omitempty"`
+	Destination    string `json:"destination,omitempty"`
+}
+type NetworkAttachment struct {
+	ObjectReference
+	EndpointID string `json:"endpoint_id,omitempty"`
+	IPv4       string `json:"ipv4,omitempty"`
+	IPv6       string `json:"ipv6,omitempty"`
+	MAC        string `json:"mac,omitempty"`
+}
+type HostImageDetails struct {
+	ID           string            `json:"id"`
+	RepoTags     []string          `json:"repo_tags"`
+	RepoDigests  []string          `json:"repo_digests"`
+	Created      string            `json:"created,omitempty"`
+	Author       string            `json:"author,omitempty"`
+	Architecture string            `json:"architecture,omitempty"`
+	Variant      string            `json:"variant,omitempty"`
+	OS           string            `json:"os,omitempty"`
+	OSVersion    string            `json:"os_version,omitempty"`
+	Size         int64             `json:"size_bytes"`
+	Entrypoint   []string          `json:"entrypoint,omitempty"`
+	Command      []string          `json:"command,omitempty"`
+	ExposedPorts []string          `json:"exposed_ports,omitempty"`
+	WorkingDir   string            `json:"working_dir,omitempty"`
+	User         string            `json:"user,omitempty"`
+	Labels       map[string]string `json:"labels,omitempty"`
+	LayerCount   int               `json:"layer_count"`
+	UsedBy       []ObjectReference `json:"used_by"`
+}
+type IPAMConfig struct {
+	Subnet       string            `json:"subnet,omitempty"`
+	IPRange      string            `json:"ip_range,omitempty"`
+	Gateway      string            `json:"gateway,omitempty"`
+	AuxAddresses map[string]string `json:"aux_addresses,omitempty"`
+}
+type HostNetworkDetails struct {
+	ID             string              `json:"id"`
+	Name           string              `json:"name"`
+	Created        string              `json:"created,omitempty"`
+	Scope          string              `json:"scope"`
+	Driver         string              `json:"driver"`
+	EnableIPv4     bool                `json:"enable_ipv4"`
+	EnableIPv6     bool                `json:"enable_ipv6"`
+	Internal       bool                `json:"internal"`
+	Attachable     bool                `json:"attachable"`
+	Ingress        bool                `json:"ingress"`
+	ConfigOnly     bool                `json:"config_only"`
+	IPAMDriver     string              `json:"ipam_driver,omitempty"`
+	IPAM           []IPAMConfig        `json:"ipam"`
+	Options        map[string]string   `json:"options,omitempty"`
+	Labels         map[string]string   `json:"labels,omitempty"`
+	ComposeProject string              `json:"compose_project,omitempty"`
+	ComposeNetwork string              `json:"compose_network,omitempty"`
+	Attachments    []NetworkAttachment `json:"attachments"`
+}
+type HostVolumeDetails struct {
+	Name           string            `json:"name"`
+	Driver         string            `json:"driver"`
+	Scope          string            `json:"scope"`
+	CreatedAt      string            `json:"created_at,omitempty"`
+	Mountpoint     string            `json:"mountpoint,omitempty"`
+	Options        map[string]string `json:"options,omitempty"`
+	Labels         map[string]string `json:"labels,omitempty"`
+	ComposeProject string            `json:"compose_project,omitempty"`
+	ComposeVolume  string            `json:"compose_volume,omitempty"`
+	References     []ObjectReference `json:"references"`
+}
+
 type ProjectScan struct {
 	ScannedAt       time.Time `json:"scanned_at"`
 	Truncated       bool      `json:"truncated"`
@@ -94,23 +243,32 @@ type ProjectScan struct {
 }
 
 type Project struct {
-	UID                 string            `json:"uid"`
-	AgentID             string            `json:"agent_id"`
-	WorkingDir          string            `json:"working_dir"`
-	Name                string            `json:"name"`
-	Managed             bool              `json:"managed"`
-	UnmanagedReason     string            `json:"unmanaged_reason,omitempty"`
-	ContainerIDs        []string          `json:"container_ids,omitempty"`
-	Services            []string          `json:"services,omitempty"`
-	IncludedBy          []string          `json:"included_by,omitempty"`
-	SourceReferences    []SourceReference `json:"source_references,omitempty"`
-	SourceGraphComplete bool              `json:"source_graph_complete"`
-	Present             bool              `json:"present"`
-	Stale               bool              `json:"stale"`
-	ReadOnly            bool              `json:"read_only"`
-	Collision           bool              `json:"collision"`
-	ComposeExecutable   bool              `json:"compose_executable"`
-	FilesystemWritable  bool              `json:"filesystem_writable"`
+	UID                 string             `json:"uid"`
+	AgentID             string             `json:"agent_id"`
+	WorkingDir          string             `json:"working_dir"`
+	Name                string             `json:"name"`
+	Managed             bool               `json:"managed"`
+	UnmanagedReason     string             `json:"unmanaged_reason,omitempty"`
+	ContainerIDs        []string           `json:"container_ids,omitempty"`
+	Services            []string           `json:"services,omitempty"`
+	ComposeFiles        []string           `json:"compose_files,omitempty"`
+	DefinedServices     []ComposeService   `json:"defined_services,omitempty"`
+	ActiveProfiles      []string           `json:"active_profiles,omitempty"`
+	EnvFiles            []EnvFileReference `json:"env_files,omitempty"`
+	Secrets             []ComposeResource  `json:"secrets,omitempty"`
+	Configs             []ComposeResource  `json:"configs,omitempty"`
+	PullServices        []string           `json:"pull_services,omitempty"`
+	ProjectUpAvailable  bool               `json:"project_up_available"`
+	ProjectUpReason     string             `json:"project_up_reason,omitempty"`
+	IncludedBy          []string           `json:"included_by,omitempty"`
+	SourceReferences    []SourceReference  `json:"source_references,omitempty"`
+	SourceGraphComplete bool               `json:"source_graph_complete"`
+	Present             bool               `json:"present"`
+	Stale               bool               `json:"stale"`
+	ReadOnly            bool               `json:"read_only"`
+	Collision           bool               `json:"collision"`
+	ComposeExecutable   bool               `json:"compose_executable"`
+	FilesystemWritable  bool               `json:"filesystem_writable"`
 	// RestoreRecoveryRequired means a restore failed and its rollback failed
 	// too. The project files are in an unknown state and every mutation is
 	// refused until an operator resolves it. read_only is true as well; this
@@ -122,7 +280,48 @@ type Project struct {
 	AppliedFingerprint      string     `json:"applied_fingerprint,omitempty"`
 	LastVerifiedFingerprint string     `json:"last_verified_fingerprint,omitempty"`
 	LastVerifiedAt          *time.Time `json:"last_verified_at,omitempty"`
+	LastObservedAt          *time.Time `json:"last_observed_at,omitempty"`
 	Drift                   string     `json:"drift"`
+}
+
+type ComposeService struct {
+	Name              string   `json:"name"`
+	Image             string   `json:"image,omitempty"`
+	HasBuild          bool     `json:"has_build"`
+	PullPolicy        string   `json:"pull_policy,omitempty"`
+	Profiles          []string `json:"profiles,omitempty"`
+	DependsOn         []string `json:"depends_on,omitempty"`
+	Active            bool     `json:"active"`
+	BuildRequired     bool     `json:"build_required"`
+	PullAvailable     bool     `json:"pull_available"`
+	UpAvailable       bool     `json:"up_available"`
+	UnavailableReason string   `json:"unavailable_reason,omitempty"`
+}
+
+type ProjectRuntime struct {
+	ProjectUID string           `json:"project_uid"`
+	ObservedAt *time.Time       `json:"observed_at,omitempty"`
+	Services   []ServiceRuntime `json:"services"`
+	Orphans    []HostContainer  `json:"orphans"`
+}
+
+type ServiceRuntime struct {
+	Name            string          `json:"name"`
+	Status          string          `json:"status"`
+	ProfileInactive bool            `json:"profile_inactive"`
+	Containers      []HostContainer `json:"containers"`
+}
+
+type EnvFileReference struct {
+	Path     string `json:"path"`
+	Readable bool   `json:"readable"`
+}
+
+type ComposeResource struct {
+	Name       string `json:"name"`
+	SourceType string `json:"source_type,omitempty"`
+	Source     string `json:"source,omitempty"`
+	External   bool   `json:"external"`
 }
 
 // SourceReference is content-free Compose include/extends provenance. It
@@ -151,8 +350,13 @@ type AuditCursor struct {
 }
 
 type AuditPageRequest struct {
-	Cursor *AuditCursor `json:"-"`
-	Limit  int          `json:"-"`
+	Cursor   *AuditCursor `json:"-"`
+	Limit    int          `json:"-"`
+	From     *time.Time   `json:"-"`
+	Until    *time.Time   `json:"-"`
+	Resource string       `json:"-"`
+	Kind     string       `json:"-"`
+	Actor    string       `json:"-"`
 }
 
 // AuditEvent is a curated view of one canonical event. The stored metadata
@@ -238,6 +442,7 @@ type ProjectFile struct {
 type ComposeQuery struct {
 	Services []string `json:"services"`
 	All      bool     `json:"all"`
+	Reveal   bool     `json:"reveal"`
 }
 
 // ComposeOutput is a transient bounded CLI view. It is not persisted by the
@@ -262,6 +467,8 @@ type Backup struct {
 	FileCount      int       `json:"file_count"`
 	SizeBytes      int64     `json:"size_bytes"`
 	ManifestSHA256 string    `json:"manifest_sha256"`
+	Paths          []string  `json:"paths"`
+	PathsAvailable bool      `json:"paths_available"`
 }
 
 type BackupCreateRequest struct {
@@ -277,14 +484,32 @@ type BackupRestoreRequest struct {
 }
 
 type Operation struct {
-	ID                     string `json:"operation_id"`
-	Status                 string `json:"status"`
-	Phase                  string `json:"phase"`
-	Revision               uint64 `json:"revision"`
-	PartialEffectsPossible bool   `json:"partial_effects_possible"`
-	Error                  string `json:"error,omitempty"`
-	OutputTail             string `json:"output_tail,omitempty"`
-	OutputTruncated        bool   `json:"output_truncated"`
+	ID                     string     `json:"operation_id"`
+	AgentID                string     `json:"agent_id"`
+	ProjectUID             string     `json:"project_uid,omitempty"`
+	Kind                   string     `json:"kind"`
+	Target                 string     `json:"target,omitempty"`
+	Status                 string     `json:"status"`
+	Phase                  string     `json:"phase"`
+	Revision               uint64     `json:"revision"`
+	CancelMode             string     `json:"cancel_mode,omitempty"`
+	CanCancel              bool       `json:"can_cancel"`
+	CancelabilityReason    string     `json:"cancelability_reason,omitempty"`
+	RequestedAt            *time.Time `json:"requested_at,omitempty"`
+	StartedAt              *time.Time `json:"started_at,omitempty"`
+	FinishedAt             *time.Time `json:"finished_at,omitempty"`
+	PartialEffectsPossible bool       `json:"partial_effects_possible"`
+	Error                  string     `json:"error,omitempty"`
+	OutputTail             string     `json:"output_tail,omitempty"`
+	OutputTruncated        bool       `json:"output_truncated"`
+}
+
+type OperationListRequest struct {
+	Limit int
+}
+
+type OperationList struct {
+	Operations []Operation `json:"operations"`
 }
 
 type OperationCancellation struct {
@@ -306,15 +531,20 @@ type LiveRequest struct {
 	ShowStdout  bool
 	ShowStderr  bool
 	Timestamps  bool
+	Since       time.Time
+	Until       time.Time
 }
 
 // ProjectLogRequest selects a discovered project and optional discovered
 // services. It intentionally has no Agent ID, container ID, or raw CLI flag.
 type ProjectLogRequest struct {
-	Services   []string
-	Follow     bool
-	TailLines  uint64
-	Timestamps bool
+	ContainerID string
+	Services    []string
+	Follow      bool
+	TailLines   uint64
+	Timestamps  bool
+	Since       time.Time
+	Until       time.Time
 }
 
 type LogEvent struct {
@@ -502,12 +732,17 @@ type Backend interface {
 	Dashboard(context.Context) (Dashboard, error)
 	Host(context.Context, string) (Host, error)
 	HostContainers(context.Context, string) ([]HostContainer, error)
+	HostContainer(context.Context, string, string) (HostContainer, error)
 	HostImages(context.Context, string) ([]HostImage, error)
+	HostImage(context.Context, string, string) (HostImageDetails, error)
 	HostNetworks(context.Context, string) ([]HostNetwork, error)
+	HostNetwork(context.Context, string, string) (HostNetworkDetails, error)
 	HostVolumes(context.Context, string) ([]HostVolume, error)
+	HostVolume(context.Context, string, string) (HostVolumeDetails, error)
 	HostAudit(context.Context, string, AuditPageRequest) (AuditPage, error)
 	ProjectActivity(context.Context, string, AuditPageRequest) (AuditPage, error)
 	ProjectEnvironment(context.Context, string) ([]EnvironmentEntry, error)
+	ProjectRuntime(context.Context, string) (ProjectRuntime, error)
 	ProjectComposePS(context.Context, string, ComposeQuery) (ComposeOutput, error)
 	ProjectComposeConfig(context.Context, string, ComposeQuery) (ComposeOutput, error)
 	ProjectFile(context.Context, string, string) (ProjectFile, error)
@@ -516,6 +751,7 @@ type Backend interface {
 	CreateBackup(context.Context, BackupCreateRequest) (Operation, error)
 	RestoreBackup(context.Context, BackupRestoreRequest) (Operation, error)
 	StartOperation(context.Context, OperationRequest) (Operation, error)
+	ListOperations(context.Context, OperationListRequest) (OperationList, error)
 	GetOperation(context.Context, string, string) (Operation, error)
 	CancelOperation(context.Context, string, string) (OperationCancellation, error)
 	OpenLogs(context.Context, LiveRequest) (LogStream, error)

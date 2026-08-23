@@ -31,7 +31,7 @@ func TestBuildArgsUsesFixedComposeArgvAndAllowlistedFlags(t *testing.T) {
 		"--file", "/srv/stacks/demo/compose.yaml",
 		"--file", "/srv/stacks/demo/compose.override.yaml",
 		"--project-name", "demo_project",
-		"up", "--detach", "--remove-orphans", "--force-recreate", "--pull", "always",
+		"up", "--detach", "--no-build", "--remove-orphans", "--force-recreate", "--pull", "always",
 		"web", "worker-1",
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -43,6 +43,18 @@ func TestBuildArgsUsesFixedComposeArgvAndAllowlistedFlags(t *testing.T) {
 				t.Fatalf("shell token %q escaped into argv", forbidden)
 			}
 		}
+	}
+}
+
+func TestBuildArgsAlwaysDisablesComposeBuildForUp(t *testing.T) {
+	spec := validSpec(OperationUp)
+	args, err := BuildArgs(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSuffix := []string{"up", "--detach", "--no-build"}
+	if !reflect.DeepEqual(args[len(args)-len(wantSuffix):], wantSuffix) {
+		t.Fatalf("up suffix = %#v, want %#v", args, wantSuffix)
 	}
 }
 

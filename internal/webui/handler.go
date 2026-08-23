@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -106,6 +107,7 @@ func (h *Handler) serveAPI(w http.ResponseWriter, r *http.Request) {
 	projectUID, resource, tail, projectRoute := splitProjectRoute(r.URL.Path)
 	agentID, operationID, cancelRoute, operationRoute := splitOperationRoute(r.URL.Path)
 	hostAgentID, inventoryResource, hostInventoryRoute := splitHostInventoryRoute(r.URL.Path)
+	hostObjectAgentID, hostObjectResource, hostObjectID, hostObjectRoute := splitHostObjectRoute(r.URL.Path)
 	auditAgentID, hostAuditRoute := splitHostAuditRoute(r.URL.Path)
 	switch {
 	case operationRoute && !cancelRoute && r.Method == http.MethodGet:
@@ -137,6 +139,25 @@ func (h *Handler) serveAPI(w http.ResponseWriter, r *http.Request) {
 		h.respond(w, value, err)
 	case hostAuditRoute:
 		writeProblem(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "host audit route requires GET")
+	case hostObjectRoute && r.Method == http.MethodGet:
+		if !requireEmptyGET(w, r) {
+			return
+		}
+		var value any
+		var err error
+		switch hostObjectResource {
+		case "containers":
+			value, err = h.backend.HostContainer(r.Context(), hostObjectAgentID, hostObjectID)
+		case "images":
+			value, err = h.backend.HostImage(r.Context(), hostObjectAgentID, hostObjectID)
+		case "networks":
+			value, err = h.backend.HostNetwork(r.Context(), hostObjectAgentID, hostObjectID)
+		case "volumes":
+			value, err = h.backend.HostVolume(r.Context(), hostObjectAgentID, hostObjectID)
+		}
+		h.respond(w, value, err)
+	case hostObjectRoute:
+		writeProblem(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "host object Inspector routes require GET")
 	case hostInventoryRoute && r.Method == http.MethodGet:
 		if !requireEmptyGET(w, r) {
 			return
@@ -195,6 +216,12 @@ func (h *Handler) serveAPI(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		writeJSON(w, http.StatusOK, entries)
+	case projectRoute && resource == "runtime" && len(tail) == 0 && r.Method == http.MethodGet:
+		if !requireEmptyGET(w, r) {
+			return
+		}
+		value, err := h.backend.ProjectRuntime(r.Context(), projectUID)
+		h.respond(w, value, err)
 	case projectRoute && resource == "compose" && len(tail) == 1 && tail[0] == "ps" && r.Method == http.MethodGet:
 		request, err := decodeComposeQuery(r, true)
 		if err != nil {
@@ -239,6 +266,14 @@ func (h *Handler) serveAPI(w http.ResponseWriter, r *http.Request) {
 		h.serveBackupCreate(w, r, projectUID)
 	case projectRoute && resource == "backups" && len(tail) == 2 && tail[1] == "restore" && r.Method == http.MethodPost:
 		h.serveBackupRestore(w, r, projectUID, tail[0])
+	case r.URL.Path == "/api/v1/operations" && r.Method == http.MethodGet:
+		request, err := decodeOperationListRequest(r)
+		if err != nil {
+			writeProblem(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+			return
+		}
+		value, err := h.backend.ListOperations(r.Context(), request)
+		h.respond(w, value, err)
 	case r.URL.Path == "/api/v1/operations" && r.Method == http.MethodPost:
 		var request OperationRequest
 		if err := decodeJSON(w, r, &request); err != nil {
@@ -262,6 +297,24 @@ func (h *Handler) serveAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		writeProblem(w, http.StatusNotFound, "NOT_FOUND", "API route not found")
 	}
+}
+
+func decodeOperationListRequest(r *http.Request) (OperationListRequest, error) {
+	query := r.URL.Query()
+	for key, values := range query {
+		if key != "limit" || len(values) != 1 {
+			return OperationListRequest{}, errors.New("only one limit query value is allowed")
+		}
+	}
+	request := OperationListRequest{}
+	if value := query.Get("limit"); value != "" {
+		limit, err := strconv.Atoi(value)
+		if err != nil || limit < 1 || limit > 200 {
+			return OperationListRequest{}, errors.New("limit must be an integer between 1 and 200")
+		}
+		request.Limit = limit
+	}
+	return request, nil
 }
 
 func (h *Handler) serveProjectFile(w http.ResponseWriter, r *http.Request, projectUID string) {
@@ -640,7 +693,7 @@ func decodeComposeQuery(r *http.Request, allowAll bool) (ComposeQuery, error) {
 	}
 	query := r.URL.Query()
 	for key, values := range query {
-		if (key != "service" && key != "all") || len(values) == 0 || key == "all" && len(values) != 1 {
+		if (key != "service" && key != "all" && key != "reveal") || len(values) == 0 || key != "service" && len(values) != 1 {
 			return ComposeQuery{}, fmt.Errorf("unsupported or repeated Compose query parameter %q", key)
 		}
 	}
@@ -653,6 +706,15 @@ func decodeComposeQuery(r *http.Request, allowAll bool) (ComposeQuery, error) {
 			return ComposeQuery{}, errors.New("all must be true or false")
 		}
 		request.All = raw[0] == "true"
+	}
+	if raw, exists := query["reveal"]; exists {
+		if allowAll {
+			return ComposeQuery{}, errors.New("reveal is valid only for compose config")
+		}
+		if raw[0] != "true" && raw[0] != "false" {
+			return ComposeQuery{}, errors.New("reveal must be true or false")
+		}
+		request.Reveal = raw[0] == "true"
 	}
 	if len(request.Services) > 256 {
 		return ComposeQuery{}, errors.New("too many Compose services")
@@ -679,11 +741,15 @@ func decodeProjectLogRequest(r *http.Request) (ProjectLogRequest, error) {
 	}
 	query := r.URL.Query()
 	for key, values := range query {
-		if (key != "service" && key != "follow" && key != "tail" && key != "timestamps") || len(values) == 0 || key != "service" && len(values) != 1 {
+		if (key != "service" && key != "container_id" && key != "follow" && key != "tail" && key != "timestamps" && key != "since" && key != "until") || len(values) == 0 || key != "service" && len(values) != 1 {
 			return ProjectLogRequest{}, fmt.Errorf("unsupported or repeated Compose log parameter %q", key)
 		}
 	}
 	request := ProjectLogRequest{Services: append([]string(nil), query["service"]...), Follow: true}
+	request.ContainerID = query.Get("container_id")
+	if request.ContainerID != "" && (len(request.ContainerID) != 64 || len(request.Services) != 0) {
+		return ProjectLogRequest{}, errors.New("select either one canonical Container ID or services")
+	}
 	if len(request.Services) > 256 {
 		return ProjectLogRequest{}, errors.New("too many Compose services")
 	}
@@ -719,6 +785,18 @@ func decodeProjectLogRequest(r *http.Request) (ProjectLogRequest, error) {
 			return ProjectLogRequest{}, fmt.Errorf("tail must be between 0 and %d", maxTailLines)
 		}
 		request.TailLines = value
+	}
+	for key, target := range map[string]*time.Time{"since": &request.Since, "until": &request.Until} {
+		if raw, exists := query[key]; exists {
+			value, err := time.Parse(time.RFC3339Nano, raw[0])
+			if err != nil || len(raw[0]) > 64 {
+				return ProjectLogRequest{}, fmt.Errorf("%s must be an RFC3339 timestamp", key)
+			}
+			*target = value.UTC()
+		}
+	}
+	if !request.Since.IsZero() && !request.Until.IsZero() && request.Since.After(request.Until) {
+		return ProjectLogRequest{}, errors.New("since must not be after until")
 	}
 	return request, nil
 }
@@ -816,6 +894,22 @@ func splitHostInventoryRoute(path string) (agentID, resource string, ok bool) {
 	}
 }
 
+func splitHostObjectRoute(path string) (agentID, resource, objectID string, ok bool) {
+	if !strings.HasPrefix(path, "/api/v1/hosts/") {
+		return "", "", "", false
+	}
+	parts := strings.Split(strings.TrimPrefix(path, "/api/v1/hosts/"), "/")
+	if len(parts) != 3 || parts[0] == "" || parts[2] == "" {
+		return "", "", "", false
+	}
+	switch parts[1] {
+	case "containers", "images", "networks", "volumes":
+		return parts[0], parts[1], parts[2], true
+	default:
+		return "", "", "", false
+	}
+}
+
 func splitHostAuditRoute(path string) (agentID string, ok bool) {
 	if !strings.HasPrefix(path, "/api/v1/hosts/") {
 		return "", false
@@ -833,8 +927,8 @@ func decodeAuditPageRequest(r *http.Request) (AuditPageRequest, error) {
 	}
 	query := r.URL.Query()
 	for key, values := range query {
-		if (key != "limit" && key != "cursor") || len(values) != 1 {
-			return AuditPageRequest{}, errors.New("only one limit and cursor query value are allowed")
+		if (key != "limit" && key != "cursor" && key != "from" && key != "until" && key != "resource" && key != "kind" && key != "actor") || len(values) != 1 {
+			return AuditPageRequest{}, errors.New("unsupported or repeated Audit query value")
 		}
 	}
 	request := AuditPageRequest{Limit: DefaultAuditPageSize}
@@ -856,6 +950,25 @@ func decodeAuditPageRequest(r *http.Request) (AuditPageRequest, error) {
 			return AuditPageRequest{}, errors.New("cursor must contain bounded positive integers")
 		}
 		request.Cursor = &AuditCursor{Incarnation: incarnation, Seq: seq}
+	}
+	for key, target := range map[string]**time.Time{"from": &request.From, "until": &request.Until} {
+		if raw, exists := query[key]; exists {
+			value, err := time.Parse(time.RFC3339Nano, raw[0])
+			if err != nil || len(raw[0]) > 64 {
+				return AuditPageRequest{}, fmt.Errorf("%s must be an RFC3339 timestamp", key)
+			}
+			value = value.UTC()
+			*target = &value
+		}
+	}
+	request.Resource, request.Kind, request.Actor = query.Get("resource"), query.Get("kind"), query.Get("actor")
+	for _, key := range []string{"resource", "kind", "actor"} {
+		if raw, exists := query[key]; exists && (raw[0] == "" || len(raw[0]) > map[string]int{"resource": 1024, "kind": 128, "actor": 1024}[key] || !utf8.ValidString(raw[0]) || strings.ContainsRune(raw[0], 0)) {
+			return AuditPageRequest{}, fmt.Errorf("%s filter is invalid", key)
+		}
+	}
+	if request.From != nil && request.Until != nil && request.From.After(*request.Until) {
+		return AuditPageRequest{}, errors.New("from must not be after until")
 	}
 	return request, nil
 }

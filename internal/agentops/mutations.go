@@ -53,9 +53,10 @@ func (function DiskAdmitterFunc) AdmitOperation(ctx context.Context, kind diskbu
 func (DiskAdmitterFunc) AdmitProjectStaging(context.Context, int64, int64, int64) error { return nil }
 
 type operationCommand struct {
-	fileWrite    *fileWriteCommand
-	backupCreate *backupCreateCommand
-	backupID     string
+	fileWrite       *fileWriteCommand
+	backupCreate    *backupCreateCommand
+	backupID        string
+	composeServices []string
 }
 
 type fileWriteCommand struct {

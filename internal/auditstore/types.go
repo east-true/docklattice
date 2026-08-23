@@ -12,14 +12,17 @@ type Cursor struct {
 }
 
 type Event struct {
-	AgentID     string
-	Cursor      Cursor
-	OccurredAt  time.Time
-	Kind        string
-	Actor       string
-	ProjectUID  string
-	OperationID string
-	Metadata    json.RawMessage
+	AgentID      string
+	Cursor       Cursor
+	OccurredAt   time.Time
+	Kind         string
+	Actor        string
+	ProjectUID   string
+	OperationID  string
+	ResourceType string
+	ResourceID   string
+	Action       string
+	Metadata     json.RawMessage
 }
 
 type Precision string

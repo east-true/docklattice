@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -53,7 +54,7 @@ func (b *Backend) auditPage(ctx context.Context, agentID, projectUID string, req
 	if b.audit == nil || b.auditArchiveID == "" {
 		return webui.AuditPage{}, errors.New("serverapi: audit read model is not configured")
 	}
-	if request.Limit < 1 || request.Limit > webui.MaxAuditPageSize || !validAuditCursor(request.Cursor) {
+	if request.Limit < 1 || request.Limit > webui.MaxAuditPageSize || !validAuditCursor(request.Cursor) || !validAuditFilters(request) {
 		return webui.AuditPage{}, fmt.Errorf("%w: invalid audit page", webui.ErrInvalidRequest)
 	}
 	events, next, err := b.loadAuditEvents(ctx, agentID, projectUID, request)
@@ -72,6 +73,18 @@ func (b *Backend) auditPage(ctx context.Context, agentID, projectUID string, req
 	}, nil
 }
 
+func validAuditFilters(request webui.AuditPageRequest) bool {
+	if request.From != nil && request.Until != nil && request.From.After(*request.Until) {
+		return false
+	}
+	for value, limit := range map[string]int{request.Resource: 1024, request.Kind: 128, request.Actor: 1024} {
+		if len(value) > limit || !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
+			return false
+		}
+	}
+	return true
+}
+
 func validAuditCursor(cursor *webui.AuditCursor) bool {
 	return cursor == nil || cursor.Incarnation > 0 && cursor.Seq > 0 &&
 		cursor.Incarnation <= math.MaxInt64 && cursor.Seq <= math.MaxInt64
@@ -80,7 +93,7 @@ func validAuditCursor(cursor *webui.AuditCursor) bool {
 func (b *Backend) loadAuditEvents(ctx context.Context, agentID, projectUID string, request webui.AuditPageRequest) ([]webui.AuditEvent, *webui.AuditCursor, error) {
 	query := `
 		SELECT e.agent_id, e.incarnation, e.seq, e.occurred_at, e.kind,
-		       e.actor, e.project_uid, e.operation_id, e.metadata_json, p.agent_id
+		       e.actor, e.project_uid, e.operation_id, e.resource_type, e.resource_id, e.action, e.metadata_json, p.agent_id
 		FROM audit_events AS e
 		LEFT JOIN projects AS p ON p.project_uid = e.project_uid
 		WHERE e.agent_id = ?`
@@ -93,6 +106,26 @@ func (b *Backend) loadAuditEvents(ctx context.Context, agentID, projectUID strin
 		query += ` AND (e.incarnation > ? OR (e.incarnation = ? AND e.seq > ?))`
 		args = append(args, request.Cursor.Incarnation, request.Cursor.Incarnation, request.Cursor.Seq)
 	}
+	if request.From != nil {
+		query += ` AND e.occurred_at >= ?`
+		args = append(args, request.From.UTC().Format(time.RFC3339Nano))
+	}
+	if request.Until != nil {
+		query += ` AND e.occurred_at <= ?`
+		args = append(args, request.Until.UTC().Format(time.RFC3339Nano))
+	}
+	if request.Resource != "" {
+		query += ` AND (e.resource_type = ? OR e.resource_id = ?)`
+		args = append(args, request.Resource, request.Resource)
+	}
+	if request.Kind != "" {
+		query += ` AND e.kind = ?`
+		args = append(args, request.Kind)
+	}
+	if request.Actor != "" {
+		query += ` AND e.actor = ?`
+		args = append(args, request.Actor)
+	}
 	query += ` ORDER BY e.incarnation, e.seq LIMIT ?`
 	args = append(args, request.Limit+1)
 	rows, err := b.store.DB().QueryContext(ctx, query, args...)
@@ -102,17 +135,17 @@ func (b *Backend) loadAuditEvents(ctx context.Context, agentID, projectUID strin
 	defer rows.Close()
 	events := make([]webui.AuditEvent, 0, request.Limit+1)
 	for rows.Next() {
-		var storedAgent, occurredAt, kind string
+		var storedAgent, occurredAt, kind, resourceType, resourceID, action string
 		var incarnation, seq int64
 		var actor, storedProject, operationID, projectAgent sql.NullString
 		var metadata []byte
 		if err := rows.Scan(&storedAgent, &incarnation, &seq, &occurredAt, &kind,
-			&actor, &storedProject, &operationID, &metadata, &projectAgent); err != nil {
+			&actor, &storedProject, &operationID, &resourceType, &resourceID, &action, &metadata, &projectAgent); err != nil {
 			clear(metadata)
 			return nil, nil, &corruptDataError{boundary: "audit_events row", cause: err}
 		}
 		event, err := decodeStoredAuditEvent(agentID, projectUID, storedAgent, incarnation, seq, occurredAt, kind,
-			actor, storedProject, operationID, projectAgent, metadata)
+			actor, storedProject, operationID, resourceType, resourceID, action, projectAgent, metadata)
 		clear(metadata)
 		if err != nil {
 			return nil, nil, err
@@ -132,7 +165,7 @@ func (b *Backend) loadAuditEvents(ctx context.Context, agentID, projectUID strin
 }
 
 func decodeStoredAuditEvent(agentID, requestedProject, storedAgent string, incarnation, seq int64, occurredAt, kind string,
-	actor, storedProject, operationID, projectAgent sql.NullString, metadata []byte,
+	actor, storedProject, operationID sql.NullString, resourceType, resourceID, action string, projectAgent sql.NullString, metadata []byte,
 ) (webui.AuditEvent, error) {
 	boundary := "audit_events canonical event"
 	if storedAgent != agentID || incarnation < 1 || seq < 1 || !utf8.ValidString(kind) || kind == "" {
@@ -149,6 +182,7 @@ func decodeStoredAuditEvent(agentID, requestedProject, storedAgent string, incar
 	}()
 	canonicalTime := envelope.Event.FirstAt.UTC().Format(time.RFC3339Nano)
 	if occurredAt != canonicalTime || kind != string(envelope.Event.Kind) ||
+		resourceType != envelope.Event.ResourceType || resourceID != envelope.Event.ResourceID || action != envelope.Event.Action ||
 		actor.String != envelope.Event.Actor || actor.Valid != (envelope.Event.Actor != "") ||
 		storedProject.String != envelope.ProjectUID || storedProject.Valid != (envelope.ProjectUID != "") ||
 		operationID.String != envelope.OperationID || operationID.Valid != (envelope.OperationID != "") {

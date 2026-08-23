@@ -18,6 +18,8 @@ var migrations = []migration{
 	{version: 4, sql: schemaV4},
 	{version: 5, sql: schemaV5},
 	{version: 6, sql: schemaV6},
+	{version: 7, sql: schemaV7},
+	{version: 8, sql: schemaV8},
 }
 
 func migrate(ctx context.Context, db *sql.DB) (err error) {
@@ -450,4 +452,31 @@ FROM operations_v5;
 DROP TABLE operations_v5;
 CREATE INDEX operations_agent_requested_idx
     ON operations(agent_id, requested_at DESC);
+`
+
+const schemaV7 = `
+CREATE INDEX operations_requested_idx
+    ON operations(requested_at DESC, id DESC);
+`
+
+const schemaV8 = `
+ALTER TABLE audit_events ADD COLUMN resource_type TEXT NOT NULL DEFAULT '';
+ALTER TABLE audit_events ADD COLUMN resource_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE audit_events ADD COLUMN action TEXT NOT NULL DEFAULT '';
+
+UPDATE audit_events SET
+    resource_type = COALESCE(json_extract(metadata_json, '$.resource_type'), ''),
+    resource_id = COALESCE(json_extract(metadata_json, '$.resource_id'), ''),
+    action = COALESCE(json_extract(metadata_json, '$.action'), '');
+
+CREATE INDEX audit_events_project_time_idx
+    ON audit_events(project_uid, occurred_at DESC);
+CREATE INDEX audit_events_agent_kind_time_idx
+    ON audit_events(agent_id, kind, occurred_at DESC);
+CREATE INDEX audit_events_agent_actor_time_idx
+    ON audit_events(agent_id, actor, occurred_at DESC);
+CREATE INDEX audit_events_agent_resource_type_time_idx
+    ON audit_events(agent_id, resource_type, occurred_at DESC);
+CREATE INDEX audit_events_agent_resource_id_time_idx
+    ON audit_events(agent_id, resource_id, occurred_at DESC);
 `

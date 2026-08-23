@@ -30,13 +30,23 @@ const testContainerID = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 const testManifestHash = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 
 type fakeDocker struct {
-	mu         sync.Mutex
-	containers []dockeradapter.Container
-	images     []dockeradapter.Image
-	networks   []dockeradapter.Network
-	volumes    []dockeradapter.Volume
-	inspected  string
-	err        error
+	mu             sync.Mutex
+	containers     []dockeradapter.Container
+	images         []dockeradapter.Image
+	networks       []dockeradapter.Network
+	volumes        []dockeradapter.Volume
+	inspected      string
+	err            error
+	info           dockeradapter.EngineInfo
+	imageDetails   dockeradapter.ImageDetails
+	networkDetails dockeradapter.NetworkDetails
+	volumeDetails  dockeradapter.VolumeDetails
+}
+
+func (f *fakeDocker) Info(context.Context) (dockeradapter.EngineInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.info, f.err
 }
 
 func (f *fakeDocker) List(context.Context) ([]dockeradapter.Container, error) {
@@ -68,6 +78,27 @@ func (f *fakeDocker) ListVolumes(context.Context) ([]dockeradapter.Volume, error
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]dockeradapter.Volume(nil), f.volumes...), f.err
+}
+
+func (f *fakeDocker) InspectImage(_ context.Context, id string) (dockeradapter.ImageDetails, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.inspected = id
+	return f.imageDetails, f.err
+}
+
+func (f *fakeDocker) InspectNetwork(_ context.Context, id string) (dockeradapter.NetworkDetails, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.inspected = id
+	return f.networkDetails, f.err
+}
+
+func (f *fakeDocker) InspectVolume(_ context.Context, name string) (dockeradapter.VolumeDetails, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.inspected = name
+	return f.volumeDetails, f.err
 }
 
 type fakeProjects struct {
@@ -139,6 +170,17 @@ type fakeBackups struct {
 	project         string
 	err             error
 	recoveryBlocked map[string]bool
+	manifests       map[string]backup.Manifest
+}
+
+func (f *fakeBackups) LoadManifest(_ string, backupID string) (backup.Manifest, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	manifest, ok := f.manifests[backupID]
+	if !ok {
+		return backup.Manifest{}, fs.ErrNotExist
+	}
+	return manifest, nil
 }
 
 func (f *fakeBackups) RecoveryBlocked(projectUID string) bool {
@@ -159,7 +201,7 @@ func newTestService(t *testing.T) (*Service, *fakeDocker, *fakeProjects, *fakeFi
 	docker := &fakeDocker{containers: []dockeradapter.Container{{ID: testContainerID}}}
 	projects := &fakeProjects{}
 	files := &fakeFiles{files: map[string]safefile.File{}}
-	backups := &fakeBackups{}
+	backups := &fakeBackups{manifests: map[string]backup.Manifest{}}
 	compose := &fakeCompose{result: composeexec.Result{ExitCode: 0}}
 	service, err := New(Config{Docker: docker, Projects: projects, Files: files, Backups: backups, Compose: compose})
 	if err != nil {
@@ -275,6 +317,77 @@ func TestHostInventoryQueriesAreTypedDeterministicAndBounded(t *testing.T) {
 	docker.images[0].Size = -1
 	if _, err := service.Query(context.Background(), producttransport.SessionInfo{}, producttransport.QueryRequest{Kind: QueryImageList}); err == nil {
 		t.Fatal("invalid image facts were accepted")
+	}
+}
+
+func TestEngineInfoQueryIncludesAdvancedDaemonFacts(t *testing.T) {
+	service, docker, _, _, _ := newTestService(t)
+	docker.info = dockeradapter.EngineInfo{EngineVersion: "28.3.3", CPUCapacity: 8, MemoryCapacity: 16 << 30,
+		ContainersTotal: 5, ContainersRunning: 3, Images: 7, StorageDriver: "overlay2", LoggingDriver: "json-file",
+		CgroupDriver: "systemd", CgroupVersion: "2", DefaultRuntime: "runc", OperatingSystem: "Ubuntu 24.04",
+		OSVersion: "24.04", OSType: "linux", Architecture: "x86_64", KernelVersion: "6.8.0", DockerRootDir: "/var/lib/docker"}
+	var summary EngineSummary
+	if err := query(t, service, producttransport.QueryRequest{Kind: QueryEngineInfo}, &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.StorageDriver != "overlay2" || summary.LoggingDriver != "json-file" || summary.CgroupVersion != "2" ||
+		summary.DefaultRuntime != "runc" || summary.OperatingSystem != "Ubuntu 24.04" || summary.Architecture != "x86_64" ||
+		summary.KernelVersion != "6.8.0" || summary.DockerRootDir != "/var/lib/docker" {
+		t.Fatalf("Engine summary = %+v", summary)
+	}
+	if _, err := service.Query(context.Background(), producttransport.SessionInfo{}, producttransport.QueryRequest{Kind: QueryEngineInfo, Target: "unexpected"}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("Engine info accepted a target: %v", err)
+	}
+}
+
+func TestDockerObjectInspectorQueriesAreCuratedAndReferenceContainers(t *testing.T) {
+	service, docker, _, _, _ := newTestService(t)
+	imageID := "sha256:" + strings.Repeat("d", 64)
+	networkID := strings.Repeat("e", 64)
+	docker.containers = []dockeradapter.Container{{
+		ID: testContainerID, Names: []string{"/api"}, ImageID: imageID,
+		Labels: map[string]string{"com.docker.compose.project": "demo", "com.docker.compose.service": "api"},
+		Mounts: []dockeradapter.Mount{{Type: "volume", Source: "data", Destination: "/var/lib/data"}},
+	}}
+	docker.imageDetails = dockeradapter.ImageDetails{ID: imageID, RepoTags: []string{"demo/api:1"}, Size: 42, LayerCount: 3, ExposedPorts: []string{"8080/tcp"}}
+	docker.networkDetails = dockeradapter.NetworkDetails{ID: networkID, Name: "demo_default", Driver: "bridge", Scope: "local",
+		IPAM:       []dockeradapter.IPAMConfig{{Subnet: "172.30.0.0/16", Gateway: "172.30.0.1"}},
+		Labels:     map[string]string{"com.docker.compose.project": "demo", "com.docker.compose.network": "default"},
+		Containers: []dockeradapter.NetworkEndpoint{{ContainerID: testContainerID, Name: "api", EndpointID: strings.Repeat("f", 64), IPv4: "172.30.0.2/16", MAC: "02:42:ac:1e:00:02"}},
+	}
+	docker.volumeDetails = dockeradapter.VolumeDetails{Name: "data", Driver: "local", Scope: "local", Mountpoint: "/var/lib/docker/volumes/data/_data",
+		Labels: map[string]string{"com.docker.compose.project": "demo", "com.docker.compose.volume": "data"}}
+
+	var image ImageDetails
+	if err := query(t, service, producttransport.QueryRequest{Kind: QueryImageInspect, Target: imageID}, &image); err != nil {
+		t.Fatal(err)
+	}
+	if image.ID != imageID || image.Size != 42 || len(image.UsedBy) != 1 || image.UsedBy[0].ComposeService != "api" {
+		t.Fatalf("Image Inspector = %+v", image)
+	}
+	var network NetworkDetails
+	if err := query(t, service, producttransport.QueryRequest{Kind: QueryNetworkInspect, Target: networkID}, &network); err != nil {
+		t.Fatal(err)
+	}
+	if network.ComposeProject != "demo" || network.ComposeNetwork != "default" || len(network.IPAM) != 1 || len(network.Attachments) != 1 || network.Attachments[0].IPv4 != "172.30.0.2/16" {
+		t.Fatalf("Network Inspector = %+v", network)
+	}
+	var volume VolumeDetails
+	if err := query(t, service, producttransport.QueryRequest{Kind: QueryVolumeInspect, Target: "data"}, &volume); err != nil {
+		t.Fatal(err)
+	}
+	if volume.ComposeProject != "demo" || volume.ComposeVolume != "data" || len(volume.References) != 1 || volume.References[0].Destination != "/var/lib/data" {
+		t.Fatalf("Volume Inspector = %+v", volume)
+	}
+	for _, request := range []producttransport.QueryRequest{
+		{Kind: QueryImageInspect, Target: "short"},
+		{Kind: QueryNetworkInspect, Target: "short"},
+		{Kind: QueryVolumeInspect, Target: "--help"},
+		{Kind: QueryVolumeInspect, Target: "data", Payload: []byte(`{}`)},
+	} {
+		if _, err := service.Query(context.Background(), producttransport.SessionInfo{}, request); !errors.Is(err, ErrInvalidRequest) {
+			t.Fatalf("invalid Inspector request %+v error = %v", request, err)
+		}
 	}
 }
 
@@ -473,6 +586,8 @@ func TestBackupListReturnsOnlyMetadataInNewestFirstOrder(t *testing.T) {
 		{BackupID: "20260814T010000.000000000Z-0123456789abcdef", ProjectUID: testProjectUID, CreatedAt: older, Trigger: backup.TriggerManual, FileCount: 2, SizeBytes: 50, ManifestSHA256: testManifestHash},
 		{BackupID: "20260814T020000.000000000Z-fedcba9876543210", ProjectUID: testProjectUID, CreatedAt: newer, Trigger: backup.TriggerPreWrite, FileCount: 1, SizeBytes: 25, ManifestSHA256: testManifestHash},
 	}
+	backups.manifests[backups.metadata[0].BackupID] = backup.Manifest{Files: []backup.FileEntry{{RelPath: "compose.yaml"}, {RelPath: ".env"}}}
+	backups.manifests[backups.metadata[1].BackupID] = backup.Manifest{Files: []backup.FileEntry{{RelPath: "compose.yaml"}}}
 	var result []BackupMetadata
 	if err := query(t, service, producttransport.QueryRequest{Kind: QueryBackupList, Target: testProjectUID}, &result); err != nil {
 		t.Fatal(err)
@@ -485,6 +600,9 @@ func TestBackupListReturnsOnlyMetadataInNewestFirstOrder(t *testing.T) {
 		if strings.Contains(string(payload), forbidden) {
 			t.Fatalf("backup metadata leaked %q: %s", forbidden, payload)
 		}
+	}
+	if len(result[0].Paths) != 1 || result[0].Paths[0] != "compose.yaml" || len(result[1].Paths) != 2 {
+		t.Fatalf("backup paths = %+v", result)
 	}
 }
 

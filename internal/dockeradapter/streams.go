@@ -218,7 +218,7 @@ func (source *LogSource) Stream(ctx context.Context, request logrelay.Request, e
 	}
 	body, err := source.engine.ContainerLogs(ctx, request.ContainerID, client.ContainerLogsOptions{
 		ShowStdout: request.ShowStdout, ShowStderr: request.ShowStderr, Follow: request.Follow,
-		Tail: tail, Timestamps: request.Timestamps,
+		Tail: tail, Timestamps: request.Timestamps, Since: request.Since, Until: request.Until,
 	})
 	if err != nil {
 		return fmt.Errorf("Docker logs %s: %w", request.ContainerID, err)

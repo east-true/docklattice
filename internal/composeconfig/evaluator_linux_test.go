@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/east-true/dockpilot/internal/composeexec"
 )
 
 const evaluatorHelper = "DOCKPILOT_COMPOSECONFIG_HELPER"
@@ -28,6 +30,13 @@ func TestMain(main *testing.M) {
 			}
 			_, _ = os.Stdout.WriteString(`{"name":"demo","services":{"web":{"env_file":["configs/web.env",{"path":"shared/common.env","required":true}],"environment":{"SECRET":"not-returned"}},"worker":{"env_file":{"path":"configs/web.env"}}}}`)
 			os.Exit(0)
+		case "models":
+			if hasArg(os.Args[1:], "--profile", "*") {
+				_, _ = os.Stdout.WriteString(`{"name":"demo","services":{"api":{"image":"company/api:1.8","build":{"context":"."},"profiles":["prod"],"depends_on":{"db":{"condition":"service_started"}}},"db":{"image":"postgres:18"},"worker":{"build":{"context":"worker"},"profiles":["tools"]},"builder":{"image":"company/builder:1","build":{"context":"builder"},"pull_policy":"build"}},"secrets":{"token":{"file":"./token.txt"},"external_token":{"name":"shared-token","external":true}},"configs":{"settings":{"environment":"SETTINGS_FILE"}}}`)
+			} else {
+				_, _ = os.Stdout.WriteString(`{"name":"demo","services":{"api":{"image":"company/api:1.8","build":{"context":"."},"profiles":["prod"],"depends_on":{"db":{"condition":"service_started"}}},"db":{"image":"postgres:18"}}}`)
+			}
+			os.Exit(0)
 		case "oversize":
 			_, _ = os.Stdout.Write(bytes.Repeat([]byte("x"), 4096))
 			os.Exit(0)
@@ -42,6 +51,22 @@ func TestMain(main *testing.M) {
 		os.Exit(2)
 	}
 	os.Exit(main.Run())
+}
+
+func hasArg(args []string, pair ...string) bool {
+	for index := 0; index+len(pair) <= len(args); index++ {
+		matched := true
+		for offset := range pair {
+			if args[index+offset] != pair[offset] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
 }
 
 func hasComposeConfigArgs(args []string) bool {
@@ -91,6 +116,38 @@ func TestEvaluateCollectsOnlyDistinctServiceEnvFilePaths(t *testing.T) {
 	}
 	if strings.Contains(fmt.Sprintf("%#v", result), "not-returned") {
 		t.Fatalf("resolved secret escaped result: %#v", result)
+	}
+}
+
+func TestEvaluateReturnsEffectiveServiceBuildProfileAndResourceMetadata(t *testing.T) {
+	result, err := helperEvaluator("models").Evaluate(context.Background(), "/srv/demo", []string{"/srv/demo/compose.yml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(result.Services); got != "[api builder db worker]" {
+		t.Fatalf("services = %s", got)
+	}
+	if got := fmt.Sprint(result.ActiveProfiles); got != "[prod]" {
+		t.Fatalf("active profiles = %s", got)
+	}
+	byName := make(map[string]composeexec.Service)
+	for _, service := range result.ServiceModels {
+		byName[service.Name] = service
+	}
+	if !byName["api"].Active || !byName["api"].ImageBacked() || fmt.Sprint(byName["api"].DependsOn) != "[db]" {
+		t.Fatalf("api model = %#v", byName["api"])
+	}
+	if byName["worker"].Active || !byName["worker"].BuildRequired() {
+		t.Fatalf("worker model = %#v", byName["worker"])
+	}
+	if !byName["builder"].BuildRequired() {
+		t.Fatalf("builder model = %#v", byName["builder"])
+	}
+	if got := fmt.Sprint(result.Secrets); !strings.Contains(got, "token file ./token.txt") || !strings.Contains(got, "external_token external shared-token") {
+		t.Fatalf("secrets = %#v", result.Secrets)
+	}
+	if got := fmt.Sprint(result.Configs); !strings.Contains(got, "settings environment SETTINGS_FILE") {
+		t.Fatalf("configs = %#v", result.Configs)
 	}
 }
 
