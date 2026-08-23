@@ -242,6 +242,19 @@ func TestDashboardAndEmbeddedClient(t *testing.T) {
 	if got := response.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("Cache-Control = %q", got)
 	}
+
+	favicon := httptest.NewRecorder()
+	handler.ServeHTTP(favicon, httptest.NewRequest(http.MethodGet, "/favicon.svg", nil))
+	if favicon.Code != http.StatusOK ||
+		!strings.HasPrefix(favicon.Header().Get("Content-Type"), "image/svg+xml") ||
+		!strings.Contains(favicon.Body.String(), "<svg") {
+		t.Fatalf(
+			"favicon = status %d, content type %q, body %q",
+			favicon.Code,
+			favicon.Header().Get("Content-Type"),
+			favicon.Body.String(),
+		)
+	}
 }
 
 func TestTypedHostInventoryRoutesAreStrictAndCurated(t *testing.T) {

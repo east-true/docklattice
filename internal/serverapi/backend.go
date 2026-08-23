@@ -209,20 +209,7 @@ func (b *Backend) Dashboard(ctx context.Context) (webui.Dashboard, error) {
 	close(jobs)
 	wait.Wait()
 	for index := range dashboard.Hosts {
-		if reason, failed := reconciliation.discoveryReasons[dashboard.Hosts[index].ID]; failed {
-			dashboard.Hosts[index].Capabilities.Discovery = webui.Capability{Reason: reason}
-		} else if dashboard.Hosts[index].State == string(producttransport.StateActive) {
-			if scan := dashboard.Hosts[index].ProjectScan; scan != nil && scan.Truncated {
-				dashboard.Hosts[index].Capabilities.Discovery = webui.Capability{Reason: "project discovery scan was truncated: " + scan.StopReason}
-			} else {
-				dashboard.Hosts[index].Capabilities.Discovery = webui.Capability{Enabled: true}
-			}
-		}
-		if reason, failed := reconciliation.operationRecoveryReason[dashboard.Hosts[index].ID]; failed {
-			dashboard.Hosts[index].Capabilities.OperationRecovery = webui.Capability{Reason: reason}
-		} else if dashboard.Hosts[index].State == string(producttransport.StateActive) {
-			dashboard.Hosts[index].Capabilities.OperationRecovery = webui.Capability{Enabled: true}
-		}
+		applyReconciledCapabilities(&dashboard.Hosts[index], reconciliation)
 	}
 	return dashboard, nil
 }
@@ -238,7 +225,19 @@ func (b *Backend) Host(ctx context.Context, agentID string) (webui.Host, error) 
 	if err != nil {
 		return webui.Host{}, err
 	}
+	reconciliation, err := b.reconcileDashboardAgents(ctx, []agentRow{agent})
+	if err != nil {
+		return webui.Host{}, err
+	}
+	// Project reconciliation can advance the durable scan watermark. Reload the
+	// Agent row so the detail response and dashboard expose the same current
+	// capability and discovery facts.
+	agent, err = b.loadAgent(ctx, agentID)
+	if err != nil {
+		return webui.Host{}, err
+	}
 	host := b.liveHost(ctx, agent)
+	applyReconciledCapabilities(&host, reconciliation)
 	if !host.Capabilities.Docker.Enabled {
 		host.EngineSummaryReason = host.Capabilities.Docker.Reason
 		return host, nil
@@ -267,6 +266,26 @@ func (b *Backend) Host(ctx context.Context, agentID string) (webui.Host, error) 
 	}
 	host.EngineSummary = &summary
 	return host, nil
+}
+
+func applyReconciledCapabilities(host *webui.Host, reconciliation dashboardReconcileResult) {
+	if reason, failed := reconciliation.discoveryReasons[host.ID]; failed {
+		host.Capabilities.Discovery = webui.Capability{Reason: reason}
+	} else if host.State == string(producttransport.StateActive) {
+		if scan := host.ProjectScan; scan != nil && scan.Truncated {
+			host.Capabilities.Discovery = webui.Capability{
+				Reason: "project discovery scan was truncated: " + scan.StopReason,
+			}
+		} else {
+			host.Capabilities.Discovery = webui.Capability{Enabled: true}
+		}
+	}
+
+	if reason, failed := reconciliation.operationRecoveryReason[host.ID]; failed {
+		host.Capabilities.OperationRecovery = webui.Capability{Reason: reason}
+	} else if host.State == string(producttransport.StateActive) {
+		host.Capabilities.OperationRecovery = webui.Capability{Enabled: true}
+	}
 }
 
 func validEngineSummary(summary webui.EngineSummary) bool {
