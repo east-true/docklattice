@@ -47,6 +47,10 @@ firewall, or on a changing IP need no special handling at all.
 > `--allow-public-bind` to do anything else. Put it behind your own
 > authenticating proxy, or reach it through a tunnel. See
 > [SECURITY.md](SECURITY.md).
+> The Server container listens on all container interfaces so Docker port
+> publishing can reach it. That does not make `-p 8080:8080` safe: always bind
+> the host side to `127.0.0.1` unless an authenticating proxy is the only
+> network path to the port.
 
 ## What it does
 
@@ -86,10 +90,16 @@ sudo install -d -o 65532 -g 65532 -m 0700 /srv/dockpilot/server-state/tls
 # place your TLS certificate and key as server.crt / server.key, 0600, owned by 65532
 
 docker run -d --name dockpilot-server --restart unless-stopped \
-  -p 8080:8080 -p 8443:8443 \
+  -p 127.0.0.1:8080:8080 -p <private-server-ip>:8443:8443 \
   -v /srv/dockpilot/server-state:/var/lib/dockpilot:rw \
   <signed-server-image-reference>
 ```
+
+Port 8080 serves both the browser UI and Agent registration. For remote Agents,
+put a TLS reverse proxy on the same host: expose `/api/v1/agent/` for
+registration, require browser authentication for every other path, and proxy
+to `127.0.0.1:8080`. Publish 8443 only on a private/VPN interface. Never replace
+the loopback mapping above with `-p 8080:8080`.
 
 **2. Issue a one-time Join Token.**
 

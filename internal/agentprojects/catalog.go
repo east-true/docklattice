@@ -192,6 +192,7 @@ func (c *Catalog) rescan(ctx context.Context, observer ExternalChangeObserver) e
 				paths = append(paths, file.Path)
 			}
 		}
+		orderComposePaths(paths)
 		uid, uidErr := projectmodel.UID(c.agentID, directory)
 		if uidErr != nil {
 			return uidErr
@@ -213,6 +214,11 @@ func (c *Catalog) rescan(ctx context.Context, observer ExternalChangeObserver) e
 		}
 		project.Files, project.SourceReferences, project.ReadOnlyFiles, project.IncludedWorkDirs, project.SourceGraphComplete =
 			c.sourceGraphFacts(ctx, project.Root, project.WorkingDir, project.ComposeFiles, project.Files)
+		if cached, ok := previous[uid]; ok {
+			_, _, envFacts, envComplete := classifyEnvFileReferences(ctx, project.Root, project.WorkingDir, envReferencePaths(cached.EnvFiles))
+			project.Files = mergeFileFacts(project.Files, envFacts)
+			project.SourceGraphComplete = project.SourceGraphComplete && envComplete
+		}
 		fingerprint, fingerprintErr := projectmodel.Fingerprint(project.Files)
 		if fingerprintErr != nil {
 			return fingerprintErr
@@ -247,7 +253,15 @@ func (c *Catalog) rescan(ctx context.Context, observer ExternalChangeObserver) e
 		project.Services = append([]string(nil), resolved.Services...)
 		sourceApprovals := append([]safefile.ApprovedFile(nil), project.ReadOnlyFiles...)
 		var envApprovals []safefile.ApprovedFile
-		project.EnvFiles, envApprovals = classifyEnvFileReferences(ctx, project.Root, project.WorkingDir, resolved.EnvFiles)
+		var envFacts []projectmodel.FileFact
+		var envComplete bool
+		project.EnvFiles, envApprovals, envFacts, envComplete = classifyEnvFileReferences(ctx, project.Root, project.WorkingDir, resolved.EnvFiles)
+		project.Files = mergeFileFacts(project.Files, envFacts)
+		project.SourceGraphComplete = project.SourceGraphComplete && envComplete
+		project.CurrentFingerprint, fingerprintErr = projectmodel.Fingerprint(project.Files)
+		if fingerprintErr != nil {
+			return fingerprintErr
+		}
 		project.ReadOnlyFiles = mergeReadOnlyApprovals(sourceApprovals, envApprovals)
 		next[uid] = project
 	}
@@ -388,6 +402,7 @@ func (c *Catalog) projectFromFiles(ctx context.Context, previous Project, files 
 			paths = append(paths, file.Path)
 		}
 	}
+	orderComposePaths(paths)
 	if len(paths) == 0 {
 		return Project{}, fmt.Errorf("agentprojects: project %q has no Compose configuration files", previous.WorkingDir)
 	}
@@ -409,6 +424,9 @@ func (c *Catalog) projectFromFiles(ctx context.Context, previous Project, files 
 	}
 	project.Files, project.SourceReferences, project.ReadOnlyFiles, project.IncludedWorkDirs, project.SourceGraphComplete =
 		c.sourceGraphFacts(ctx, project.Root, project.WorkingDir, project.ComposeFiles, project.Files)
+	_, _, previousEnvFacts, previousEnvComplete := classifyEnvFileReferences(ctx, project.Root, project.WorkingDir, envReferencePaths(previous.EnvFiles))
+	project.Files = mergeFileFacts(project.Files, previousEnvFacts)
+	project.SourceGraphComplete = project.SourceGraphComplete && previousEnvComplete
 	fingerprint, fingerprintErr := projectmodel.Fingerprint(project.Files)
 	if fingerprintErr != nil {
 		return Project{}, fingerprintErr
@@ -434,67 +452,130 @@ func (c *Catalog) projectFromFiles(ctx context.Context, previous Project, files 
 	project.Services = append([]string(nil), resolved.Services...)
 	sourceApprovals := append([]safefile.ApprovedFile(nil), project.ReadOnlyFiles...)
 	var envApprovals []safefile.ApprovedFile
-	project.EnvFiles, envApprovals = classifyEnvFileReferences(ctx, project.Root, project.WorkingDir, resolved.EnvFiles)
+	var envFacts []projectmodel.FileFact
+	var envComplete bool
+	project.EnvFiles, envApprovals, envFacts, envComplete = classifyEnvFileReferences(ctx, project.Root, project.WorkingDir, resolved.EnvFiles)
+	project.Files = mergeFileFacts(project.Files, envFacts)
+	project.SourceGraphComplete = project.SourceGraphComplete && envComplete
+	project.CurrentFingerprint, fingerprintErr = projectmodel.Fingerprint(project.Files)
+	if fingerprintErr != nil {
+		return Project{}, fingerprintErr
+	}
 	project.ReadOnlyFiles = mergeReadOnlyApprovals(sourceApprovals, envApprovals)
 	return project, nil
 }
 
 // classifyEnvFileReferences turns only Compose-resolved service env_file
-// paths into temporary read-only safefile approvals. A project reaches this
-// function only after its discovery root passed the Agent's mount/identity
-// execution policy. The checks below add project-root and discovery-root
-// containment, then safefile verifies every component and target with
-// O_NOFOLLOW. Unsafe, absent, or out-of-root references remain metadata only.
-func classifyEnvFileReferences(ctx context.Context, discoveryRoot, workingDir string, references []string) ([]EnvFileReference, []safefile.ApprovedFile) {
+// paths into fingerprint facts and, when they are also under workingDir,
+// temporary read-only safefile approvals. A project reaches this function only
+// after its discovery root passed the Agent's mount/identity execution policy.
+// Unsafe, absent, or out-of-root references remain metadata only and make the
+// input graph incomplete, preventing cache reuse.
+func classifyEnvFileReferences(ctx context.Context, discoveryRoot, workingDir string, references []string) ([]EnvFileReference, []safefile.ApprovedFile, []projectmodel.FileFact, bool) {
 	metadata := make([]EnvFileReference, 0, len(references))
+	complete := true
 	type candidate struct {
 		metadataIndices []int
-		relativePath    string
+		rootRelative    string
+		projectRelative string
 	}
 	candidates := make([]candidate, 0, len(references))
 	byRelative := make(map[string]int)
 	for _, reference := range references {
 		candidatePath, valid := resolveEnvFilePath(workingDir, reference)
 		metadata = append(metadata, EnvFileReference{Path: candidatePath})
-		if !valid || !pathWithin(workingDir, candidatePath) || !pathWithin(discoveryRoot, candidatePath) {
+		if !valid || !pathWithin(discoveryRoot, candidatePath) {
+			complete = false
 			continue
 		}
-		relative, err := filepath.Rel(workingDir, candidatePath)
-		if err != nil || relative == "." || filepath.IsAbs(relative) {
+		rootRelative, err := filepath.Rel(discoveryRoot, candidatePath)
+		if err != nil || rootRelative == "." || filepath.IsAbs(rootRelative) {
+			complete = false
 			continue
 		}
-		relative = filepath.ToSlash(relative)
-		if index, duplicate := byRelative[relative]; duplicate {
+		rootRelative = filepath.ToSlash(rootRelative)
+		projectRelative := ""
+		if pathWithin(workingDir, candidatePath) {
+			if relative, relativeErr := filepath.Rel(workingDir, candidatePath); relativeErr == nil && relative != "." && !filepath.IsAbs(relative) {
+				projectRelative = filepath.ToSlash(relative)
+			}
+		}
+		if index, duplicate := byRelative[rootRelative]; duplicate {
 			candidates[index].metadataIndices = append(candidates[index].metadataIndices, len(metadata)-1)
 			continue
 		}
-		byRelative[relative] = len(candidates)
-		candidates = append(candidates, candidate{metadataIndices: []int{len(metadata) - 1}, relativePath: relative})
+		byRelative[rootRelative] = len(candidates)
+		candidates = append(candidates, candidate{
+			metadataIndices: []int{len(metadata) - 1}, rootRelative: rootRelative, projectRelative: projectRelative,
+		})
 	}
 	if len(candidates) == 0 {
-		return metadata, nil
+		return metadata, nil, nil, complete
 	}
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i].relativePath < candidates[j].relativePath })
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].rootRelative < candidates[j].rootRelative })
 	potential := make([]safefile.ApprovedFile, 0, len(candidates))
 	for _, candidate := range candidates {
-		potential = append(potential, safefile.ApprovedFile{RelativePath: candidate.relativePath, Access: safefile.ReadOnly})
+		potential = append(potential, safefile.ApprovedFile{RelativePath: candidate.rootRelative, Access: safefile.ReadOnly})
 	}
-	root, err := safefile.OpenRoot(workingDir, potential)
+	root, err := safefile.OpenRoot(discoveryRoot, potential)
 	if err != nil {
-		return metadata, nil
+		return metadata, nil, nil, false
 	}
 	defer root.Close()
 	approved := make([]safefile.ApprovedFile, 0, len(potential))
+	facts := make([]projectmodel.FileFact, 0, len(potential))
 	for _, candidate := range candidates {
-		if err := root.VerifyReadOnly(ctx, candidate.relativePath); err != nil {
+		digest, err := root.DigestReadOnly(ctx, candidate.rootRelative)
+		if err != nil {
+			complete = false
 			continue
 		}
-		for _, index := range candidate.metadataIndices {
-			metadata[index].Readable = true
+		if candidate.projectRelative != "" {
+			for _, index := range candidate.metadataIndices {
+				metadata[index].Readable = true
+			}
+			approved = append(approved, safefile.ApprovedFile{RelativePath: candidate.projectRelative, Access: safefile.ReadOnly})
 		}
-		approved = append(approved, safefile.ApprovedFile{RelativePath: candidate.relativePath, Access: safefile.ReadOnly})
+		facts = append(facts, projectmodel.FileFact{
+			Path: filepath.Clean(filepath.Join(discoveryRoot, filepath.FromSlash(digest.RelativePath))), Size: digest.Size, SHA256: digest.SHA256,
+		})
 	}
-	return metadata, approved
+	sort.Slice(facts, func(i, j int) bool { return facts[i].Path < facts[j].Path })
+	return metadata, approved, facts, complete
+}
+
+func envReferencePaths(references []EnvFileReference) []string {
+	result := make([]string, len(references))
+	for index, reference := range references {
+		result[index] = reference.Path
+	}
+	return result
+}
+
+func mergeFileFacts(groups ...[]projectmodel.FileFact) []projectmodel.FileFact {
+	byPath := make(map[string]projectmodel.FileFact)
+	for _, group := range groups {
+		for _, fact := range group {
+			byPath[fact.Path] = fact
+		}
+	}
+	result := make([]projectmodel.FileFact, 0, len(byPath))
+	for _, fact := range byPath {
+		result = append(result, fact)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Path < result[j].Path })
+	return result
+}
+
+func orderComposePaths(paths []string) {
+	sort.SliceStable(paths, func(i, j int) bool {
+		leftOverride := strings.Contains(filepath.Base(paths[i]), ".override.")
+		rightOverride := strings.Contains(filepath.Base(paths[j]), ".override.")
+		if leftOverride != rightOverride {
+			return !leftOverride
+		}
+		return paths[i] < paths[j]
+	})
 }
 
 func resolveEnvFilePath(workingDir, reference string) (string, bool) {
@@ -524,7 +605,7 @@ func (c *Catalog) sourceGraphFacts(ctx context.Context, discoveryRoot, workingDi
 		byPath[fact.Path] = fact
 	}
 	for _, source := range result.Files {
-		if !pathWithin(workingDir, source.Path) || source.Size < 0 {
+		if !pathWithin(discoveryRoot, source.Path) || source.Size < 0 {
 			complete = false
 			continue
 		}

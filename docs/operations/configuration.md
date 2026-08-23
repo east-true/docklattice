@@ -36,6 +36,11 @@ Whoever can reach the UI port controls every connected Docker host. The
 loopback default is not a security feature — it is a refusal to make exposure
 the accident-prone path. See [`../../SECURITY.md`](../../SECURITY.md).
 
+The container image necessarily opts into an all-interface bind *inside the
+container*. Keep the Docker host mapping loopback-only with
+`-p 127.0.0.1:8080:8080`; `-p 8080:8080` publishes the unauthenticated UI on
+every host interface.
+
 ## `dockpilot server issue-token`
 
 ```

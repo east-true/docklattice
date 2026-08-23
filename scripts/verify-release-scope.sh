@@ -41,8 +41,12 @@ if [ "$(grep -c -E '\./cmd/[a-z-]+' Dockerfile)" -ne 1 ]; then
     exit 1
 fi
 
-packages=$(go list -deps "$release_binary" | grep "^$module") || {
+dependency_graph=$(go list -deps "$release_binary") || {
     printf 'release scope verification failed: cannot resolve release dependency graph\n' >&2
+    exit 1
+}
+packages=$(printf '%s\n' "$dependency_graph" | grep "^$module") || {
+    printf 'release scope verification failed: release dependency graph contains no module packages\n' >&2
     exit 1
 }
 

@@ -123,6 +123,30 @@ func TestRescanCachesComposeEvaluationByFingerprint(t *testing.T) {
 	}
 }
 
+func TestRescanPassesDefaultOverrideAfterBaseFile(t *testing.T) {
+	agentID, _ := agentid.New()
+	scanner := &fakeScanner{results: []discovery.Result{{Files: []discovery.File{
+		{Root: "/srv", Path: "/srv/p/compose.override.yml", Kind: discovery.FileKindCompose, Size: 10, SHA256: strings.Repeat("b", 64)},
+		{Root: "/srv", Path: "/srv/p/compose.yaml", Kind: discovery.FileKindCompose, Size: 10, SHA256: strings.Repeat("a", 64)},
+	}}}, errors: []error{nil}}
+	evaluator := &fakeEvaluator{}
+	catalog, err := New(agentID, scanner, evaluator, func(string) (bool, string) { return true, "READY" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Rescan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/srv/p/compose.yaml", "/srv/p/compose.override.yml"}
+	if len(evaluator.inputs) != 1 || fmt.Sprint(evaluator.inputs[0]) != fmt.Sprint(want) {
+		t.Fatalf("evaluator inputs = %v, want %v", evaluator.inputs, want)
+	}
+	project, _ := catalog.Snapshot()
+	if len(project) != 1 || fmt.Sprint(project[0].ComposeFiles) != fmt.Sprint(want) {
+		t.Fatalf("Compose files = %v", project)
+	}
+}
+
 func TestSourceGraphAddsSafeFilesApprovalsAndIncludeRelations(t *testing.T) {
 	root := t.TempDir()
 	parent := filepath.Join(root, "parent")
@@ -174,7 +198,7 @@ services:
 	if got := fmt.Sprint(parentProject.ReadOnlyFiles); got != "[{shared/base.yaml 1}]" {
 		t.Fatalf("safe approvals = %s", got)
 	}
-	if got := fmtProjectFileBases(parentProject.Files); got != "compose.yaml,base.yaml" {
+	if got := fmtProjectFileBases(parentProject.Files); got != "compose.yaml,compose.yaml,base.yaml" {
 		t.Fatalf("fingerprinted source files = %s", got)
 	}
 	if err := catalog.Rescan(context.Background()); err != nil {
@@ -644,6 +668,51 @@ func TestRescanApprovesOnlyRootContainedRegularEnvFiles(t *testing.T) {
 	again, _, err := catalog.ApprovedReadOnlyFiles(context.Background(), project.UID)
 	if err != nil || again[0].RelativePath != "config/service.env" {
 		t.Fatalf("approval copy was mutable: %#v err=%v", again, err)
+	}
+}
+
+func TestServiceEnvFileContentInvalidatesEvaluationCacheAndFingerprint(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "project")
+	if err := os.Mkdir(projectDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	composePath := filepath.Join(projectDir, "compose.yaml")
+	envPath := filepath.Join(projectDir, "service.env")
+	writeCatalogSource(t, composePath, "services:\n  web:\n    env_file: service.env\n")
+	writeCatalogSource(t, envPath, "VALUE=one\n")
+	composeFact := file(root, composePath, strings.Repeat("a", 64))
+	scanner := &fakeScanner{results: []discovery.Result{
+		{Files: []discovery.File{composeFact}},
+		{Files: []discovery.File{composeFact}},
+		{Files: []discovery.File{composeFact}},
+	}, errors: []error{nil, nil, nil}}
+	evaluator := &envFileEvaluator{envFiles: []string{"service.env"}}
+	agentID, _ := agentid.New()
+	catalog, err := New(agentID, scanner, evaluator, func(string) (bool, string) { return true, "READY" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Rescan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := catalog.Snapshot()
+	if err := catalog.Rescan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if evaluator.calls != 1 {
+		t.Fatalf("unchanged env_file invalidated cache: calls=%d", evaluator.calls)
+	}
+	writeCatalogSource(t, envPath, "VALUE=two\n")
+	if err := catalog.Rescan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	third, _ := catalog.Snapshot()
+	if evaluator.calls != 2 || first[0].CurrentFingerprint == third[0].CurrentFingerprint {
+		t.Fatalf("env_file change was missed: calls=%d first=%s third=%s", evaluator.calls, first[0].CurrentFingerprint, third[0].CurrentFingerprint)
+	}
+	if got := fmtProjectFileBases(third[0].Files); got != "compose.yaml,service.env" {
+		t.Fatalf("fingerprinted inputs = %s", got)
 	}
 }
 

@@ -14,17 +14,24 @@ prepare `/srv/dockpilot/server-state` as root, copy the certificate and key into
 its `tls` directory, set both ownerships to `65532:65532`, the directories to
 mode 0700, and the files to mode 0600.
 
-The default container command listens on ports 8080 (HTTPS UI/registration) and
-8443 (Agent transport) and explicitly enables a public bind. Publish only the
-ports required by the internal deployment boundary; do not expose them directly
-to the Internet.
+The default container command listens on all *container* interfaces on ports
+8080 (HTTPS UI/registration) and 8443 (Agent transport). Docker publishes an
+unqualified `-p` mapping on every host interface, so constrain the host side
+explicitly. Port 8080 has no browser authentication and must remain loopback;
+8443 belongs only on the private/VPN interface used by Agents.
 
 ```sh
 docker run -d --name dockpilot-server --restart unless-stopped \
-  -p 8080:8080 -p 8443:8443 \
+  -p 127.0.0.1:8080:8080 -p <private-server-ip>:8443:8443 \
   -v /srv/dockpilot/server-state:/var/lib/dockpilot:rw \
   <signed-server-image-reference>
 ```
+
+Remote registration also uses port 8080. Put a TLS reverse proxy on the Server
+host and expose only `/api/v1/agent/` without browser authentication; require
+authentication for every other path and proxy them to `127.0.0.1:8080`. Point
+the Agent's `--registration-url` at that proxy. Do not publish the whole Server
+port with `-p 8080:8080` merely to make registration reachable.
 
 ## Agent
 
