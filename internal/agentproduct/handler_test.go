@@ -89,8 +89,10 @@ func (fakeFiles) Read(context.Context, string, string) (safefile.File, error) {
 type fakeBackups struct{}
 
 func (fakeBackups) List(context.Context, string) ([]backup.Metadata, error) { return nil, nil }
-func (fakeBackups) LoadManifest(string, string) (backup.Manifest, error)    { return backup.Manifest{}, nil }
-func (fakeBackups) RecoveryBlocked(string) bool                             { return false }
+func (fakeBackups) LoadManifest(string, string) (backup.Manifest, error) {
+	return backup.Manifest{}, nil
+}
+func (fakeBackups) RecoveryBlocked(string) bool { return false }
 func (fakeBackups) Create(context.Context, backup.CreateRequest) (backup.Backup, error) {
 	return backup.Backup{}, nil
 }
