@@ -214,3 +214,6 @@ the top of this file. A person must still use the running UI to judge focus
 feel, density, color, and interaction semantics before changing the milestone
 from `v1 UI implementation complete — integration pending` to
 `v1 UI implemented and validated`.
+
+**Verified implementation commit:**
+`706f1d0578b1fb2511d17746391c7abfcec634c8`
