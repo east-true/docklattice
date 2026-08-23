@@ -359,7 +359,7 @@ func validateContainerID(id string) error {
 func fromSummary(value container.Summary) Container {
 	mounts := make([]Mount, 0, len(value.Mounts))
 	for _, mount := range value.Mounts {
-		mounts = append(mounts, Mount{Type: string(mount.Type), Source: mount.Source, Destination: mount.Destination, ReadWrite: mount.RW})
+		mounts = append(mounts, fromMount(mount))
 	}
 	result := Container{ID: value.ID, Names: append([]string(nil), value.Names...), Image: value.Image, ImageID: value.ImageID, State: string(value.State), Status: value.Status, Labels: cloneLabels(value.Labels), Mounts: mounts}
 	if value.Health != nil {
@@ -418,7 +418,7 @@ func fromInspect(value container.InspectResponse) Container {
 		result.LoggingDriver = value.HostConfig.LogConfig.Type
 	}
 	for _, mount := range value.Mounts {
-		result.Mounts = append(result.Mounts, Mount{Type: string(mount.Type), Source: mount.Source, Destination: mount.Destination, ReadWrite: mount.RW})
+		result.Mounts = append(result.Mounts, fromMount(mount))
 	}
 	if value.NetworkSettings != nil {
 		result.Networks = networkAttachments(value.NetworkSettings.Networks)
@@ -437,6 +437,23 @@ func fromInspect(value container.InspectResponse) Container {
 		}
 	}
 	return result
+}
+
+func fromMount(value container.MountPoint) Mount {
+	source := value.Source
+	if value.Type == "volume" && value.Name != "" {
+		// Docker reports a host mountpoint in Source for named Volumes. Preserve
+		// the authoritative Volume name instead so reference matching works for
+		// every Volume driver and the Inspector does not mislabel a mountpoint as
+		// the Compose-visible source.
+		source = value.Name
+	}
+	return Mount{
+		Type:        string(value.Type),
+		Source:      source,
+		Destination: value.Destination,
+		ReadWrite:   value.RW,
+	}
 }
 
 func networkAttachments(values map[string]*network.EndpointSettings) []ContainerNetwork {

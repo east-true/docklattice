@@ -135,14 +135,18 @@ func TestListMapsAndDefensivelyCopiesRawFacts(t *testing.T) {
 	labels := map[string]string{"com.docker.compose.project": "demo"}
 	engine := &fakeEngine{list: client.ContainerListResult{Items: []container.Summary{{
 		ID: workloadID, Names: []string{"/demo-web-1"}, Image: "demo:1", State: container.StateRunning,
-		Status: "Up", Labels: labels, Mounts: []container.MountPoint{{Type: "bind", Source: "/srv", Destination: "/work", RW: true}},
+		Status: "Up", Labels: labels, Mounts: []container.MountPoint{
+			{Type: "bind", Source: "/srv", Destination: "/work", RW: true},
+			{Type: "volume", Name: "demo-data", Source: "/var/lib/docker/volumes/demo-data/_data", Destination: "/data", RW: true},
+		},
 	}}}}
 	adapter := openFake(t, engine, identified())
 	got, err := adapter.List(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !engine.listOptions.All || len(got) != 1 || got[0].ID != workloadID || got[0].Labels["com.docker.compose.project"] != "demo" || !got[0].Mounts[0].ReadWrite {
+	if !engine.listOptions.All || len(got) != 1 || got[0].ID != workloadID || got[0].Labels["com.docker.compose.project"] != "demo" ||
+		!got[0].Mounts[0].ReadWrite || got[0].Mounts[1].Source != "demo-data" {
 		t.Fatalf("List = %+v options=%+v", got, engine.listOptions)
 	}
 	got[0].Labels["com.docker.compose.project"] = "mutated"

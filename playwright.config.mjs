@@ -56,7 +56,7 @@ function systemChromeCandidates() {
   return [];
 }
 
-function browserExecutable() {
+export function browserExecutable() {
   if (process.env.PLAYWRIGHT_EXECUTABLE_PATH) {
     return process.env.PLAYWRIGHT_EXECUTABLE_PATH;
   }

@@ -1183,11 +1183,17 @@ function renderMetrics(host) {
       if (kind === "matrix") renderMatrix(frame);
     },
   ).catch((error) => {
-    $("#metrics-status").textContent =
-      error.name === "AbortError" ? "Metrics stopped." : error.message;
+    const status = $("#metrics-status");
+    if (status) {
+      status.textContent =
+        error.name === "AbortError" ? "Metrics stopped." : error.message;
+    }
   });
 }
 function renderMatrix(frame) {
+  const status = $("#metrics-status");
+  if (!status) return;
+
   const stale = [
     [frame.membership_stale, frame.membership_reason],
     [frame.workload_stale, frame.workload_reason],
@@ -1195,7 +1201,7 @@ function renderMatrix(frame) {
   ]
     .filter(([value]) => value)
     .map(([, reason]) => reason);
-  $("#metrics-status").textContent = stale.length
+  status.textContent = stale.length
     ? `Partial stale frame: ${stale.join(" · ")}`
     : `Observed ${formatTime(frame.observed_at)} · Agent drops ${frame.agent_dropped_frames || 0} · Server drops ${frame.server_dropped_frames || 0}`;
   state.metricsFrame = frame;
@@ -1237,12 +1243,13 @@ function matrixRow(name, depth, values, pending = false, detail = "") {
 }
 function renderMatrixTable() {
   const frame = state.metricsFrame;
-  if (!frame) return;
-  $("#metrics-hierarchy").classList.toggle(
-    "active",
-    state.metricsMode === "hierarchy",
-  );
-  $("#metrics-top").classList.toggle("active", state.metricsMode === "top");
+  const hierarchyButton = $("#metrics-hierarchy");
+  const topButton = $("#metrics-top");
+  const metricsTable = $("#metrics-table");
+  if (!frame || !hierarchyButton || !topButton || !metricsTable) return;
+
+  hierarchyButton.classList.toggle("active", state.metricsMode === "hierarchy");
+  topButton.classList.toggle("active", state.metricsMode === "top");
   const rows = [];
   if (state.metricsMode === "hierarchy") {
     rows.push(
@@ -1312,7 +1319,7 @@ function renderMatrixTable() {
         );
     }
   }
-  $("#metrics-table").innerHTML = table(
+  metricsTable.innerHTML = table(
     [
       "Name",
       "CPU",
@@ -1390,7 +1397,7 @@ async function startProjectOperation(button) {
     destructive &&
     !(await confirmAction(
       "Run Compose Down?",
-      "Service Containers and Compose-created Networks will be removed. Named Volumes and external Networks or Volumes will be retained.",
+      "Containers for Services in the current Compose model and unused Compose-created Networks will be removed. Observed one-off and orphan Containers may remain. Named Volumes and external Networks or Volumes will be retained.",
       "Down",
     ))
   )

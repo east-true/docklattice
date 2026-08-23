@@ -148,8 +148,69 @@ Playwright gate:
 - each viewport attaches full-page screenshots to `playwright-report`, which
   can be viewed with `npm run test:ui:report` or exercised interactively with
   `npm run test:ui:open`;
-- the implementation run completed with 27 passed and 3 intentional
-  viewport-inapplicable skips.
+- the current fixture run completes with 32 passed and 58 intentional skips:
+  3 viewport-inapplicable navigation cases and 55 opt-in live-VM cases across
+  the five normal fixture projects.
 
 The Go integration and race suites, `go vet`, JavaScript syntax validation,
 release-scope checks, and Docker Compose CLI option/model smoke check also pass.
+
+## Live VM destructive implementation evidence — 2026-08-24
+
+The opt-in `tests/ui/vm-acceptance.spec.mjs` suite runs against production
+Server and Agent images on an Ubuntu 24.04 VM with Docker Engine 29.1.3 (API
+1.52) and the Agent-bundled Docker Compose 5.3.1. It requires explicit
+`DOCKPILOT_VM_ACCEPTANCE=1`, HTTPS base URL, SSH host, and SSH key variables, so
+the destructive cases cannot run accidentally in the normal fixture suite.
+
+One serial desktop run completed with 11 passed in 1.9 minutes. It exercised:
+
+- live Host, Compose project, responsive navigation, Inspectors, Logs, Files,
+  secret reveal, optimistic-write conflicts, backups, and restore-without-Up;
+- the no-build policy through real Pull, Up, Restart, Stop, and Start
+  operations, including the admitted `image + build` Service;
+- malformed and duplicate JSON fields, traversal and absolute file paths,
+  unmanaged file reads, a request over the body limit, command-shaped kind and
+  target values, operation-ID spec mismatch, and read-only/collision mutation
+  attempts;
+- an eight-request same-project mutation storm and explicit cancellation;
+- rapid Metrics route churn and modal focus containment;
+- Agent stop, missing Compose plugin, inaccessible Docker socket, Server
+  restart during an active operation, and recovery of each dependency;
+- real Compose Down followed by Engine and UI reconciliation checks: current
+  model Service Containers are removed, one-off/orphan Containers and their
+  still-used Networks remain, the named Volume retains the same mountpoint,
+  and Up restores web/worker/nolog without building.
+
+Every injected failure has a `finally` recovery path. After the completed run,
+the Docker socket was `0660` with the expected Docker group, Server and Agent
+were running, web was healthy, and worker/nolog were running. Screenshots are
+written to the configured VM evidence directory.
+
+## Five-viewport live visual evidence — 2026-08-24
+
+`npm run test:ui:vm:visual` is a read-only Playwright visual gate for an already
+running live environment. Set `PLAYWRIGHT_TEST_BASE_URL` and optionally
+`DOCKPILOT_VM_EVIDENCE_DIRECTORY`; the command waits for the Agent and Docker
+capability, captures the five required viewports, rejects browser errors, and
+rejects document-level horizontal overflow.
+
+The completed live-VM run passed 5/5:
+
+- 1440px: Sidebar, main Container table, and non-modal Inspector;
+- 1280px: dense Container table;
+- 1024px: Container table with the Inspector policy applied;
+- 768px: collapsed Sidebar control and single-line scrollable Host tabs;
+- 375px: full-page, internally scrollable, one-column Container Inspector.
+
+Direct screenshot review found the initial 375px Inspector still using two
+definition columns. The responsive CSS was corrected to one column below
+480px, and both fixture and live visual gates now assert that layout. The CSS
+asset is also included in the repository Prettier gate so it remains readable
+rather than returning to compressed one-line rules.
+
+These captures support, but do not replace, the unchecked human checklist at
+the top of this file. A person must still use the running UI to judge focus
+feel, density, color, and interaction semantics before changing the milestone
+from `v1 UI implementation complete — integration pending` to
+`v1 UI implemented and validated`.

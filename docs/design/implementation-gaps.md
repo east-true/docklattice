@@ -1,7 +1,8 @@
 # Dockpilot UI — Implementation Gap Report
 
-**Status:** Approved implementation gate and Compose build policy; slices A and
-B implemented and validated, slice C deferred.
+**Status:** v1 UI implementation complete — integration pending. Approved
+slices A and B and the Compose build policy are implemented; slice C remains
+deferred. Final owner acceptance and Git integration are still pending.
 
 **Initial comparison at:** `docs/final-ui-design@a4205c0`
 
@@ -605,10 +606,72 @@ Validation evidence:
 - installed Docker Compose v5.5.0 confirms `up --no-build`, Pull's explicit
   Service arguments, `--ignore-buildable` semantics, and the evaluated fixture
   model used by the implementation;
-- Playwright Chromium acceptance at 1440/1280/1024/768/375: 27 passed, with 3
-  intentional skips for the collapsible-navigation test outside its applicable
-  narrow viewports.
+- Playwright Chromium fixture acceptance at 1440/1280/1024/768/375: 32 passed,
+  with 3 viewport-inapplicable skips and 55 explicitly opt-in live-VM skips;
+- destructive production-image VM acceptance at desktop 1440: 11 passed.
 
 The human checklist in `web-ui-acceptance.md` remains the source of record for
 real-Agent representative-state and destructive-action review; automated
 fixture evidence does not self-approve those manual states.
+
+## Post-completion live-VM hardening — 2026-08-24
+
+The implementation was subsequently exercised with the opt-in destructive
+Playwright suite documented in `web-ui-acceptance.md`. The 11-case serial VM
+run passed and added real evidence for mutation admission, Inspectors, Logs,
+Files, backup/restore, malformed and command-shaped requests, project-lock
+contention, cancellation, dependency loss, operation recovery, and Down/Up
+data retention.
+
+That run found and resolved four implementation defects that fixture-only
+acceptance had not exposed:
+
+- Server operation polling now permits live output-tail growth within an
+  active same-revision operation, while still rejecting same-revision state
+  mutation and terminal-output mutation;
+- named Volume references now use Docker's MountPoint volume name rather than
+  the host mount path;
+- bounded read-only Compose source and service `env_file` reads are admitted
+  through exact discovered provenance, with discovered environment files
+  remaining secret-masked until explicit reveal;
+- an aborted Live Metrics stream no longer writes into DOM nodes removed by a
+  rapid route transition. A fixture regression test covers this race on all
+  five normal viewports.
+
+The five-viewport visual pass subsequently found and resolved one responsive
+presentation defect: the 375px full-page Inspector retained a two-column
+definition layout that made long Docker labels and paths unnecessarily hard to
+read. Mobile Inspector details now use one column, with fixture and live-VM
+regression assertions.
+
+The Compose Down confirmation now states the observed Docker Compose behavior
+explicitly: Containers for Services in the current model and unused Networks
+are removed, while one-off/orphan Containers and Networks they still use may
+remain. No `--remove-orphans` behavior was invented.
+
+## Final integration verification — 2026-08-24
+
+**Milestone:** v1 UI implementation complete — integration pending.
+
+The final working tree was verified from base `main@8fb9f8b` with no Slice C or
+Image-build behavior admitted to the release path:
+
+- all 10 `scripts/verify-*.sh` release and harness gates passed;
+- `go test ./...`, `go vet ./...`, and `go test -race ./...` passed;
+- Prettier checks, JavaScript syntax checks, and `git diff --check` passed;
+- fixture Playwright passed at 1440/1280/1024/768/375 with 32 passed and 58
+  intentional skips;
+- destructive live-VM Playwright passed 11/11 in 1.9 minutes against Docker
+  Engine 29.1.3 and Docker Compose 5.3.1;
+- the read-only live-VM visual gate passed 5/5 viewports with no browser error
+  or document-level horizontal overflow;
+- the post-run VM returned to `ACTIVE`: Docker socket `0660` with group 112,
+  Server and Agent running, web healthy, worker/nolog running, and the expected
+  one-off/orphan and admitted mixed-Service Containers retained.
+
+The responsive screenshots were reviewed for density, status color, table
+overflow, Inspector width/scroll behavior, and mobile one-column details. This
+is implementation evidence, not owner sign-off: the unchecked human checklist
+in `web-ui-acceptance.md` remains intentionally open until a person performs
+the final interactive review. The verification commit is recorded by the
+follow-up integration record after the code commit exists.

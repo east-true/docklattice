@@ -19,7 +19,8 @@ Rules:
 - Existing authoritative architecture/interface contracts still win if they conflict with the UI design.
 - Do not silently change API/proto/storage semantics to satisfy a mockup.
 - Record desired-UI vs implementation gaps explicitly.
-- Do not implement the unresolved Compose build policy without explicit approval.
+- Compose mutation behavior must follow the approved v1 no-build policy in the
+  gap report; do not infer any additional build behavior.
 - UI terminology must follow Docker first: Docker host, Docker Engine, Docker Compose, Compose project, Service, Container, Image, Network, Volume.
 - Sidebar is Host-first: Dockpilot wordmark, Search, Home, registered Docker hosts.
 - Host navigation is Summary / Compose / Containers / Images / Networks / Volumes / Live Metrics / Audit.
@@ -41,3 +42,18 @@ Before implementation, produce a gap report mapping every requested UI field/int
 - unsupported / product decision required
 
 Do not code until that report is reviewed.
+
+## Current integration status — 2026-08-24
+
+**Milestone:** v1 UI implementation complete — integration pending.
+
+The required gap report was reviewed. Approved slices A and B and the v1
+Compose no-build policy are implemented; slice C remains absent. The
+implementation has passed the full Go/release gates, five-viewport fixture
+Playwright, 11-case destructive live-VM Playwright, and a five-viewport live
+visual evidence pass.
+
+The remaining boundary is owner completion of
+`docs/design/web-ui-acceptance.md`, followed by commit/push/PR review and merge.
+Automated and AI-assisted screenshot review must not mark the human checklist
+complete.

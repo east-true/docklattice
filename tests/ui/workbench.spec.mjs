@@ -350,6 +350,15 @@ test("Container Inspector is route-aware, non-modal, and responsive", async ({
   }
   if (testInfo.project.name === "mobile-375") {
     expect(Math.abs(geometry.width - geometry.viewport)).toBeLessThanOrEqual(1);
+
+    const definitionColumnCount = await inspector
+      .locator(".definition-row")
+      .first()
+      .evaluate((element) => {
+        const columns = getComputedStyle(element).gridTemplateColumns;
+        return columns.split(" ").length;
+      });
+    expect(definitionColumnCount).toBe(1);
   }
   await testInfo.attach(`container-inspector-${testInfo.project.name}`, {
     body: await page.screenshot({ fullPage: true }),
@@ -386,6 +395,41 @@ test("Inspector requests cannot reopen an object after route navigation", async 
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
   releaseDetail?.();
   await expect(page.locator("#inspector")).toBeHidden();
+});
+
+test("aborted Metrics stream cannot write into a page after route navigation", async ({
+  page,
+}) => {
+  const pageErrors = [];
+  let releaseMetrics;
+  page.on("pageerror", (error) => {
+    pageErrors.push(error.message);
+  });
+  await page.route("**/api/v1/live/matrix?*", async (route) => {
+    await new Promise((resolve) => {
+      releaseMetrics = resolve;
+    });
+    await route
+      .fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: "event: matrix\ndata: {}\n\n",
+      })
+      .catch(() => {});
+  });
+
+  await page.goto("/#/hosts/agent-east-1/metrics");
+  await expect(page.locator("#metrics-status")).toContainText(
+    "Opening host metrics",
+  );
+  await page.evaluate(() => {
+    window.location.hash = "#/home";
+  });
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+
+  releaseMetrics?.();
+  await page.waitForTimeout(100);
+  expect(pageErrors).toEqual([]);
 });
 
 test("Operation Center keeps Agent cancelability separate from current reachability", async ({

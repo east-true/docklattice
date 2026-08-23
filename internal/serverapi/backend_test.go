@@ -690,7 +690,15 @@ func TestProjectComposeLogsAreLiveProjectScopedAndTyped(t *testing.T) {
 func TestProjectFileReadIsLiveStrictSecretAwareAndBounded(t *testing.T) {
 	ctx, backend, store, registry := newTestBackend(t)
 	insertAgent(t, ctx, store, "agent-a", "Agent", `{"fs_read":true}`)
-	insertProject(t, ctx, store, "project-a", "agent-a", "project", `{}`)
+	insertProject(t, ctx, store, "project-a", "agent-a", "project", `{
+		"env_files":[
+			{"path":"service.env","readable":true},
+			{"path":"private.env","readable":false}
+		],
+		"source_references":[
+			{"kind":"include","path":"/srv/project-a/child/compose.yaml","accessible":true,"read_only":true}
+		]
+	}`)
 	secret := "file-read-secret-never-persist"
 	session := newFakeSession("agent-a")
 	session.queryPayload = []byte(`{"relative_path":".env","content":"` + secret + `","sha256":"` + strings.Repeat("a", 64) + `","mtime":"2026-08-15T01:02:03Z","mode":384,"line_endings":"lf","secret":true}`)
@@ -709,6 +717,27 @@ func TestProjectFileReadIsLiveStrictSecretAwareAndBounded(t *testing.T) {
 		t.Fatalf("query = %+v payload=%q", query, query.Payload)
 	}
 	assertNoPersistentSecret(t, ctx, store, secret)
+
+	session.setQueryPayload([]byte(`{"relative_path":"service.env","content":"TOKEN=value","sha256":"` + strings.Repeat("b", 64) + `","mtime":"2026-08-15T01:02:03Z","mode":384,"line_endings":"lf","secret":true}`))
+	serviceEnv, err := backend.ProjectFile(ctx, "project-a", "service.env")
+	if err != nil || serviceEnv.RelativePath != "service.env" || !serviceEnv.Secret {
+		t.Fatalf("approved service env file = %+v, %v", serviceEnv, err)
+	}
+	if query := session.lastQuery(); string(query.Payload) != `{"relative_path":"service.env"}` {
+		t.Fatalf("service env query payload=%q", query.Payload)
+	}
+
+	session.setQueryPayload([]byte(`{"relative_path":"child/compose.yaml","content":"services: {}\n","sha256":"` + strings.Repeat("c", 64) + `","mtime":"2026-08-15T01:02:03Z","mode":384,"line_endings":"lf","secret":false}`))
+	include, err := backend.ProjectFile(ctx, "project-a", "child/compose.yaml")
+	if err != nil || include.RelativePath != "child/compose.yaml" || include.Secret {
+		t.Fatalf("approved include file = %+v, %v", include, err)
+	}
+
+	for _, path := range []string{"private.env", "unknown.txt", "../service.env", "/etc/passwd"} {
+		if _, err := backend.ProjectFile(ctx, "project-a", path); !errors.Is(err, webui.ErrInvalidRequest) {
+			t.Errorf("unapproved file %q error = %v", path, err)
+		}
+	}
 
 	session.setQueryPayload([]byte(`{"relative_path":".env","content":"x","sha256":"` + strings.Repeat("a", 64) + `","mtime":"2026-08-15T01:02:03Z","mode":384,"line_endings":"lf","secret":false}`))
 	if _, err := backend.ProjectFile(ctx, "project-a", ".env"); !errors.Is(err, ErrCorruptData) {
@@ -982,6 +1011,79 @@ func TestOperationLookupPersistsOnlyMonotonicAgentRevisions(t *testing.T) {
 	session.getOperation.Operation.Status = "failed"
 	if _, err := backend.GetOperation(ctx, "agent-a", "op-1"); !errors.Is(err, webui.ErrConflict) {
 		t.Fatalf("same-revision mutation error = %v", err)
+	}
+}
+
+func TestOperationLookupReturnsLiveOutputWithinAnActiveRevision(t *testing.T) {
+	ctx, backend, store, registry := newTestBackend(t)
+	insertAgent(t, ctx, store, "agent-a", "Agent", `{}`)
+	session := newFakeSession("agent-a")
+	session.operation = producttransport.OperationResponse{
+		Status: "requested", Phase: "PREPARING", Revision: 1,
+	}
+	if err := registry.Register(session); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.StartOperation(ctx, webui.OperationRequest{
+		ID: "op-live-output", AgentID: "agent-a", Kind: "docker.prune",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	session.getOperation = producttransport.GetOperationResponse{
+		Found: true,
+		Operation: producttransport.OperationResponse{
+			Status: "requested", Phase: "PREPARING", Revision: 1,
+			OutputTail: []byte("live output"),
+		},
+	}
+	got, err := backend.GetOperation(ctx, "agent-a", "op-live-output")
+	if err != nil || got.OutputTail != "live output" {
+		t.Fatalf("live lookup = %+v, %v", got, err)
+	}
+
+	var storedOutput string
+	if err := store.DB().QueryRowContext(ctx, `
+		SELECT CAST(output_tail AS TEXT) FROM operations WHERE id = 'op-live-output'
+	`).Scan(&storedOutput); err != nil {
+		t.Fatal(err)
+	}
+	if storedOutput != "" {
+		t.Fatalf("same-revision output persisted as %q", storedOutput)
+	}
+
+	session.getOperation.Operation.Status = "running"
+	if _, err := backend.GetOperation(ctx, "agent-a", "op-live-output"); !errors.Is(err, webui.ErrConflict) {
+		t.Fatalf("same-revision state mutation error = %v", err)
+	}
+}
+
+func TestOperationLookupRejectsSameRevisionTerminalOutputMutation(t *testing.T) {
+	ctx, backend, store, registry := newTestBackend(t)
+	insertAgent(t, ctx, store, "agent-a", "Agent", `{}`)
+	session := newFakeSession("agent-a")
+	session.operation = producttransport.OperationResponse{
+		Status: "success", Phase: "FINALIZING", Revision: 6,
+		OutputTail: []byte("complete"),
+	}
+	if err := registry.Register(session); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.StartOperation(ctx, webui.OperationRequest{
+		ID: "op-terminal-output", AgentID: "agent-a", Kind: "docker.prune",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	session.getOperation = producttransport.GetOperationResponse{
+		Found: true,
+		Operation: producttransport.OperationResponse{
+			Status: "success", Phase: "FINALIZING", Revision: 6,
+			OutputTail: []byte("changed"),
+		},
+	}
+	if _, err := backend.GetOperation(ctx, "agent-a", "op-terminal-output"); !errors.Is(err, webui.ErrConflict) {
+		t.Fatalf("same-revision terminal output mutation error = %v", err)
 	}
 }
 
