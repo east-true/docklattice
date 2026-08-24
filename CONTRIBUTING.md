@@ -47,12 +47,15 @@ Run everything that does not need Docker:
 go test ./...
 go test -race ./...
 for check in scripts/verify-*.sh; do "$check"; done
+npm run check:docs
 ```
 
 The `verify-*.sh` scripts are static contract checks: they confirm the release
 scope, the distribution rules the Dockerfile must obey, and the fail-closed
 safety boundary of each end-to-end harness. They are fast and they need no
 daemon. A pull request that fails one of them is not ready.
+`npm run check:docs` verifies repository-local Markdown and image targets
+without depending on the availability of external websites.
 
 The Docker-backed matrices under [`docs/release/`](docs/release/README.md) need a
 local Linux Docker Engine on cgroup v2. You are not expected to run them for an

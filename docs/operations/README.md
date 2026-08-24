@@ -1,0 +1,19 @@
+# Operations
+
+These guides are for operators who install, expose, configure, and recover
+Dockpilot. Start with the supported-environment check; Dockpilot intentionally
+refuses several deployment shapes that it cannot manage safely.
+
+| Task | Document |
+|---|---|
+| Confirm that a host is supported | [Supported environments](supported-environments.md) |
+| Install the Server and Agents | [Installation](install.md) |
+| Configure commands and operational defaults | [Configuration reference](configuration.md) |
+| Integrate with the HTTP interface | [HTTP API](api.md) |
+| Recover Server or Agent identity | [Identity recovery](recovery.md) |
+| Recover from storage pressure | [Degraded storage](degraded-storage.md) |
+
+The security boundary is documented separately in
+[`SECURITY.md`](../../SECURITY.md). Dockpilot v1 has no browser authentication;
+do not expose the Server UI without an authenticating proxy or a private
+tunnel.

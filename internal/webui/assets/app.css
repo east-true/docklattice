@@ -131,6 +131,7 @@ a {
   font-weight: 640;
 }
 .host-dot {
+  position: relative;
   flex: 0 0 auto;
   width: 8px;
   height: 8px;
@@ -140,6 +141,32 @@ a {
 .host-dot.online {
   background: #287a52;
   box-shadow: 0 0 0 3px #287a521c;
+}
+.host-dot.online::after {
+  position: absolute;
+  inset: -3px;
+  border: 1px solid #287a52;
+  border-radius: 50%;
+  content: "";
+  animation: host-online-pulse 3s ease-out infinite;
+}
+.host-dot.offline {
+  background: #ad6723;
+  box-shadow: 0 0 0 3px #ad67231c;
+}
+@keyframes host-online-pulse {
+  0%,
+  45% {
+    opacity: 0;
+    transform: scale(0.75);
+  }
+  55% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.65);
+  }
 }
 .project-link {
   min-height: 31px;
@@ -206,6 +233,39 @@ a {
   display: flex;
   align-items: center;
   gap: 14px;
+}
+.refresh-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.refresh-controls label {
+  display: inline-flex;
+}
+#refresh-interval {
+  width: 94px;
+  min-height: 34px;
+  padding: 6px 7px;
+  color: #34475b;
+  background: #fff;
+  border: 1px solid #bfc9d4;
+  border-radius: 6px;
+}
+.refresh-state {
+  color: #8a6218;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 .authority-note {
   color: #728397;
@@ -579,6 +639,10 @@ tbody tr:hover {
   margin: 0;
   color: var(--muted);
 }
+.state-panel .form-actions {
+  justify-content: center;
+  margin-top: 18px;
+}
 .spinner {
   width: 24px;
   height: 24px;
@@ -796,7 +860,7 @@ textarea {
 .logs-filter-grid {
   display: grid;
   grid-template-columns:
-    minmax(190px, 1.3fr) minmax(150px, 1fr) 88px
+    minmax(150px, 1fr) minmax(190px, 1.3fr) 88px
     repeat(2, minmax(180px, 1fr));
   gap: 10px;
   align-items: end;
@@ -856,6 +920,9 @@ textarea {
 .logs-panel .inline-status {
   margin: 10px 0 0;
   font-size: 12px;
+}
+.logs-panel #logs-output {
+  max-height: none;
 }
 .filter-bar {
   display: grid;
@@ -973,6 +1040,7 @@ textarea {
 }
 .editor-pane textarea {
   min-height: 400px;
+  max-height: none;
 }
 .inspector {
   position: fixed;
@@ -1244,6 +1312,22 @@ body.inspector-open .toast-region {
   padding: 9px 0;
   border-bottom: 1px solid var(--line-soft);
 }
+.attention-list .attention-item {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.36fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: baseline;
+}
+.attention-target,
+.attention-reason {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attention-reason {
+  color: #526477;
+}
 .hierarchy-name.depth-1 {
   padding-left: 18px;
 }
@@ -1362,6 +1446,19 @@ body.inspector-open .toast-region {
   .topbar {
     padding: 0 14px;
   }
+  .top-actions {
+    gap: 6px;
+  }
+  .attention-list .attention-item {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
+  #refresh-interval {
+    width: 78px;
+  }
+  .refresh-state {
+    display: none;
+  }
   .authority-note {
     display: none;
   }
@@ -1438,6 +1535,9 @@ body.inspector-open .toast-region {
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .host-dot.online::after {
+    animation: none;
+  }
   *,
   *::before,
   *::after {

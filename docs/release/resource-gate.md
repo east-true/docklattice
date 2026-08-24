@@ -2,7 +2,8 @@
 
 Status: PASS
 
-This is the implementation-plan Phase 8 product gate. It runs the production
+This is the [v1 implementation plan](v1-implementation-plan.md) Phase 8 product
+gate. It runs the production
 Server and Agent images; it does not reuse Appendix A prototype acceptance,
 synthetic candidate adapters, or prototype artifacts as product evidence.
 A three-trial matrix has been executed against the production images and all

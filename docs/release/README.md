@@ -1,7 +1,7 @@
 # Release evidence
 
-Dockpilot v1 is complete. Every phase of
-[`../implementation-plan.md`](../implementation-plan.md) has passed. The
+The Dockpilot v1 implementation is complete. Every phase of the historical
+[`v1 implementation plan`](v1-implementation-plan.md) has passed. The
 hardening, abuse, and recovery matrices were executed against release images
 built from revision `fd04135`; the resource matrix, clean-host installation,
 and distribution gates were executed against revision `f1d4087` and are

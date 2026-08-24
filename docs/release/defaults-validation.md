@@ -2,8 +2,8 @@
 
 Status: memory defaults validated; remaining categories provisional  
 Source: architecture section 19 and Appendix B.2  
-Promotion gate: implementation-plan Phase 8 (passed 2026-08-18, see
-`resource-gate.md`)
+Promotion gate: [v1 implementation plan](v1-implementation-plan.md) Phase 8
+(passed 2026-08-18; see `resource-gate.md`)
 
 The values below are product defaults now, so implementation can proceed
 without reopening frozen architecture decisions. A default is not called

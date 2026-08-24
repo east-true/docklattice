@@ -117,6 +117,21 @@ async function currentDashboard(page) {
   return jsonFromPage(page, "/api/v1/dashboard");
 }
 
+function withoutVMFileTestMarkers(content) {
+  const testMarkerPrefixes = [
+    "# vm acceptance save ",
+    "# concurrent winner ",
+    "# stale write must lose ",
+  ];
+  const retainedLines = String(content)
+    .split("\n")
+    .filter((line) => {
+      return !testMarkerPrefixes.some((prefix) => line.startsWith(prefix));
+    });
+
+  return `${retainedLines.join("\n").trimEnd()}\n`;
+}
+
 async function waitForTerminalOperation(page, operation) {
   const path =
     `/api/v1/agents/${encodeURIComponent(operation.agent_id)}` +
@@ -429,7 +444,7 @@ test("VM shell, policy, host details, and responsive drawer are live", async ({
     "Services",
     "Containers",
     "Last observed",
-    "Compose config",
+    "Config drift",
     "Needs attention",
   ]);
   const containerCells = await composeTable
@@ -540,7 +555,7 @@ test("VM shell, policy, host details, and responsive drawer are live", async ({
   const servicesPanel = page.locator("section.project-services-panel");
   await expect(servicesPanel.getByRole("columnheader")).toHaveText([
     "Service",
-    "Status",
+    "Service runtime",
     "Containers",
     "Health",
     "Image",
@@ -619,6 +634,9 @@ test("VM Compose mutations use only admitted image-backed targets", async ({
   expect(mixedUp.kind).toBe("compose.up");
   expect(mixedUp.target).toBe("image-and-build");
   expect(mixedUp.output_tail).not.toContain("Building");
+  await expect(
+    page.getByText("No container", { exact: true }).first(),
+  ).toBeVisible();
 
   await page.goto(
     `/#/projects/${encodeURIComponent(normalProject.uid)}/summary`,
@@ -700,19 +718,13 @@ test("VM Compose mutations use only admitted image-backed targets", async ({
   expect(serviceRestart.kind).toBe("compose.restart");
   expect(serviceRestart.target).toBe("web");
 
-  await page.goto(
-    `/#/projects/${encodeURIComponent(normalProject.uid)}/containers`,
-  );
   await expect(
     page.getByText("Excluded by profile", { exact: true }),
   ).toBeVisible();
 
   await page.goto(
-    `/#/projects/${encodeURIComponent(buildPolicyProject.uid)}/containers`,
+    `/#/projects/${encodeURIComponent(normalProject.uid)}/containers`,
   );
-  await expect(
-    page.getByText("No container", { exact: true }).first(),
-  ).toBeVisible();
 
   await page.goto("/#/operations");
   await expect(
@@ -894,13 +906,17 @@ test("VM runtime distinguishes one-off and orphan Containers and exposes live In
     });
 
   await page.goto(
+    `/#/projects/${encodeURIComponent(normalProject.uid)}/services`,
+  );
+  await expect(
+    page.getByText("Excluded by profile", { exact: true }),
+  ).toBeVisible();
+
+  await page.goto(
     `/#/projects/${encodeURIComponent(normalProject.uid)}/containers`,
   );
   await expect(page.getByText("One-off", { exact: true })).toBeVisible();
   await expect(page.getByText("Orphan", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText("Excluded by profile", { exact: true }),
-  ).toBeVisible();
 
   const webService = runtime.services.find((service) => service.name === "web");
   const webContainer = webService?.containers.find(
@@ -1021,7 +1037,41 @@ test("VM Logs stream Engine output, clear only the browser, and explain unsuppor
   const { normalProject } = liveContext(await currentDashboard(page));
 
   await page.goto(`/#/projects/${encodeURIComponent(normalProject.uid)}/logs`);
+  const refreshInterval = page.locator("#refresh-interval");
+  await expect(refreshInterval.locator("option")).toHaveText([
+    "Auto off",
+    "Every 15s",
+    "Every 30s",
+    "Every 1m",
+    "Every 5m",
+  ]);
+  await refreshInterval.selectOption("300000");
+  await expect(refreshInterval).toHaveAttribute(
+    "title",
+    "Log output already updates as a live stream",
+  );
+  await refreshInterval.selectOption("0");
+  await expect(page.locator(".logs-field > span")).toHaveText([
+    "Service",
+    "Container",
+    "Tail",
+    "Since",
+    "Until",
+  ]);
+  const serviceSelect = page.locator("#logs-services");
   const containerSelect = page.locator("#logs-container");
+  await expect(serviceSelect.locator("option")).toContainText([
+    "All Services",
+    "nolog",
+    "profiled",
+    "web",
+    "worker",
+  ]);
+  await serviceSelect.selectOption("web");
+  await expect(containerSelect.locator("option")).toHaveCount(2);
+  await expect(containerSelect.locator("option").first()).toHaveText(
+    "All Containers in web",
+  );
   const webOption = containerSelect.locator("option").filter({
     hasText: "dockpilot-acceptance-normal-web-1",
   });
@@ -1039,7 +1089,7 @@ test("VM Logs stream Engine output, clear only the browser, and explain unsuppor
   expect(logControlsBox.height).toBeLessThan(150);
   await page.screenshot({
     path: `${evidenceDirectory}/project-logs-controls.png`,
-    fullPage: true,
+    fullPage: false,
   });
   await containerSelect.selectOption(webContainerID);
   await page.getByRole("button", { name: "Start stream" }).click();
@@ -1059,6 +1109,10 @@ test("VM Logs stream Engine output, clear only the browser, and explain unsuppor
     "Browser view cleared. Docker Engine logs were not deleted.",
   );
 
+  await serviceSelect.selectOption("nolog");
+  await expect(containerSelect.locator("option").first()).toHaveText(
+    "All Containers in nolog",
+  );
   const noLogOption = containerSelect.locator("option").filter({
     hasText: "dockpilot-acceptance-normal-nolog-1",
   });
@@ -1177,7 +1231,36 @@ test("VM Files enforce reveal, optimistic concurrency, backup, and restore bound
   await page.getByRole("button", { name: "compose.yaml", exact: true }).click();
   const editor = page.locator("#file-editor");
   await expect(editor).toBeEnabled();
-  const originalContent = await editor.inputValue();
+  let originalContent = await editor.inputValue();
+  const cleanOriginalContent = withoutVMFileTestMarkers(originalContent);
+  if (cleanOriginalContent !== originalContent) {
+    const contaminatedFile = await jsonFromPage(
+      page,
+      `${projectPath}/files?path=compose.yaml`,
+    );
+    const cleanupResponse = await page.request.put(`${projectPath}/files`, {
+      data: {
+        operation_id: `file-fixture-cleanup-${crypto.randomUUID()}`,
+        relative_path: "compose.yaml",
+        expected_sha256: contaminatedFile.sha256,
+        content: cleanOriginalContent,
+      },
+    });
+    expect(cleanupResponse.ok()).toBe(true);
+    await waitForOperation(page, await cleanupResponse.json());
+    await page
+      .getByRole("button", { name: "compose.yaml", exact: true })
+      .click();
+    await expect
+      .poll(async () => editor.inputValue())
+      .toBe(cleanOriginalContent);
+    originalContent = cleanOriginalContent;
+  }
+
+  const backupsBeforeSave = await jsonFromPage(page, `${projectPath}/backups`);
+  const backupIDsBeforeSave = new Set(
+    backupsBeforeSave.map((backup) => backup.backup_id),
+  );
   const savedMarker = `# vm acceptance save ${crypto.randomUUID()}`;
   await editor.fill(`${originalContent.trimEnd()}\n\n${savedMarker}\n`);
 
@@ -1196,6 +1279,18 @@ test("VM Files enforce reveal, optimistic concurrency, backup, and restore bound
   expect(saveResponse.ok()).toBe(true);
   const saveOperation = await waitForOperation(page, await saveResponse.json());
   expect(saveOperation.kind).toBe("compose.file.write");
+
+  const backupsAfterSave = await jsonFromPage(page, `${projectPath}/backups`);
+  const originalBackups = backupsAfterSave.filter((backup) => {
+    return (
+      !backupIDsBeforeSave.has(backup.backup_id) &&
+      backup.trigger === "pre_write" &&
+      backup.paths_available &&
+      backup.paths.includes("compose.yaml")
+    );
+  });
+  expect(originalBackups).toHaveLength(1);
+  const originalBackup = originalBackups[0];
 
   await page.getByRole("button", { name: "compose.yaml", exact: true }).click();
   await expect.poll(async () => editor.inputValue()).toContain(savedMarker);
@@ -1251,9 +1346,13 @@ test("VM Files enforce reveal, optimistic concurrency, backup, and restore bound
   await expect(
     page.getByText("Restore changes configuration files only."),
   ).toBeVisible();
-  const restoreButton = page
-    .getByRole("button", { name: "Restore", exact: true })
-    .first();
+  const originalBackupRow = page.locator("tbody tr").filter({
+    hasText: originalBackup.backup_id,
+  });
+  const restoreButton = originalBackupRow.getByRole("button", {
+    name: "Restore",
+    exact: true,
+  });
   await expect(restoreButton).toBeEnabled();
   const restoreResponsePromise = page.waitForResponse((response) => {
     return (
@@ -1279,6 +1378,14 @@ test("VM Files enforce reveal, optimistic concurrency, backup, and restore bound
     .find((service) => service.name === "web")
     ?.containers.find((container) => !container.one_off)?.id;
   expect(webContainerAfter).toBe(webContainerBefore);
+
+  const restoredFile = await jsonFromPage(
+    page,
+    `${projectPath}/files?path=compose.yaml`,
+  );
+  expect(restoredFile.content).toBe(originalContent);
+  expect(restoredFile.content).not.toContain("# vm acceptance save ");
+  expect(restoredFile.content).not.toContain("# concurrent winner ");
 
   await page.screenshot({
     path: `${evidenceDirectory}/configuration-backups.png`,

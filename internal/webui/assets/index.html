@@ -53,9 +53,28 @@
               class="quiet-button operation-trigger"
               href="#/operations"
               >Operations <span id="operation-count">0</span></a
-            ><button id="refresh" class="quiet-button" type="button">
-              Refresh
-            </button>
+            >
+            <div class="refresh-controls">
+              <button id="refresh" class="quiet-button" type="button">
+                Refresh
+              </button>
+              <label for="refresh-interval">
+                <span class="visually-hidden">Automatic refresh interval</span>
+                <select
+                  id="refresh-interval"
+                  aria-describedby="refresh-interval-state"
+                >
+                  <option value="0">Auto off</option>
+                  <option value="15000">Every 15s</option>
+                  <option value="30000">Every 30s</option>
+                  <option value="60000">Every 1m</option>
+                  <option value="300000">Every 5m</option>
+                </select>
+              </label>
+              <span id="refresh-interval-state" class="refresh-state" hidden
+                >Paused</span
+              >
+            </div>
           </div>
         </header>
         <main id="main" tabindex="-1">
@@ -217,19 +236,17 @@
         <form id="project-logs-form" class="logs-controls">
           <input id="logs-agent" name="agent_id" type="hidden" />
           <div class="logs-filter-grid">
+            <label class="logs-field logs-field-services" for="logs-services">
+              <span>Service</span>
+              <select id="logs-services" name="services">
+                <option value="">All Services</option>
+              </select>
+            </label>
             <label class="logs-field logs-field-container" for="logs-container">
               <span>Container</span>
               <select id="logs-container" name="container_id">
-                <option value="">All selected Services</option>
+                <option value="">All Containers</option>
               </select>
-            </label>
-            <label class="logs-field logs-field-services" for="logs-services">
-              <span>Services</span>
-              <input
-                id="logs-services"
-                name="services"
-                placeholder="api, worker"
-              />
             </label>
             <label class="logs-field logs-field-tail" for="logs-tail">
               <span>Tail</span>

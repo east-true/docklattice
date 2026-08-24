@@ -189,6 +189,24 @@ func TestReadOnlyInventoryMapsOnlyBoundedOverviewFacts(t *testing.T) {
 	}
 }
 
+func TestInspectKeepsStateSeparateFromListStatus(t *testing.T) {
+	engine := &fakeEngine{inspect: client.ContainerInspectResult{Container: container.InspectResponse{
+		ID: workloadID,
+		State: &container.State{
+			Status: container.StateRunning,
+		},
+	}}}
+	adapter := openFake(t, engine, identified())
+
+	got, err := adapter.Inspect(context.Background(), workloadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != string(container.StateRunning) || got.Status != "" {
+		t.Fatalf("inspect state/status = %q/%q", got.State, got.Status)
+	}
+}
+
 func TestMutationsEnforceSelfProtectionAndForwardClosedOptions(t *testing.T) {
 	engine := &fakeEngine{}
 	adapter := openFake(t, engine, identified())

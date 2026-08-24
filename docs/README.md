@@ -1,38 +1,41 @@
 # Dockpilot documentation
 
-Start here. Each document below has one audience and one job.
+Use this page as the stable entry point. Permanent contracts and operator
+procedures live here; completed gap reports, review prompts, and handoff notes
+are intentionally excluded from the repository.
 
-## New to Dockpilot
+The [architecture decision record](architecture.md) is authoritative. If
+another document disagrees with it, treat that disagreement as a documentation
+bug.
 
-| Document | What it answers |
+## Choose a path
+
+| You want to… | Start here | Then read |
+|---|---|---|
+| Understand Dockpilot | [Concepts](concepts.md) | [Architecture](architecture.md) |
+| Install or operate it | [Operations index](operations/README.md) | [Supported environments](operations/supported-environments.md), [Installation](operations/install.md) |
+| Use or integrate the API | [HTTP API](operations/api.md) | [Interface freeze](interface-freeze.md) |
+| Maintain the browser UI | [Product and UI contracts](design/README.md) | [Web UI acceptance](design/web-ui-acceptance.md) |
+| Verify a release claim | [Release evidence](release/README.md) | The individual gate record linked from its table |
+| Contribute code | [Contributing](../CONTRIBUTING.md) | [Security policy](../SECURITY.md) |
+
+## Document map
+
+### Core contracts
+
+| Document | Role |
 |---|---|
-| [Concepts](concepts.md) | What a Server, an Agent, a Project, an Operation, and the Audit archive are, and how they relate. **Read this first.** |
-| [Architecture decision record](architecture.md) | Why every one of those things is the way it is. The authority for all behaviour. Written in Korean. |
+| [Concepts](concepts.md) | Short English mental model for Server, Agent, Project, Operation, and Audit. |
+| [Architecture](architecture.md) | Authoritative decisions, invariants, scope, and defaults. Written in Korean. |
+| [Interface freeze](interface-freeze.md) | Stable identifiers, states, errors, capabilities, audit coverage, credentials, and compatibility rules. |
 
-The architecture record is authoritative: if any other document — including this
-one — disagrees with it, the architecture record is right and the other document
-is a bug.
+### Maintainer and operator collections
 
-## Operating Dockpilot
-
-| Document | What it answers |
+| Collection | Contents |
 |---|---|
-| [Supported environments](operations/supported-environments.md) | Whether your host is inside the tested boundary, and what is explicitly refused. |
-| [Installation](operations/install.md) | How to prepare state directories, issue a Join Token, and run both containers with the correct privilege boundary. |
-| [Configuration](operations/configuration.md) | Every command-line flag, and every operational default with the value it is compiled with. |
-| [HTTP API](operations/api.md) | The Server's read and write endpoints, their error shape, and their secret-handling rules. |
-| [Interface freeze](interface-freeze.md) | The frozen external semantics anything built on Core may depend on: identifiers, operation states, error codes, capabilities, audit coverage, credentials, and what may change afterwards. |
-| [Identity recovery](operations/recovery.md) | What to do after losing Server identity state, the Server database, or an Agent state directory. |
-| [Degraded storage](operations/degraded-storage.md) | What `DEGRADED_STORAGE` means, what Dockpilot evicts on its own, and how to leave the state. |
-
-## Verifying and contributing
-
-| Document | What it answers |
-|---|---|
-| [Release evidence](release/README.md) | Which gates ran, against which images, and what each one actually proves. |
-| [Implementation plan](implementation-plan.md) | The phase-by-phase v1 plan and its completion rule. |
-| [Contributing](../CONTRIBUTING.md) | How to build, test, and propose a change that the architecture record permits. |
-| [Security policy](../SECURITY.md) | The v1 threat model and how to report a vulnerability. |
+| [Operations](operations/README.md) | Installation, configuration, API, supported environments, and recovery procedures. |
+| [Product and UI contracts](design/README.md) | Current UI behavior, responsive acceptance, and live metrics design. |
+| [Release evidence](release/README.md) | Reproducible gates, environment records, known limits, and the historical v1 plan. |
 
 ## Reading the architecture record
 
