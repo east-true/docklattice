@@ -26,11 +26,21 @@ Dockpilot
       ├─ Images
       ├─ Networks
       ├─ Volumes
-      ├─ Live Metrics
+      ├─ Container stats
       └─ Audit
 ```
 
 Object home remains under its Docker host. Global Search routes directly to that real context.
+
+### Shared table interaction
+
+Every repeated-object list table allows its columns to be resized from the
+header boundary. Pointer users drag the boundary; keyboard users focus the
+separator and use Left/Right Arrow. The chosen widths are browser-local
+preferences, shared by tables with the same column contract, and are never
+Server or Agent state. Moving a boundary redistributes width between its two
+adjacent columns while the table remains inside its existing maximum width; it
+must not introduce horizontal table or page scrolling.
 
 ## 2. Home
 
@@ -135,6 +145,17 @@ Rules:
 - Show Cancel only when the operation contract allows it.
 - Bounded output is called `Output tail`, never `Full output`.
 - Long-lived history remains in Audit.
+- Mutation Toasts distinguish request acceptance from terminal outcome:
+  blue/info `Started`, green `Completed`, amber `Completed with attention`,
+  `Canceled`, or `Interrupted`, and red `Failed` or `Rejected`.
+- A `202 Accepted` response never produces a success Toast. The browser polls
+  the Agent-authoritative operation endpoint and updates the same Toast only
+  after observing a terminal status.
+- Every operation Toast links directly to its operation details. Errors use
+  an assertive alert; all other updates use a polite status and never rely on
+  color alone.
+- When a details panel is open above the mobile breakpoint, Toasts shift left of
+  it instead of covering its content.
 
 ## 5. Host Summary
 
@@ -144,28 +165,63 @@ Role:
 
 Sections:
 
+Use three separate outer panels in this order: `Host`, `Docker Engine`, and
+`Compose projects`. Do not mix Agent/Dockpilot management facts with Docker
+Engine facts or Compose project state.
+
+### Host
+
+Show current session/discovery metadata first, followed by a visually separated
+capability-state section:
+
+```text
+Session source IP
+Session observed
+Compose discovery
+
+Capabilities
+Agent connection
+Docker Engine
+Docker Compose
+Compose discovery
+File read / File write
+Container stats
+Operation recovery
+```
+
 ### Docker Engine
 
 ```text
 Engine version
 Containers        total / running / stopped
 Images
-CPU capacity
-Memory capacity
+CPU used / total
+Memory used / total
+Usage observed
 Storage driver
 ```
 
-CPU and memory are Engine-reported capacity, not host OS utilization.
+The numerator is a current aggregate of running Docker Containers; it excludes
+Host processes outside Docker. CPU usage is expressed as logical CPUs used,
+with 100% of Docker stats CPU equal to one logical CPU. The denominator is the
+logical CPU count or memory capacity reported by Docker Engine. Memory bytes
+are rendered with IEC units such as GiB. `Usage observed` exposes the snapshot
+time so a live value is never presented without freshness.
 
-### Engine details
+Opening Summary requests Container stats only long enough to obtain a current
+workload snapshot, then closes the viewer. The snapshot remains browser-only
+and is neither retained nor reused as Host OS utilization.
 
-Progressively disclose:
+#### Engine technical details
+
+Show these facts as a separately spaced subsection in the same Docker Engine
+panel, without adding a second divider next to the overview's row boundaries.
+Use two columns on wide screens and one column on narrow screens. Do not repeat
+overview fields such as the Engine version or storage driver:
 
 ```text
-Docker Engine version
 Engine API version
 Docker Compose version
-Storage driver
 Logging driver
 Cgroup driver/version
 Default runtime
@@ -175,41 +231,41 @@ Kernel
 Docker root dir
 ```
 
-### Dockpilot management
-
-```text
-Agent connection
-Docker Compose capability
-Discovery capability / last completed scan
-File access
-Live Metrics capability
-Operation recovery
-```
-
-### Compose exceptions
+### Compose projects
 
 Show only exceptional projects, then `Open Compose`.
 
 ## 6. Host → Compose
 
-Subtitle:
+The page header keeps the selected Docker host as the level-one title, matching
+every other Host tab. `Compose` remains the active Host tab and the list panel
+is titled `Compose projects`; navigating to this tab must not replace the Host
+identity with a new level-one `Compose` page.
+
+List subtitle:
 
 > Compose projects discovered on this Docker host
 
 Actions:
 
 - Refresh current view
-- `Rescan projects` as a distinct discovery operation
+- `Rescan Compose projects` as a distinct discovery operation
 
 Suggested table:
 
 ```text
-PROJECT | SERVICES | CONTAINERS | CONFIGURATION | NEEDS ATTENTION
+PROJECT | SERVICES | CONTAINERS | LAST OBSERVED | COMPOSE CONFIG | NEEDS ATTENTION
 ```
+
+`Containers` contains only a current attachment count. If the Project is stale
+or missing, show `Unavailable` instead of presenting the cached count as
+current. `Last observed` separately shows the Agent's `last_observed_at`
+timestamp, or `Never` when no observation exists; it is not Container age or
+creation time.
 
 Project cell contains project name + working directory.
 
-Service/runtime counts must not look authoritative if the source graph is incomplete.
+Service/Container counts must not look authoritative if the Compose file graph is incomplete.
 
 No `New Project`.
 
@@ -220,57 +276,97 @@ Header:
 ```text
 backend
 /srv/compose/backend
-[ Pull ] [ Up ] [ Restart ] [ More ]
+[ Pull ] [ Up ] [ Down ] | [ Start ] [ Stop ] [ Restart ]
 ```
 
 Tabs:
 
 ```text
-Summary | Containers | Files | Logs | Backups | Activity
+Summary | Services | Containers | Files | Logs | Backups | Activity
 ```
 
 Sections:
 
-### Runtime summary
+Use two separate outer panels in this order: `Project` and `Containers`. Compose
+metadata and observed Compose Containers must not be mixed into one split card.
+The effective Service model and its per-Service mutations belong to the
+separate `Services` tab.
 
-- defined services
-- existing Containers by Docker state
-- services without Container
-- profile-inactive services
-- one-off/orphan count when relevant
+Do not add a project `Images`, `Networks`, or `Volumes` tab. Those are
+Engine-wide Docker objects without Compose ownership and remain in Host scope.
+Compose project depth exists for the effective model, source configuration,
+project-scoped logs/history, backups, and Compose operations.
 
-### Effective Compose context
+### Project
+
+Show effective Compose metadata first:
 
 ```text
-Project name
 Project directory
 Compose files and merge order
 Included applications
-Extends references
 Active profiles
-Source graph complete/incomplete
+Compose file graph complete/incomplete
 ```
 
-### Configuration
+Then show a separately spaced `Dockpilot management` subsection:
 
 ```text
-In sync / Changed / No baseline
-Last verified
-Known source references
-```
-
-### Management
-
-```text
-Compose operations
-File access
-Discovery record
 Managed/unmanaged
+Dockpilot discovery record and freshness
+Compose operation availability
+File access
+Compose config state
+Last verified
 ```
+
+### Containers
+
+- Services in the Compose model
+- observed Containers by Docker state
+- Services with no Container
+- Services excluded by inactive profiles
+- one-off/orphan count when relevant
+
+The panel description includes the Compose Container observation time or says
+that current Compose Container state is unavailable.
+
+### Services needing attention
+
+Finish Summary with a compact exception-only Service list. It includes active
+Services without a current Container, unhealthy or abnormal Container states,
+and Services blocked by the v1 no-build policy. It does not repeat the full
+effective model and does not classify an intentionally inactive profile as a
+failure. Each entry links to the Services tab for the complete model and
+Service-level operations.
 
 Severe exceptions appear above all sections.
 
-## 8. Compose operations semantics
+## 8. Compose project → Services
+
+This is a project-level collection route, not an individual Service detail
+depth. It shows the complete effective Service model in a table with:
+
+```text
+Service | Status | Containers | Health | Image | Build | Pull policy | Profiles | Depends on | Ports | [unlabeled utility]
+```
+
+Join two explicitly different sources: the effective model supplies Image,
+build, Pull policy, Profiles, and Depends on; observed Compose Containers
+supply Docker state, Container count, Health, and published ports. Each
+column owns one kind of information instead of combining several facts in one
+cell. The unlabeled final utility column contains a quiet `…` trigger. It opens
+a state- and policy-aware menu directly below the row for
+`Pull / Up | Start / Stop / Restart`. At narrow widths, the row becomes a
+labeled vertical record so all data and the action control remain visible
+without horizontal scrolling. Every value remains on one line; long values
+use ellipsis and expose the complete value as a tooltip instead of increasing
+row height. `Down` remains project-wide.
+Build-only and other build-required Services show explicit unavailable reasons.
+The table does not duplicate project-wide action buttons; those remain in the
+project header.
+
+## 9. Compose operations semantics
 
 ### Pull
 
@@ -323,12 +419,12 @@ docker compose ... up --detach --no-build [service...]
 
 Classify every Service from Docker Compose's effective model:
 
-| Effective Service model | Pull | Service Up | Project Up |
-|---|---|---|---|
-| `image` | Available | Available with `--no-build` | Included |
-| `image` + `build` | Available for the declared Image only | Available with `--no-build` | Included |
-| `build` only | Unavailable | Unavailable | Blocks the whole Project Up |
-| `image` + `build` + `pull_policy: build` | Unavailable | Unavailable | Blocks the whole Project Up |
+| Effective Service model                  | Pull                                  | Service Up                  | Project Up                  |
+| ---------------------------------------- | ------------------------------------- | --------------------------- | --------------------------- |
+| `image`                                  | Available                             | Available with `--no-build` | Included                    |
+| `image` + `build`                        | Available for the declared Image only | Available with `--no-build` | Included                    |
+| `build` only                             | Unavailable                           | Unavailable                 | Blocks the whole Project Up |
+| `image` + `build` + `pull_policy: build` | Unavailable                           | Unavailable                 | Blocks the whole Project Up |
 
 `pull_policy: build` is an explicit build requirement and must not be silently
 overridden. More generally, Dockpilot executes Compose only when the selected
@@ -349,8 +445,8 @@ reported as `Pull failed`.
 Project Up is unavailable when any Service in its effective target set is
 build-only or otherwise build-required. Never silently skip that Service,
 because doing so would change the application and may break dependencies.
-Service-level Up remains available only for an image-backed, non-build-required
-Service.
+Service-level Up remains available only for a non-build-required Service with
+a declared `image`.
 
 Example unavailable reason:
 
@@ -360,19 +456,19 @@ Dockpilot v1 does not build Images. Provide an Image for this Service before
 running the whole project with Dockpilot.
 ```
 
-## 9. Compose project → Containers
+## 10. Compose project → Containers
 
 Primary table:
 
 ```text
-SERVICE | CONTAINER | STATE | HEALTH | IMAGE | PORTS
+SERVICE | CONTAINER | STATE | HEALTH | IMAGE | PORTS | [unlabeled utility]
 ```
 
 Represent these explicitly:
 
 - ordinary Container state (`Running`, `Exited`, `Paused`, `Restarting`, `Created`, `Removing`, `Dead`)
 - `No container`
-- `Profile inactive`
+- `Excluded by profile`
 - `One-off`
 - `Orphan`
 
@@ -380,7 +476,14 @@ Represent these explicitly:
 
 Service names are filters/shortcuts, not separate pages.
 
-## 10. Compose project → Files
+The unlabeled final utility cell uses the same quiet `…` row menu as Services.
+It opens state-aware operations for only the selected Container: Start, Stop,
+Restart, and Remove. Restart and Remove require confirmation after menu
+selection. Remove is never forced and does not request Volume removal; running
+Containers must be stopped first. Protected Agent Containers keep the menu
+visible but disable Stop, Restart, and Remove with the protection reason.
+
+## 11. Compose project → Files
 
 Split layout:
 
@@ -399,6 +502,10 @@ SERVICE ENVIRONMENT FILES
 COMPOSE SECRETS / CONFIGS
 ```
 
+Category headings use a distinct section treatment; source items are indented
+and carry a separate item marker. A file name must not look like another
+category heading, especially in the narrow single-column layout.
+
 Rules:
 
 - Only whitelisted project-related files; not a general filesystem browser.
@@ -411,11 +518,11 @@ Rules:
 - On save success, offer `Run Up to apply configuration changes` when appropriate.
 - Before mutation, Dockpilot may create its existing automatic managed-file snapshot according to the backup contract.
 
-### Resolved configuration
+### `docker compose config`
 
 Explicit reveal is required because resolved/interpolated output can contain sensitive values.
 
-## 11. Compose project → Logs
+## 12. Compose project → Logs
 
 Header:
 
@@ -436,6 +543,12 @@ Follow
 Find in loaded logs
 ```
 
+Keep these controls compact. The Agent identity is implied by the selected
+project and is not shown as a filter row. At desktop widths, scope and time
+filters use a dense grid, display options and stream actions use one short
+footer row, and browser-only Find sits immediately above the log output. The
+layout may stack only as the viewport requires it.
+
 Rules:
 
 - Time range means querying logs still retained by Docker Engine, not Dockpilot historical storage.
@@ -447,7 +560,7 @@ Rules:
 - If Docker logging configuration cannot provide readable logs, show disabled/unavailable with reason.
 - Multi-Container merge order is observational, not causal/audit ordering.
 
-## 12. Compose project → Backups
+## 13. Compose project → Backups
 
 Title copy:
 
@@ -480,7 +593,7 @@ Restore confirmation states:
 
 `restore_recovery_required` is a severe project-wide state that blocks unsafe mutation.
 
-## 13. Compose project → Activity
+## 14. Compose project → Activity
 
 Activity is project-filtered stored Audit history.
 
@@ -498,15 +611,15 @@ Some project activity may be missing.
 View host Audit →
 ```
 
-## 14. Host → Containers
+## 15. Host → Containers
 
 Table:
 
 ```text
-COMPOSE PROJECT | SERVICE | CONTAINER | STATE | HEALTH | IMAGE | PORTS
+COMPOSE PROJECT | SERVICE | CONTAINER | STATE | HEALTH | IMAGE | PORTS | PROTECTION | ACTIONS
 ```
 
-Standalone Containers use `—` for Compose context.
+Standalone Containers use `—` for Compose project / service.
 
 Filters:
 
@@ -521,11 +634,24 @@ Priority columns at narrow width:
 3. Container
 4. State
 
-Health/Image/Ports may move to Inspector progressively.
+Health/Image/Ports may move to the details panel progressively.
 
 Protected Dockpilot Agent Container remains visible, with destructive actions disabled and reasons shown.
 
-## 15. Container Inspector
+Container actions use the same final `…` menu and state/protection rules as the
+project Container list. They call Docker Container operations directly; they
+must not be labeled as Compose Service operations or imply configuration is
+being applied.
+
+## 16. Container details
+
+The shared right-side details panel used by Containers, Images, Networks, Volumes,
+and operation details is resizable above the full-page mobile breakpoint.
+Pointer users drag its left boundary; keyboard users focus the vertical
+separator and use Left/Right Arrow. The browser stores one shared local width.
+The allowed range preserves at least 420px of main content on pushed desktop
+layouts and never exceeds 70% of an overlaid viewport. At 800px and below the
+The details panel remains a fixed full-page surface and exposes no resize control.
 
 Sections:
 
@@ -533,7 +659,7 @@ Sections:
 General
 State
 Runtime
-Compose context
+Compose project / service
 Ports
 Networks
 Mounts
@@ -563,12 +689,12 @@ Mounts distinguish `volume`, `bind`, `tmpfs`, and other actual Docker mount type
 
 Environment/raw inspect is sensitive and should require explicit reveal if added.
 
-## 16. Host → Images
+## 17. Host → Images
 
 Table:
 
 ```text
-REPOSITORY / TAGS | IMAGE ID | CREATED | VIRTUAL SIZE | REFERENCES
+REPOSITORY / TAGS | IMAGE ID | CREATED | SIZE | CONTAINERS
 ```
 
 One Image ID is one row; multiple tags are references on that row.
@@ -579,11 +705,11 @@ Do not conflate:
 - Unused
 - Referenced by stopped/running Container
 
-Inspector:
+Details panel:
 
 ```text
 General
-References / digests
+Tags / digests
 Usage
 Image configuration
 Platform
@@ -591,9 +717,9 @@ Metadata
 Size details where available
 ```
 
-Clarify that virtual size is not identical to unique disk use. If shared/unique size is available, display separately.
+Clarify that Size is cumulative image and parent-layer size, not unique disk use. If shared/unique size is available, display separately.
 
-## 17. Host → Networks
+## 18. Host → Networks
 
 Table:
 
@@ -603,21 +729,21 @@ NETWORK | DRIVER | SCOPE | IPAM | CONTAINERS
 
 Do not assume exactly one subnet.
 
-Inspector:
+Details panel:
 
 ```text
 General
 IPAM configs (IPv4/IPv6/multiple subnets)
 Connected Containers
-Docker addresses / MAC
+IP addresses / MAC address
 Options
 Labels
-Compose context where labels prove it
+Compose project / service where labels prove it
 ```
 
 Compose ownership comes from actual labels, not name-pattern inference.
 
-## 18. Host → Volumes
+## 19. Host → Volumes
 
 Table:
 
@@ -634,11 +760,11 @@ Referenced by 3 containers
 
 Size may be `Calculating…` or `Unavailable`; never convert unknown to `0 B`.
 
-Inspector:
+Details panel:
 
 ```text
 General
-Compose context
+Compose project / service
 Referenced Containers + mount destinations
 Driver options
 Labels
@@ -647,13 +773,13 @@ Size when available
 
 Mountpoint is shown with Driver and should not be interpreted as a normal local directory for every custom/remote driver.
 
-## 19. Host → Live Metrics
+## 20. Host → Container stats
 
 Title/help:
 
 ```text
-Live Metrics
-Live · Metrics are collected only while this view is open.
+Container stats
+Live · Container stats are collected only while this view is open.
 Not retained by Dockpilot.
 ```
 
@@ -677,7 +803,7 @@ Docker host
 Columns:
 
 ```text
-NAME | CPU | MEMORY | NET RX/TX | BLOCK R/W | STATE
+NAME | CPU % | MEMORY USAGE / LIMIT | NET I/O (RX / TX) | BLOCK I/O (READ / WRITE) | STATE
 ```
 
 Host row means aggregate managed Docker Container usage against Engine-reported capacity, not host OS usage.
@@ -697,12 +823,14 @@ Technical rules:
 
 - CPU may exceed 100%.
 - Memory should follow Docker-compatible semantics where contractually adopted.
+- An unbounded memory-limit state is shown as
+  `No container memory limit · {usage} used`, not as the internal term `Unbounded`.
 - Network/Block `/s` rates require delta / actual observed elapsed time.
 - First/reset sample displays unavailable/waiting rather than zero.
 - `Processes / threads` is more accurate than implying Docker PIDS is process-only.
 - Shared network namespace must not be blindly double-counted in aggregate; if safe de-duplication is unavailable, expose aggregate limitation.
 
-## 20. Host → Audit
+## 21. Host → Audit
 
 Subtitle:
 
@@ -734,7 +862,7 @@ Actor is technical provenance only:
 
 Never invent person/admin identity.
 
-Event Inspector may show:
+Event details may show:
 
 - exact timestamp + timezone
 - source/kind
@@ -745,7 +873,7 @@ Event Inspector may show:
 
 Candidate observed Docker events for contract review include OOM/restart/pause/unpause. They are evidence, not alert severity.
 
-## 21. Host-scoped multi-Container Logs — P1 candidate
+## 22. Host-scoped multi-Container Logs — P1 candidate
 
 Do not add a Host `Logs` primary tab solely for this.
 
@@ -757,7 +885,7 @@ Host → Containers → select several Containers → View logs
 
 This opens the common log viewer scoped to the selected Containers.
 
-## 22. Errors / empty / partial states
+## 23. Errors / empty / partial states
 
 Never reuse one generic empty state for all cases.
 
@@ -781,7 +909,7 @@ Error copy should communicate:
 4. what the user can do next
 5. technical reason, progressively disclosed
 
-## 23. Resolved product decision
+## 24. Resolved product decision
 
 ### Compose build policy
 

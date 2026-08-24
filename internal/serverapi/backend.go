@@ -454,7 +454,7 @@ func (b *Backend) ProjectRuntime(ctx context.Context, projectUID string) (webui.
 		known[service.Name] = index
 		status := "No container"
 		if !service.Active {
-			status = "Profile inactive"
+			status = "Excluded by profile"
 		}
 		result.Services[index] = webui.ServiceRuntime{
 			Name: service.Name, Status: status, ProfileInactive: !service.Active, Containers: []webui.HostContainer{},
@@ -1897,7 +1897,7 @@ func (b *Backend) liveHost(ctx context.Context, agent agentRow) webui.Host {
 	// about it, which is exactly why the reason is written here rather than
 	// taken from the Agent: silence from an older build is the answer, and this
 	// is the sentence that states it.
-	host.Capabilities.Metrics = webCapability(capability.MetricsMatrix, "", "live metrics are not available on this Agent")
+	host.Capabilities.Metrics = webCapability(capability.MetricsMatrix, "", "container stats are not available on this Agent")
 	fsRead, fsReadReason := agent.capabilities.FSRead, agent.capabilities.FSReadReason
 	fsWrite, fsWriteReason := agent.capabilities.FSWrite, agent.capabilities.FSWriteReason
 	if capability.FSRead || capability.FSWrite || capability.FSReadReason != "" || capability.FSWriteReason != "" {

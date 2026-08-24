@@ -212,7 +212,12 @@ function liveContext(dashboard) {
   };
 }
 
-async function runProjectOperation(page, button, confirmationLabel) {
+async function runProjectOperation(
+  page,
+  button,
+  confirmationLabel,
+  confirmationCopy,
+) {
   const responsePromise = page.waitForResponse((response) => {
     const request = response.request();
     return (
@@ -225,13 +230,20 @@ async function runProjectOperation(page, button, confirmationLabel) {
   if (confirmationLabel) {
     const dialog = page.locator("#confirm-dialog");
     await expect(dialog).toBeVisible();
+    if (confirmationCopy) {
+      await expect(dialog).toContainText(confirmationCopy);
+    }
     await dialog.getByRole("button", { name: confirmationLabel }).click();
   }
 
   const response = await responsePromise;
   expect(response.ok()).toBe(true);
   const operation = await response.json();
-  return waitForOperation(page, operation);
+  const finalOperation = await waitForOperation(page, operation);
+  await page.locator(".toast-close").evaluateAll((buttons) => {
+    buttons.forEach((button) => button.click());
+  });
+  return finalOperation;
 }
 
 function observeBrowserFailures(page) {
@@ -263,6 +275,15 @@ test("VM shell, policy, host details, and responsive drawer are live", async ({
   await page.goto("/#/home", {
     waitUntil: "domcontentloaded",
   });
+  await waitForHost(
+    page,
+    (candidate) =>
+      candidate.capabilities?.connection?.enabled &&
+      candidate.capabilities?.docker?.enabled,
+  );
+  await page.reload({
+    waitUntil: "domcontentloaded",
+  });
   await expect(page.locator("#sidebar-summary")).toContainText("1/1 connected");
 
   const dashboard = await currentDashboard(page);
@@ -277,20 +298,269 @@ test("VM shell, policy, host details, and responsive drawer are live", async ({
   expect(buildPolicyProject).toBeTruthy();
 
   await page.goto(`/#/hosts/${encodeURIComponent(host.id)}/summary`);
-  const managementPanel = page.locator("section.panel").filter({
-    has: page.getByRole("heading", { name: "Dockpilot management" }),
+  await expect(
+    page.getByRole("heading", {
+      name: "Host",
+      exact: true,
+    }),
+  ).toBeVisible();
+  const topLevelPanels = await page
+    .locator("#view > section.panel > .panel-header h2")
+    .allTextContents();
+  expect(topLevelPanels).toEqual(["Host", "Docker Engine", "Compose projects"]);
+
+  const hostPanel = page.locator("section.host-summary-panel");
+  const enginePanel = page.locator("section.engine-summary-panel");
+  const technicalPanel = enginePanel.locator(".engine-technical-section");
+  const cpuUsageRow = enginePanel
+    .locator("dt")
+    .filter({
+      hasText: /^CPU used \/ total$/,
+    })
+    .locator("..");
+  await expect(cpuUsageRow.locator("dd")).toHaveText(
+    /^(?:Partial · )?\d+\.\d{2} \/ \d+ logical CPUs$/,
+  );
+  const memoryUsageRow = enginePanel
+    .locator("dt")
+    .filter({
+      hasText: /^Memory used \/ total$/,
+    })
+    .locator("..");
+  await expect(memoryUsageRow.locator("dd")).toHaveText(
+    /^(?:Partial · )?\d+(?:\.\d+)? (?:B|KiB|MiB|GiB|TiB) \/ \d+(?:\.\d+)? (?:KiB|MiB|GiB|TiB) \(\d+(?:\.\d+)?%\)$/,
+  );
+  const observedUsageRow = enginePanel
+    .locator("dt")
+    .filter({
+      hasText: /^Stats observed$/,
+    })
+    .locator("..");
+  await expect(observedUsageRow.locator("dd")).not.toHaveText(
+    /Loading|Unavailable/,
+  );
+  await expect(
+    technicalPanel.getByText("Engine API version", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    technicalPanel.locator("dt").filter({
+      hasText: /^Engine version$|^Storage driver$/,
+    }),
+  ).toHaveCount(0);
+  const technicalColumnCount = await technicalPanel
+    .locator(".definition-list")
+    .evaluate((element) => {
+      return getComputedStyle(element).gridTemplateColumns.split(" ").length;
+    });
+  expect(technicalColumnCount).toBe(2);
+  const wrappedTechnicalLabels = await technicalPanel
+    .locator("dt")
+    .evaluateAll((elements) => {
+      return elements
+        .filter((element) => {
+          const textRange = document.createRange();
+          textRange.selectNodeContents(element);
+          return textRange.getClientRects().length > 1;
+        })
+        .map((element) => element.textContent.trim());
+    });
+  expect(wrappedTechnicalLabels).toEqual([]);
+  expect(
+    await technicalPanel.evaluate((element) => {
+      return getComputedStyle(element).borderTopWidth;
+    }),
+  ).toBe("0px");
+
+  await expect(hostPanel).toContainText("Compose discovery · Available");
+  await expect(hostPanel).toContainText("Operation recovery · Available");
+  await expect(hostPanel).not.toContainText("operation_recovery");
+  await expect(hostPanel).not.toContainText("fs_read");
+  const metadataPosition = await hostPanel
+    .getByText("Session source IP", {
+      exact: true,
+    })
+    .boundingBox();
+  const capabilitiesPosition = await hostPanel
+    .getByRole("heading", {
+      name: "Capabilities",
+      exact: true,
+    })
+    .boundingBox();
+  expect(metadataPosition).not.toBeNull();
+  expect(capabilitiesPosition).not.toBeNull();
+  expect(metadataPosition.y).toBeLessThan(capabilitiesPosition.y);
+  expect(
+    await hostPanel.locator(".management-capabilities").evaluate((element) => {
+      return getComputedStyle(element).borderTopWidth;
+    }),
+  ).toBe("0px");
+  const capabilityColumnCount = await hostPanel
+    .locator(".capability-grid")
+    .evaluate((element) => {
+      return getComputedStyle(element).gridTemplateColumns.split(" ").length;
+    });
+  expect(capabilityColumnCount).toBe(4);
+
+  await page.screenshot({
+    path: `${evidenceDirectory}/host-summary.png`,
+    fullPage: true,
   });
-  await expect(managementPanel).toContainText("discovery · Available");
-  await expect(managementPanel).toContainText("operation_recovery · Available");
+
+  await page.goto(`/#/hosts/${encodeURIComponent(host.id)}/compose`);
+  await expect(
+    page.getByRole("heading", {
+      name: host.display_name || host.id,
+      exact: true,
+      level: 1,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "Compose",
+      exact: true,
+      level: 1,
+    }),
+  ).toHaveCount(0);
+  const composeTable = page.locator("section.panel.flush table");
+  await expect(composeTable.getByRole("columnheader")).toHaveText([
+    "Project",
+    "Services",
+    "Containers",
+    "Last observed",
+    "Compose config",
+    "Needs attention",
+  ]);
+  const containerCells = await composeTable
+    .locator("tbody tr td:nth-child(3)")
+    .allTextContents();
+  expect(containerCells.length).toBeGreaterThan(0);
+  expect(
+    containerCells.every((value) => /^(?:\d+|Unavailable)$/.test(value.trim())),
+  ).toBe(true);
+  const observationCells = composeTable.locator("tbody tr td:nth-child(4)");
+  await expect(observationCells).toHaveCount(containerCells.length);
+  const observationValues = await observationCells.evaluateAll((cells) => {
+    return cells.map((cell) => ({
+      datetime: cell.querySelector("time")?.getAttribute("datetime") || "",
+      text: cell.textContent.trim(),
+    }));
+  });
+  expect(
+    observationValues.every(
+      (value) => value.datetime || value.text === "Never",
+    ),
+  ).toBe(true);
+  await expect(
+    composeTable.getByText("Last known", { exact: false }),
+  ).toHaveCount(0);
+  const resizeHandles = composeTable.getByRole("separator", {
+    name: /^Resize .+ column$/,
+  });
+  await expect(resizeHandles).toHaveCount(5);
+  const containersResizeHandle = composeTable.getByRole("separator", {
+    name: "Resize Containers column",
+  });
+  const containersHeading = containersResizeHandle.locator("..");
+  const initialContainerColumnWidth = await containersHeading.evaluate(
+    (element) => element.getBoundingClientRect().width,
+  );
+  await containersResizeHandle.focus();
+  await page.keyboard.press("ArrowRight");
+  const resizedContainerColumnWidth = await containersHeading.evaluate(
+    (element) => element.getBoundingClientRect().width,
+  );
+  expect(resizedContainerColumnWidth).toBeGreaterThan(
+    initialContainerColumnWidth,
+  );
+  const tableOverflow = await composeTable.evaluate((element) => {
+    const wrapper = element.closest(".table-wrap");
+    return wrapper.scrollWidth - wrapper.clientWidth;
+  });
+  expect(tableOverflow).toBeLessThanOrEqual(1);
+  await page.screenshot({
+    path: `${evidenceDirectory}/compose-projects.png`,
+    fullPage: true,
+  });
 
   await page.goto(
     `/#/projects/${encodeURIComponent(buildPolicyProject.uid)}/summary`,
   );
-  await expect(page.getByText("Project Up unavailable.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Up Project" })).toBeDisabled();
-  await expect(page.getByText("Build required", { exact: true })).toHaveCount(
-    2,
+  await expect(
+    page.getByRole("heading", {
+      name: "Project",
+      exact: true,
+      level: 2,
+    }),
+  ).toBeVisible();
+  const projectHeaderActions = await page
+    .locator(".page-header .page-actions button")
+    .allTextContents();
+  expect(projectHeaderActions).toEqual([
+    "Pull",
+    "Up",
+    "Down",
+    "Start",
+    "Stop",
+    "Restart",
+  ]);
+  const projectSummaryPanels = await page
+    .locator("#view > section.panel > .panel-header h2")
+    .allTextContents();
+  expect(projectSummaryPanels).toEqual([
+    "Project",
+    "Containers",
+    "Services needing attention",
+  ]);
+  const projectPanel = page.locator("section.project-summary-panel");
+  const runtimePanel = page.locator("section.project-runtime-panel");
+  await expect(
+    projectPanel.getByRole("heading", {
+      name: "Dockpilot management",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(projectPanel.getByText("Project directory")).toBeVisible();
+  await expect(runtimePanel.getByText("Services in model")).toBeVisible();
+  await expect(
+    runtimePanel.getByRole("term").filter({ hasText: /^Containers$/ }),
+  ).toBeVisible();
+  const attentionPanel = page.locator(
+    "section.project-service-attention-panel",
   );
+  await expect(
+    attentionPanel.getByText("Build required").first(),
+  ).toBeVisible();
+  await expect(attentionPanel).toContainText(
+    "Services excluded by inactive profiles are not treated as failures",
+  );
+  await expect(page.locator("section.project-services-panel")).toHaveCount(0);
+  await page.getByRole("link", { name: "Services", exact: true }).click();
+  const servicesPanel = page.locator("section.project-services-panel");
+  await expect(servicesPanel.getByRole("columnheader")).toHaveText([
+    "Service",
+    "Status",
+    "Containers",
+    "Health",
+    "Image",
+    "Build",
+    "Pull policy",
+    "Profiles",
+    "Depends on",
+    "Ports",
+    "",
+  ]);
+  await expect(page.getByText("Project Up unavailable.")).toBeVisible();
+  await expect(
+    page
+      .locator(".page-header")
+      .getByRole("button", { name: "Up", exact: true }),
+  ).toBeDisabled();
+  await expect(page.getByText("Build required", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole("cell", { name: "Required" })).toHaveCount(2);
   await page.screenshot({
     path: `${evidenceDirectory}/build-policy-before-mutation.png`,
     fullPage: true,
@@ -332,14 +602,19 @@ test("VM Compose mutations use only admitted image-backed targets", async ({
   const { buildPolicyProject, normalProject } = liveContext(dashboard);
 
   await page.goto(
-    `/#/projects/${encodeURIComponent(buildPolicyProject.uid)}/summary`,
+    `/#/projects/${encodeURIComponent(buildPolicyProject.uid)}/services`,
   );
   const mixedServiceRow = page.locator("tbody tr").filter({
     hasText: "image-and-build",
   });
+  await mixedServiceRow
+    .getByRole("button", { name: "Actions for image-and-build Service" })
+    .click();
   const mixedUp = await runProjectOperation(
     page,
-    mixedServiceRow.getByRole("button", { name: "Up" }),
+    page
+      .locator("#service-actions-menu")
+      .getByRole("menuitem", { name: "Up", exact: true }),
   );
   expect(mixedUp.kind).toBe("compose.up");
   expect(mixedUp.target).toBe("image-and-build");
@@ -350,13 +625,21 @@ test("VM Compose mutations use only admitted image-backed targets", async ({
   );
   const pull = await runProjectOperation(
     page,
-    page.getByRole("button", { name: "Pull Images" }),
+    page
+      .locator(".page-header")
+      .getByRole("button", { name: "Pull", exact: true }),
+    "Pull",
+    "It will not start Containers, build Images, or fall back to a build.",
   );
   expect(pull.kind).toBe("compose.pull");
 
   const up = await runProjectOperation(
     page,
-    page.getByRole("button", { name: "Up Project" }),
+    page
+      .locator(".page-header")
+      .getByRole("button", { name: "Up", exact: true }),
+    "Up",
+    "It always uses --no-build and never builds Images.",
   );
   expect(up.kind).toBe("compose.up");
 
@@ -380,10 +663,48 @@ test("VM Compose mutations use only admitted image-backed targets", async ({
   expect(start.kind).toBe("compose.start");
 
   await page.goto(
+    `/#/projects/${encodeURIComponent(normalProject.uid)}/services`,
+  );
+  const webServiceRow = page.locator("tbody tr").filter({
+    has: page
+      .locator('td[data-label="Service"]')
+      .getByText("web", { exact: true }),
+  });
+  const openWebServiceAction = async (label) => {
+    await webServiceRow
+      .getByRole("button", { name: "Actions for web Service" })
+      .click();
+    return page
+      .locator("#service-actions-menu")
+      .getByRole("menuitem", { name: label, exact: true });
+  };
+  const serviceStop = await runProjectOperation(
+    page,
+    await openWebServiceAction("Stop"),
+  );
+  expect(serviceStop.kind).toBe("compose.stop");
+  expect(serviceStop.target).toBe("web");
+
+  const serviceStart = await runProjectOperation(
+    page,
+    await openWebServiceAction("Start"),
+  );
+  expect(serviceStart.kind).toBe("compose.start");
+  expect(serviceStart.target).toBe("web");
+
+  const serviceRestart = await runProjectOperation(
+    page,
+    await openWebServiceAction("Restart"),
+    "Restart",
+  );
+  expect(serviceRestart.kind).toBe("compose.restart");
+  expect(serviceRestart.target).toBe("web");
+
+  await page.goto(
     `/#/projects/${encodeURIComponent(normalProject.uid)}/containers`,
   );
   await expect(
-    page.getByText("Profile inactive", { exact: true }),
+    page.getByText("Excluded by profile", { exact: true }),
   ).toBeVisible();
 
   await page.goto(
@@ -404,6 +725,102 @@ test("VM Compose mutations use only admitted image-backed targets", async ({
     path: `${evidenceDirectory}/successful-operations.png`,
     fullPage: true,
   });
+
+  expect(browserFailures).toEqual([]);
+});
+
+test("VM Container actions target one Container and enforce protection", async ({
+  page,
+}) => {
+  const browserFailures = observeBrowserFailures(page);
+  await page.goto("/#/home");
+  const { host } = liveContext(await currentDashboard(page));
+  const containers = await jsonFromPage(
+    page,
+    `/api/v1/hosts/${encodeURIComponent(host.id)}/containers`,
+  );
+  const target = containers.find(
+    (container) =>
+      container.compose_project === "dockpilot-acceptance-normal" &&
+      container.compose_service === "nolog" &&
+      !container.one_off &&
+      !container.orphan,
+  );
+  const protectedContainer = containers.find(
+    (container) => container.protected,
+  );
+  expect(target).toBeTruthy();
+  expect(protectedContainer).toBeTruthy();
+  const targetName = target.names?.join(", ") || target.id.slice(0, 12);
+  const protectedName =
+    protectedContainer.names?.join(", ") || protectedContainer.id.slice(0, 12);
+  const route = `/#/hosts/${encodeURIComponent(host.id)}/containers`;
+
+  const openActions = async (name) => {
+    await page
+      .getByRole("button", {
+        name: `Actions for ${name}`,
+        exact: true,
+      })
+      .click();
+    const menu = page.locator("#container-actions-menu");
+    await expect(menu).toBeVisible();
+    return menu;
+  };
+
+  await page.goto(route);
+  let menu = await openActions(targetName);
+  const stop = await runProjectOperation(
+    page,
+    menu.getByRole("menuitem", { name: "Stop", exact: true }),
+  );
+  expect(stop.kind).toBe("container.stop");
+  expect(stop.target).toBe(target.id);
+
+  await page.goto(route);
+  menu = await openActions(targetName);
+  await expect(
+    menu.getByRole("menuitem", { name: "Start", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    menu.getByRole("menuitem", { name: "Remove", exact: true }),
+  ).toBeEnabled();
+  await menu.getByRole("menuitem", { name: "Remove", exact: true }).click();
+  const removeConfirmation = page.locator("#confirm-dialog");
+  await expect(removeConfirmation).toContainText(
+    "does not remove attached Volumes",
+  );
+  await removeConfirmation.getByRole("button", { name: "Cancel" }).click();
+
+  menu = await openActions(targetName);
+  const start = await runProjectOperation(
+    page,
+    menu.getByRole("menuitem", { name: "Start", exact: true }),
+  );
+  expect(start.kind).toBe("container.start");
+  expect(start.target).toBe(target.id);
+
+  await page.goto(route);
+  menu = await openActions(targetName);
+  const restart = await runProjectOperation(
+    page,
+    menu.getByRole("menuitem", { name: "Restart", exact: true }),
+    "Restart",
+    "This interrupts only the selected Container.",
+  );
+  expect(restart.kind).toBe("container.restart");
+  expect(restart.target).toBe(target.id);
+
+  await page.goto(route);
+  menu = await openActions(protectedName);
+  await expect(menu).toContainText("protected");
+  for (const label of ["Stop", "Restart", "Remove"]) {
+    await expect(
+      menu.getByRole("menuitem", { name: label, exact: true }),
+    ).toBeDisabled();
+  }
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
 
   expect(browserFailures).toEqual([]);
 });
@@ -482,7 +899,7 @@ test("VM runtime distinguishes one-off and orphan Containers and exposes live In
   await expect(page.getByText("One-off", { exact: true })).toBeVisible();
   await expect(page.getByText("Orphan", { exact: true })).toBeVisible();
   await expect(
-    page.getByText("Profile inactive", { exact: true }),
+    page.getByText("Excluded by profile", { exact: true }),
   ).toBeVisible();
 
   const webService = runtime.services.find((service) => service.name === "web");
@@ -504,6 +921,23 @@ test("VM runtime distinguishes one-off and orphan Containers and exposes live In
   await expect(inspector).toContainText("/etc/acceptance/settings.conf");
   await expect(inspector).toContainText("acceptance-web");
 
+  const resizeHandle = page.locator("#inspector-resize-handle");
+  await expect(resizeHandle).toBeVisible();
+  const initialInspectorWidth = (await inspector.boundingBox()).width;
+  const handleBox = await resizeHandle.boundingBox();
+  expect(handleBox).not.toBeNull();
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(handleBox.x - 72, handleBox.y + 100);
+  await page.mouse.up();
+  const draggedInspectorWidth = (await inspector.boundingBox()).width;
+  expect(draggedInspectorWidth).toBeGreaterThan(initialInspectorWidth + 50);
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem("dockpilot.inspector-width.v1"),
+    ),
+  ).toBe(String(Math.round(draggedInspectorWidth)));
+
   const networkName = "dockpilot-acceptance-normal_acceptance-net";
   const networks = await jsonFromPage(
     page,
@@ -522,13 +956,21 @@ test("VM runtime distinguishes one-off and orphan Containers and exposes live In
   await expect(inspector).toContainText("10.51.0.0/24");
   await expect(inspector).toContainText("fd00:51::/64");
   await expect(inspector).toContainText("dockpilot-acceptance-normal-web-1");
+  expect(
+    Math.abs((await inspector.boundingBox()).width - draggedInspectorWidth),
+  ).toBeLessThanOrEqual(1);
+
+  await resizeHandle.focus();
+  await page.keyboard.press("ArrowRight");
+  const keyboardInspectorWidth = (await inspector.boundingBox()).width;
+  expect(draggedInspectorWidth - keyboardInspectorWidth).toBe(16);
 
   const volumeName = "dockpilot-acceptance-normal_acceptance-data";
   await page.goto(
     `/#/hosts/${encodeURIComponent(host.id)}/volumes` +
       `?inspect=${encodeURIComponent(volumeName)}`,
   );
-  await expect(inspector).toContainText("Container references");
+  await expect(inspector).toContainText("Containers using this Volume");
   await expect(inspector).toContainText("dockpilot-acceptance-normal-web-1");
   await expect(inspector).not.toContainText("Size 0 B");
 
@@ -544,8 +986,16 @@ test("VM runtime distinguishes one-off and orphan Containers and exposes live In
     `/#/hosts/${encodeURIComponent(host.id)}/images` +
       `?inspect=${encodeURIComponent(alpine.id)}`,
   );
-  await expect(inspector).toContainText("Container usage");
+  await expect(inspector).toContainText("Containers using this Image");
   await expect(inspector).toContainText("dockpilot-acceptance-normal-web-1");
+  expect(
+    Math.abs((await inspector.boundingBox()).width - keyboardInspectorWidth),
+  ).toBeLessThanOrEqual(1);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth,
+    ),
+  ).toBeLessThanOrEqual(1);
 
   await page.goto(`/#/hosts/${encodeURIComponent(host.id)}/containers`);
   const agentRow = page.locator("tbody tr").filter({
@@ -577,6 +1027,20 @@ test("VM Logs stream Engine output, clear only the browser, and explain unsuppor
   });
   const webContainerID = await webOption.getAttribute("value");
   expect(webContainerID).toBeTruthy();
+  await expect(page.locator("#logs-agent")).toHaveAttribute("type", "hidden");
+  const logFilterColumnCount = await page
+    .locator(".logs-filter-grid")
+    .evaluate((element) => {
+      return getComputedStyle(element).gridTemplateColumns.split(" ").length;
+    });
+  expect(logFilterColumnCount).toBe(5);
+  const logControlsBox = await page.locator(".logs-controls").boundingBox();
+  expect(logControlsBox).not.toBeNull();
+  expect(logControlsBox.height).toBeLessThan(150);
+  await page.screenshot({
+    path: `${evidenceDirectory}/project-logs-controls.png`,
+    fullPage: true,
+  });
   await containerSelect.selectOption(webContainerID);
   await page.getByRole("button", { name: "Start stream" }).click();
   await expect(page.locator("#logs-output")).toContainText(
@@ -628,9 +1092,30 @@ test("VM Files enforce reveal, optimistic concurrency, backup, and restore bound
   expect(webContainerBefore).toBeTruthy();
 
   await page.goto(`/#/projects/${encodeURIComponent(normalProject.uid)}/files`);
-  await page.getByRole("button", { name: "Resolved config (masked)" }).click();
+  const firstSourceGroup = page.locator(".source-group").first();
+  const firstSourceHeading = firstSourceGroup.getByRole("heading");
+  const firstSourceItem = firstSourceGroup.locator(".source-link").first();
+  await expect(firstSourceHeading).toBeVisible();
+  await expect(firstSourceItem).toBeVisible();
+  expect(
+    await firstSourceHeading.evaluate((element) => {
+      return getComputedStyle(element).borderLeftWidth;
+    }),
+  ).toBe("3px");
+  expect(
+    await firstSourceItem.evaluate((element) => {
+      return getComputedStyle(element).paddingLeft;
+    }),
+  ).toBe("24px");
+  await page.screenshot({
+    path: `${evidenceDirectory}/project-files-hierarchy.png`,
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "docker compose config (masked)" })
+    .click();
   await expect(page.locator("#editor-title")).toHaveText(
-    "Resolved config — masked",
+    "docker compose config — masked",
   );
   await expect(page.locator("#file-editor")).not.toHaveValue(
     /fixture-secret-value/,
@@ -642,11 +1127,11 @@ test("VM Files enforce reveal, optimistic concurrency, backup, and restore bound
   await page.getByRole("button", { name: "Reveal resolved values" }).click();
   const revealDialog = page.locator("#confirm-dialog");
   await expect(revealDialog).toContainText(
-    "Resolved configuration may contain sensitive environment values.",
+    "docker compose config output may contain resolved sensitive values.",
   );
   await revealDialog.getByRole("button", { name: "Reveal" }).click();
   await expect(page.locator("#editor-title")).toHaveText(
-    "Resolved config — revealed",
+    "docker compose config — revealed",
   );
   await expect(page.locator("#file-editor")).toHaveValue(
     /fixture-secret-value/,
@@ -1012,7 +1497,7 @@ test("VM project lock rejects a mutation storm and cancellation remains bounded"
   }
 });
 
-test("VM Live Metrics survives rapid route churn and confirmation focus is contained", async ({
+test("VM Container stats survives rapid route churn and confirmation focus is contained", async ({
   page,
 }) => {
   const browserFailures = observeBrowserFailures(page);
@@ -1020,12 +1505,29 @@ test("VM Live Metrics survives rapid route churn and confirmation focus is conta
   const { host, normalProject } = liveContext(await currentDashboard(page));
 
   await page.goto(`/#/hosts/${encodeURIComponent(host.id)}/metrics`);
+  await expect(
+    page.getByRole("heading", { name: "Container stats" }),
+  ).toBeVisible();
+  await expect(page.locator("#metrics-table th")).toHaveText([
+    "Name",
+    "CPU %",
+    "Memory usage / limit",
+    "Net I/O (RX / TX)",
+    "Block I/O (read / write)",
+    "State",
+  ]);
   await expect(page.locator("#metrics-status")).toContainText("Observed", {
     timeout: 30_000,
   });
   await expect(page.locator("#metrics-table tbody tr").first()).toContainText(
-    "Docker workload",
+    "All containers",
   );
+  await expect(page.locator("#metrics-table tbody tr").first()).toContainText(
+    "No container memory limit",
+  );
+  await expect(
+    page.locator("#metrics-table tbody tr").first(),
+  ).not.toContainText("Unbounded");
   await expect(page.locator("#metrics-table")).toContainText(
     "dockpilot-acceptance-normal",
   );
@@ -1067,7 +1569,7 @@ test("VM Live Metrics survives rapid route churn and confirmation focus is conta
     }
   }, routes);
   await expect(
-    page.getByRole("heading", { name: "Dockpilot management" }),
+    page.getByRole("heading", { name: "Host", exact: true }),
   ).toBeVisible();
   expect(browserFailures).toEqual([]);
 });
@@ -1123,7 +1625,9 @@ test("VM reports Agent, Compose, and Docker failures and recovers each dependenc
       `/#/projects/${encodeURIComponent(normalProject.uid)}/summary`,
     );
     await expect(
-      page.getByRole("button", { name: "Up Project" }),
+      page
+        .locator(".page-header")
+        .getByRole("button", { name: "Up", exact: true }),
     ).toBeDisabled();
     await expect(
       page.getByRole("button", { name: "Restart", exact: true }),
@@ -1157,7 +1661,9 @@ test("VM reports Agent, Compose, and Docker failures and recovers each dependenc
       `/#/projects/${encodeURIComponent(normalProject.uid)}/summary`,
     );
     await expect(
-      page.getByRole("button", { name: "Up Project" }),
+      page
+        .locator(".page-header")
+        .getByRole("button", { name: "Up", exact: true }),
     ).toBeDisabled();
   } finally {
     await vmExec("sudo chmod 660 /var/run/docker.sock");
@@ -1236,6 +1742,7 @@ test("VM Compose Down removes runtime objects, retains data, and Up restores ser
     page,
     page.getByRole("button", { name: "Down", exact: true }),
     "Down",
+    "Named Volumes and external Networks or Volumes will be retained.",
   );
   expect(down.kind).toBe("compose.down");
 
@@ -1263,7 +1770,11 @@ test("VM Compose Down removes runtime objects, retains data, and Up restores ser
 
   const up = await runProjectOperation(
     page,
-    page.getByRole("button", { name: "Up Project" }),
+    page
+      .locator(".page-header")
+      .getByRole("button", { name: "Up", exact: true }),
+    "Up",
+    "It always uses --no-build and never builds Images.",
   );
   expect(up.kind).toBe("compose.up");
   expect(up.output_tail).not.toContain("Building");

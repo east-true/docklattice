@@ -852,7 +852,8 @@ func TestEmbeddedLiveUIIsAccessibleAndUsesFetchWithoutReconnect(t *testing.T) {
 	handler.ServeHTTP(index, httptest.NewRequest(http.MethodGet, "/", nil))
 	html := index.Body.String()
 	for _, required := range []string{
-		`<label for="logs-agent">`, `role="log"`, `aria-live="polite"`,
+		`<input id="logs-agent" name="agent_id" type="hidden" />`,
+		`for="logs-container"`, `for="logs-find"`, `role="log"`, `aria-live="polite"`,
 		`<label for="metrics-container">`, `id="metrics-hierarchy"`, `id="metrics-top"`,
 	} {
 		if !strings.Contains(html, required) {
@@ -860,15 +861,20 @@ func TestEmbeddedLiveUIIsAccessibleAndUsesFetchWithoutReconnect(t *testing.T) {
 		}
 	}
 	if strings.Contains(html, `<svg`) || strings.Contains(html, `stats-chart`) {
-		t.Fatal("Live Metrics UI reintroduced a forbidden chart/history view")
+		t.Fatal("Container stats UI reintroduced a forbidden chart/history view")
 	}
 	script := httptest.NewRecorder()
 	handler.ServeHTTP(script, httptest.NewRequest(http.MethodGet, "/app.js", nil))
 	js := script.Body.String()
 	if !strings.Contains(js, "MAX_STATS_SAMPLES = 120") || !strings.Contains(js, "fetch(url") || !strings.Contains(js, "const warning = value.enabled && reason") ||
 		!strings.Contains(js, "button.title = capability.reason") || strings.Contains(js, "EventSource") ||
-		strings.Contains(js, "setInterval") || strings.Contains(js, "setTimeout") {
+		strings.Contains(js, "setInterval") {
 		t.Fatalf("browser streaming contract missing or reconnect present")
+	}
+	const summaryTimeout = "window.setTimeout(() => controller.abort(), 8000)"
+	if strings.Count(js, "setTimeout") != 2 || !strings.Contains(js, summaryTimeout) ||
+		!strings.Contains(js, "function operationPollDelay(milliseconds, signal)") {
+		t.Fatal("browser timers are not limited to Summary timeout and operation polling")
 	}
 }
 

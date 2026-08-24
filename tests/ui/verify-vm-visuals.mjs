@@ -175,6 +175,105 @@ async function verifyViewport(browser, viewport) {
       await expect(inspector).toBeVisible();
     }
 
+    if (viewport.route === "host-summary") {
+      await expect(
+        page.getByRole("heading", {
+          name: "Host",
+          exact: true,
+        }),
+      ).toBeVisible();
+      const topLevelPanels = await page
+        .locator("#view > section.panel > .panel-header h2")
+        .allTextContents();
+      expect(topLevelPanels).toEqual([
+        "Host",
+        "Docker Engine",
+        "Compose projects",
+      ]);
+
+      const hostPanel = page.locator("section.host-summary-panel");
+      const enginePanel = page.locator("section.engine-summary-panel");
+      const technicalPanel = enginePanel.locator(".engine-technical-section");
+      const cpuUsageRow = enginePanel
+        .locator("dt")
+        .filter({
+          hasText: /^CPU used \/ total$/,
+        })
+        .locator("..");
+      await expect(cpuUsageRow.locator("dd")).toHaveText(
+        /^(?:Partial · )?\d+\.\d{2} \/ \d+ logical CPUs$/,
+      );
+      const memoryUsageRow = enginePanel
+        .locator("dt")
+        .filter({
+          hasText: /^Memory used \/ total$/,
+        })
+        .locator("..");
+      await expect(memoryUsageRow.locator("dd")).toHaveText(
+        /^(?:Partial · )?\d+(?:\.\d+)? (?:B|KiB|MiB|GiB|TiB) \/ \d+(?:\.\d+)? (?:KiB|MiB|GiB|TiB) \(\d+(?:\.\d+)?%\)$/,
+      );
+      await expect(
+        technicalPanel.getByText("Engine API version", {
+          exact: true,
+        }),
+      ).toBeVisible();
+      const technicalColumnCount = await technicalPanel
+        .locator(".definition-list")
+        .evaluate((element) => {
+          return getComputedStyle(element).gridTemplateColumns.split(" ")
+            .length;
+        });
+      expect(technicalColumnCount).toBe(viewport.width > 1050 ? 2 : 1);
+      const wrappedTechnicalLabels = await technicalPanel
+        .locator("dt")
+        .evaluateAll((elements) => {
+          return elements
+            .filter((element) => {
+              const textRange = document.createRange();
+              textRange.selectNodeContents(element);
+              return textRange.getClientRects().length > 1;
+            })
+            .map((element) => element.textContent.trim());
+        });
+      expect(wrappedTechnicalLabels).toEqual([]);
+      expect(
+        await technicalPanel.evaluate((element) => {
+          return getComputedStyle(element).borderTopWidth;
+        }),
+      ).toBe("0px");
+
+      const metadataPosition = await hostPanel
+        .getByText("Session source IP", {
+          exact: true,
+        })
+        .boundingBox();
+      const capabilitiesPosition = await hostPanel
+        .getByRole("heading", {
+          name: "Capabilities",
+          exact: true,
+        })
+        .boundingBox();
+      expect(metadataPosition).not.toBeNull();
+      expect(capabilitiesPosition).not.toBeNull();
+      expect(metadataPosition.y).toBeLessThan(capabilitiesPosition.y);
+      expect(
+        await hostPanel
+          .locator(".management-capabilities")
+          .evaluate((element) => {
+            return getComputedStyle(element).borderTopWidth;
+          }),
+      ).toBe("0px");
+      const capabilityColumnCount = await hostPanel
+        .locator(".capability-grid")
+        .evaluate((element) => {
+          return getComputedStyle(element).gridTemplateColumns.split(" ")
+            .length;
+        });
+      expect(capabilityColumnCount).toBe(
+        viewport.width > 1050 ? 4 : viewport.width > 480 ? 2 : 1,
+      );
+    }
+
     if (viewport.width <= 768) {
       await expect(
         page.getByRole("button", { name: "Toggle navigation" }),
