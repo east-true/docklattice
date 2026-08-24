@@ -872,9 +872,11 @@ func TestEmbeddedLiveUIIsAccessibleAndUsesFetchWithoutReconnect(t *testing.T) {
 		t.Fatalf("browser streaming contract missing or reconnect present")
 	}
 	const summaryTimeout = "window.setTimeout(() => controller.abort(), 8000)"
-	if strings.Count(js, "setTimeout") != 2 || !strings.Contains(js, summaryTimeout) ||
-		!strings.Contains(js, "function operationPollDelay(milliseconds, signal)") {
-		t.Fatal("browser timers are not limited to Summary timeout and operation polling")
+	if strings.Count(js, "setTimeout") != 3 || !strings.Contains(js, summaryTimeout) ||
+		!strings.Contains(js, "function operationPollDelay(milliseconds, signal)") ||
+		!strings.Contains(js, "function scheduleAutoRefresh()") ||
+		!strings.Contains(js, "document.addEventListener(\"visibilitychange\", scheduleAutoRefresh)") {
+		t.Fatal("browser timers do not match the bounded request, polling, and refresh contracts")
 	}
 }
 

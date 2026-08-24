@@ -403,7 +403,10 @@ func fromInspect(value container.InspectResponse) Container {
 	}
 	if value.State != nil {
 		result.State = string(value.State.Status)
-		result.Status = string(value.State.Status)
+		// Docker inspect exposes State.Status, but it does not expose the
+		// human-readable Status text returned by the container-list API and
+		// rendered by `docker ps`. Keep the two contracts distinct rather than
+		// inventing a duplicate Status value from State.
 		result.ExitCode = value.State.ExitCode
 		result.OOMKilled = value.State.OOMKilled
 		result.StartedAt = value.State.StartedAt

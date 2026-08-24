@@ -10,15 +10,20 @@ const state = {
   dashboard: undefined,
   routeController: undefined,
   streamController: undefined,
+  autoRefreshTimer: undefined,
+  autoRefreshInterval: 0,
+  refreshInFlight: false,
   routeKey: "",
   metricsHistory: [],
   metricsMode: "hierarchy",
   metricsFrame: undefined,
   metricsTopOrder: [],
+  summaryWorkloadSnapshots: new Map(),
   inspectorRoute: false,
   inspectorRequest: 0,
   operationToastControllers: new Map(),
   operationsIndex: [],
+  loadedLogs: "",
   loadedFile: undefined,
   loadedSource: undefined,
   serviceActionsTrigger: undefined,
@@ -167,7 +172,7 @@ function showLoading(
 }
 
 function showError(error, title = "This view is unavailable") {
-  view.innerHTML = `<div class="state-panel"><span class="badge bad">Unavailable</span><h1>${text(title)}</h1><p>${text(error.message || error)}</p><button class="quiet-button" type="button" data-action="retry-route">Try again</button></div>`;
+  view.innerHTML = `<div class="state-panel"><span class="badge bad">Unavailable</span><h1>${text(title)}</h1><p>${text(error.message || error)}</p><div class="form-actions"><button class="quiet-button" type="button" data-action="go-back">Back</button><button class="primary-button" type="button" data-action="retry-route">Try again</button></div></div>`;
 }
 
 function badge(label, tone = "") {
@@ -214,6 +219,8 @@ const INSPECTOR_KEYBOARD_STEP = 16;
 const OPERATION_POLL_INTERVAL = 1000;
 const OPERATION_POLL_MAX_INTERVAL = 10000;
 const OPERATION_POLL_MAX_DURATION = 10 * 60 * 1000;
+const AUTO_REFRESH_STORAGE_KEY = "dockpilot.auto-refresh-interval.v1";
+const AUTO_REFRESH_INTERVALS = new Set([0, 15000, 30000, 60000, 300000]);
 const CAPABILITY_LABELS = {
   connection: "Agent connection",
   docker: "Docker Engine",
@@ -332,6 +339,23 @@ function connectionAvailable(host) {
   return Boolean(host?.capabilities?.connection?.enabled);
 }
 
+function agentConnectionStatus(host) {
+  return connectionAvailable(host) ? "Connected" : "Offline";
+}
+
+function updateIndexedHost(host) {
+  const hosts = state.dashboard?.hosts;
+  const index =
+    hosts?.findIndex((candidate) => candidate.id === host?.id) ?? -1;
+  if (index < 0) return;
+
+  hosts[index] = {
+    ...hosts[index],
+    ...host,
+  };
+  renderSidebar();
+}
+
 function parsedRoute() {
   const raw = (location.hash || "#/home").replace(/^#\/?/, "");
   const [path, query = ""] = raw.split("?", 2);
@@ -372,6 +396,82 @@ function parsedRoute() {
   return { kind: "home", key: "home" };
 }
 
+function storedAutoRefreshInterval() {
+  try {
+    const interval = Number(localStorage.getItem(AUTO_REFRESH_STORAGE_KEY));
+    return AUTO_REFRESH_INTERVALS.has(interval) ? interval : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function autoRefreshPauseReason() {
+  if (document.hidden) return "Paused while this browser tab is hidden";
+  if (document.querySelector("dialog[open]")) {
+    return "Paused while a confirmation dialog is open";
+  }
+
+  const route = parsedRoute();
+  if (route.kind === "host" && route.tab === "metrics") {
+    return "Container stats already updates as a live stream";
+  }
+  if (route.kind === "host" && route.tab === "audit") {
+    return "Paused while using Audit filters";
+  }
+  if (route.kind === "project" && route.tab === "logs") {
+    return "Log output already updates as a live stream";
+  }
+  if (route.kind === "project" && route.tab === "files") {
+    return "Paused to protect unsaved file edits";
+  }
+  if (route.kind === "project" && route.tab === "activity") {
+    return "Paused while using Activity filters";
+  }
+  if (route.kind === "search") {
+    return "Paused while entering a search query";
+  }
+  return "";
+}
+
+function clearAutoRefreshTimer() {
+  if (state.autoRefreshTimer === undefined) return;
+  window.clearTimeout(state.autoRefreshTimer);
+  state.autoRefreshTimer = undefined;
+}
+
+function updateAutoRefreshControl() {
+  const select = $("#refresh-interval");
+  const status = $("#refresh-interval-state");
+  const pauseReason = state.autoRefreshInterval ? autoRefreshPauseReason() : "";
+
+  select.value = String(state.autoRefreshInterval);
+  select.title = pauseReason || "Automatically refresh the current view";
+  status.hidden = !pauseReason;
+  status.textContent = pauseReason ? "Paused" : "";
+  status.title = pauseReason;
+}
+
+function scheduleAutoRefresh() {
+  clearAutoRefreshTimer();
+  updateAutoRefreshControl();
+  if (
+    !state.autoRefreshInterval ||
+    state.refreshInFlight ||
+    autoRefreshPauseReason()
+  ) {
+    return;
+  }
+
+  state.autoRefreshTimer = window.setTimeout(() => {
+    state.autoRefreshTimer = undefined;
+    if (autoRefreshPauseReason()) {
+      scheduleAutoRefresh();
+      return;
+    }
+    void refreshDockpilot();
+  }, state.autoRefreshInterval);
+}
+
 function renderSidebar() {
   const hosts = state.dashboard?.hosts || [];
   const projects = state.dashboard?.projects || [];
@@ -382,7 +482,7 @@ function renderSidebar() {
         const available = connectionAvailable(host);
         return `<div class="host-group">
       <a class="host-link ${route.kind === "host" && route.id === host.id ? "active" : ""}" href="#/hosts/${encodeURIComponent(host.id)}/summary" title="${text(host.capabilities?.connection?.reason || "")}">
-        <span class="host-dot ${available ? "online" : ""}" aria-hidden="true"></span><span>${text(host.display_name || host.id)}</span>
+        <span class="host-dot ${available ? "online" : "offline"}" aria-hidden="true"></span><span>${text(host.display_name || host.id)}</span>
       </a>
     </div>`;
       })
@@ -560,7 +660,7 @@ async function renderHome(signal) {
       .join(" ");
     return `<tr data-home-state="${states}"><td><a class="primary" href="#/hosts/${encodeURIComponent(host.id)}/summary">${text(host.display_name || host.id)}</a><div class="secondary mono">${text(host.id)}</div></td><td>${connectionAvailable(host) ? "Connected" : "Unavailable"}<div class="secondary">${text(host.capabilities?.connection?.reason || "")}</div></td><td>${host.capabilities?.docker?.enabled ? "Available" : `Unavailable · ${text(host.capabilities?.docker?.reason || "")}`}</td><td>${host.capabilities?.compose?.enabled ? "Available" : `Unavailable · ${text(host.capabilities?.compose?.reason || "")}`}</td><td>${host.capabilities?.discovery?.enabled && !host.project_scan?.truncated ? `Completed · ${text(formatTime(host.project_scan?.scanned_at))}` : `Incomplete · ${text(host.capabilities?.discovery?.reason || host.project_scan?.stop_reason || "")}`}</td></tr>`;
   });
-  view.innerHTML = `${pageHeader("Fleet", "Home", "Compare Docker hosts, inspect deterministic exceptions, and route to real host or Compose project context.")}<input id="home-search" class="search-field" type="search" placeholder="Search Docker hosts and Compose projects" aria-label="Search Docker hosts and Compose projects"><div class="compact-filters" aria-label="Docker host state filters"><button class="quiet-button compact-filter active" data-action="home-filter" data-filter="all">All hosts ${hosts.length}</button><button class="quiet-button compact-filter" data-action="home-filter" data-filter="docker">Docker Engine unavailable ${dockerUnavailable}</button><button class="quiet-button compact-filter" data-action="home-filter" data-filter="compose">Docker Compose unavailable ${composeUnavailable}</button><button class="quiet-button compact-filter" data-action="home-filter" data-filter="discovery">Discovery incomplete ${discoveryIncomplete}</button></div><section class="panel"><div class="panel-header"><div><h2>Needs attention</h2><p>Deterministic Dockpilot-known exceptions only.</p></div></div><ul class="attention-list">${attention.map((item) => `<li><a class="primary" href="${item.project ? `#/projects/${encodeURIComponent(item.project.uid)}/summary` : `#/hosts/${encodeURIComponent(item.host.id)}/summary`}">${text(item.project?.name || item.host?.display_name || item.host?.id)}</a><div class="secondary">${text(item.copy)}</div></li>`).join("") || `<li class="muted">No deterministic exceptions reported.</li>`}</ul></section><section class="panel flush"><div class="panel-header inset"><div><h2>Docker hosts</h2><p>No registered host disappears when a live probe fails.</p></div></div>${table(["Docker host", "Agent", "Docker Engine", "Docker Compose", "Discovery"], rows, "No Docker hosts registered")}</section>`;
+  view.innerHTML = `${pageHeader("Fleet", "Home", "Compare Docker hosts, inspect deterministic exceptions, and route to real host or Compose project context.")}<input id="home-search" class="search-field" type="search" placeholder="Search Docker hosts and Compose projects" aria-label="Search Docker hosts and Compose projects"><div class="compact-filters" aria-label="Docker host state filters"><button class="quiet-button compact-filter active" data-action="home-filter" data-filter="all">All hosts ${hosts.length}</button><button class="quiet-button compact-filter" data-action="home-filter" data-filter="docker">Docker Engine unavailable ${dockerUnavailable}</button><button class="quiet-button compact-filter" data-action="home-filter" data-filter="compose">Docker Compose unavailable ${composeUnavailable}</button><button class="quiet-button compact-filter" data-action="home-filter" data-filter="discovery">Discovery incomplete ${discoveryIncomplete}</button></div><section class="panel"><div class="panel-header"><div><h2>Needs attention</h2><p>Deterministic Dockpilot-known exceptions only.</p></div></div><ul class="attention-list">${attention.map((item) => `<li class="attention-item"><a class="primary attention-target" href="${item.project ? `#/projects/${encodeURIComponent(item.project.uid)}/summary` : `#/hosts/${encodeURIComponent(item.host.id)}/summary`}">${text(item.project?.name || item.host?.display_name || item.host?.id)}</a><span class="attention-reason" title="${text(item.copy)}">${text(item.copy)}</span></li>`).join("") || `<li class="muted">No deterministic exceptions reported.</li>`}</ul></section><section class="panel flush"><div class="panel-header inset"><div><h2>Docker hosts</h2><p>No registered host disappears when a live probe fails.</p></div></div>${table(["Docker host", "Agent", "Docker Engine", "Docker Compose", "Discovery"], rows, "No Docker hosts registered")}</section>`;
   $("#home-search").addEventListener("input", (event) => {
     const value = event.target.value.trim();
     if (value) location.hash = `#/search?q=${encodeURIComponent(value)}`;
@@ -626,12 +726,24 @@ function operationTable(operations, context = true) {
       if (!context)
         return `<tr>${lead}<td>${stateBadge(operation.status)}</td><td>${text(formatTime(operation.requested_at))}</td></tr>`;
       const host = hostByID(operation.agent_id);
+      const project = projectByUID(operation.project_uid);
+      const service = composeServiceTarget(operation);
+      const projectName = project?.name || operation.project_uid;
+      const contextName =
+        service || projectName || host?.display_name || operation.agent_id;
+      const contextDetail = service
+        ? projectName
+          ? `Compose project: ${projectName}`
+          : "Service-scoped Compose operation"
+        : operation.target
+          ? `Target: ${operation.target}`
+          : "";
       const reachable = connectionAvailable(host);
       const canCancel = operation.can_cancel && reachable;
       const cancelReason = reachable
         ? operation.cancelability_reason
         : host?.capabilities?.connection?.reason || "Agent is unavailable";
-      return `<tr>${lead}<td>${text(operation.project_uid || operation.agent_id)}${operation.target ? `<div class="secondary">Target: ${text(operation.target)}</div>` : ""}</td><td>${stateBadge(operation.status)}</td><td>${text(operation.phase || "—")}</td><td>${text(formatTime(operation.requested_at))}</td><td>${canCancel ? `<button class="quiet-button" data-action="cancel-operation" data-agent="${text(operation.agent_id)}" data-operation="${text(operation.operation_id)}">Cancel</button>` : `<span class="secondary" title="${text(cancelReason || "Not cancelable")}">Unavailable</span>`}</td></tr>`;
+      return `<tr>${lead}<td>${text(contextName)}${contextDetail ? `<div class="secondary">${text(contextDetail)}</div>` : ""}</td><td>${stateBadge(operation.status)}</td><td>${text(operation.phase || "—")}</td><td>${text(formatTime(operation.requested_at))}</td><td>${canCancel ? `<button class="quiet-button" data-action="cancel-operation" data-agent="${text(operation.agent_id)}" data-operation="${text(operation.operation_id)}">Cancel</button>` : `<span class="secondary" title="${text(cancelReason || "Not cancelable")}">Unavailable</span>`}</td></tr>`;
     }),
     "No operations recorded",
   );
@@ -652,11 +764,11 @@ async function renderHost(route, signal) {
     },
     { label: route.tab },
   ]);
-  const shell = (actions = "") =>
+  const shell = (actions = "", currentHost = host) =>
     `${pageHeader(
       "Docker host",
-      host.display_name || host.id,
-      `Agent ${host.id} · ${connectionAvailable(host) ? "connected" : "offline"}`,
+      currentHost.display_name || currentHost.id,
+      `Agent ${currentHost.id} · ${agentConnectionStatus(currentHost)}`,
       actions,
     )}${hostTabs(host.id, route.tab)}`;
   if (route.tab === "summary") {
@@ -664,9 +776,20 @@ async function renderHost(route, signal) {
       `/api/v1/hosts/${encodeURIComponent(host.id)}`,
       { signal },
     );
+    updateIndexedHost(detail);
     const engine = detail.engine_summary;
     const unavailable = !engine
-      ? `<div class="notice warning">${text(detail.engine_summary_reason || "Engine Summary is unavailable.")}</div>`
+      ? `<div class="notice warning">
+          <span class="primary">Agent connection: ${text(agentConnectionStatus(detail))}</span>
+          <div class="secondary">
+            ${text(
+              connectionAvailable(detail)
+                ? detail.engine_summary_reason ||
+                    "Docker Engine summary is unavailable."
+                : "Current Docker Engine data is unavailable until the Agent reconnects.",
+            )}
+          </div>
+        </div>`
       : "";
     const stopped = engine
       ? Math.max(
@@ -687,6 +810,12 @@ async function renderHost(route, signal) {
     const usageAvailable = Boolean(host.capabilities?.metrics?.enabled);
     const cpuCapacity = engine?.cpu_capacity;
     const memoryCapacity = engine?.memory_capacity_bytes;
+    const cachedWorkload = usageAvailable
+      ? state.summaryWorkloadSnapshots.get(host.id)
+      : undefined;
+    const cachedUsage = cachedWorkload
+      ? summaryWorkloadValues(cachedWorkload, engine)
+      : undefined;
     const engineOverview = definitionList(
       {
         "Engine version": engine?.version,
@@ -695,12 +824,15 @@ async function renderHost(route, signal) {
           : "—",
         Images: engine?.images,
         "CPU used / total": engine
-          ? `${usageAvailable ? "Loading" : "Unavailable"} / ${cpuCapacity} logical CPUs`
+          ? cachedUsage?.cpu ||
+            `${usageAvailable ? "Loading" : "Unavailable"} / ${cpuCapacity} logical CPUs`
           : "—",
         "Memory used / total": engine
-          ? `${usageAvailable ? "Loading" : "Unavailable"} / ${formatBytes(memoryCapacity)}`
+          ? cachedUsage?.memory ||
+            `${usageAvailable ? "Loading" : "Unavailable"} / ${formatBytes(memoryCapacity)}`
           : "—",
-        "Stats observed": usageAvailable ? "Loading" : "Unavailable",
+        "Stats observed":
+          cachedUsage?.observed || (usageAvailable ? "Loading" : "Unavailable"),
         "Storage driver": engine?.storage_driver,
       },
       {
@@ -747,7 +879,7 @@ async function renderHost(route, signal) {
     });
 
     view.innerHTML = `
-      ${shell()}
+      ${shell("", detail)}
       ${unavailable}
       <section class="panel host-summary-panel">
         <div class="panel-header">
@@ -795,10 +927,10 @@ async function renderHost(route, signal) {
           </a>
         </div>
         ${table(
-          ["Project", "State", "Compose config"],
+          ["Project", "Dockpilot condition", "Config drift"],
           exceptions.map(
             (project) =>
-              `<tr><td><a class="primary" href="#/projects/${encodeURIComponent(project.uid)}/summary">${text(project.name)}</a><div class="secondary mono">${text(project.working_dir)}</div></td><td>${projectStatus(project)}</td><td>${text(composeConfigState(project.drift))}</td></tr>`,
+              `<tr><td><a class="primary" href="#/projects/${encodeURIComponent(project.uid)}/summary">${text(project.name)}</a><div class="secondary mono">${text(project.working_dir)}</div></td><td>${projectCondition(project)}</td><td>${text(composeConfigState(project.drift))}</td></tr>`,
           ),
           "No Compose project exceptions",
         )}
@@ -867,7 +999,7 @@ async function renderHost(route, signal) {
             "Services",
             "Containers",
             "Last observed",
-            "Compose config",
+            "Config drift",
             "Needs attention",
           ],
           rows,
@@ -879,7 +1011,7 @@ async function renderHost(route, signal) {
   }
   if (["containers", "images", "networks", "volumes"].includes(route.tab)) {
     if (!connectionAvailable(host)) {
-      view.innerHTML = `${shell()}<div class="notice warning">${text(host.capabilities?.connection?.reason || "Agent is offline")}</div>`;
+      view.innerHTML = `${shell()}<div class="notice warning"><span class="primary">Agent connection: ${text(agentConnectionStatus(host))}</span><div class="secondary">Current Docker data is unavailable until the Agent reconnects.</div></div>`;
       return;
     }
     const items = await jsonRequest(
@@ -934,11 +1066,17 @@ function containerActionsButton(agentID, projectUID, container) {
     >…</button>
   `;
 }
+function composeContainerRole(container) {
+  if (container.orphan) return badge("Orphan", "warn");
+  if (container.one_off) return badge("One-off", "info");
+  return "Service";
+}
 function renderInventory(kind, items, agentID) {
   const headers = {
     containers: [
       "Compose project",
       "Service",
+      "Compose role",
       "Container",
       "State",
       "Health",
@@ -947,15 +1085,21 @@ function renderInventory(kind, items, agentID) {
       "Protection",
       "",
     ],
-    images: ["Repository / tags", "Image ID", "Created", "Size", "Containers"],
+    images: [
+      "Repository / tags",
+      "Image ID",
+      "Created",
+      "Size",
+      "Container references",
+    ],
     networks: ["Network", "Driver", "Scope", "Flags"],
     volumes: ["Volume", "Driver", "Scope", "Created"],
   }[kind];
   const rows = (items || []).map((item) => {
     if (kind === "containers")
-      return `<tr><td>${text(item.compose_project || "—")}</td><td>${text(item.compose_service || "—")}${item.one_off ? `<div class="secondary">One-off</div>` : ""}${item.orphan ? `<div class="secondary">Orphan</div>` : ""}</td><td><a class="row-button" href="#/hosts/${encodeURIComponent(agentID)}/containers?inspect=${encodeURIComponent(item.id)}"><span class="primary">${text((item.names || []).join(", ") || shortID(item.id))}</span><div class="secondary mono">${text(shortID(item.id))}</div></a></td><td>${stateBadge(item.state)}</td><td>${item.health ? stateBadge(item.health) : "—"}</td><td>${text(item.image || "—")}</td><td>${portsCell(item.ports)}</td><td>${item.protected ? `${badge("Protected", "warn")}<div class="secondary">${text(item.protection_reason)}</div>` : "—"}</td><td>${containerActionsButton(agentID, "", item)}</td></tr>`;
+      return `<tr><td>${text(item.compose_project || "—")}</td><td>${text(item.compose_service || "—")}</td><td>${composeContainerRole(item)}</td><td><a class="row-button" href="#/hosts/${encodeURIComponent(agentID)}/containers?inspect=${encodeURIComponent(item.id)}"><span class="primary">${text((item.names || []).join(", ") || shortID(item.id))}</span><div class="secondary mono">${text(shortID(item.id))}</div></a></td><td>${stateBadge(item.state)}</td><td>${item.health ? stateBadge(item.health) : "—"}</td><td>${text(item.image || "—")}</td><td>${portsCell(item.ports)}</td><td>${item.protected ? `${badge("Protected", "warn")}<div class="secondary">${text(item.protection_reason)}</div>` : "—"}</td><td>${containerActionsButton(agentID, "", item)}</td></tr>`;
     if (kind === "images")
-      return `<tr><td><a class="row-button" href="#/hosts/${encodeURIComponent(agentID)}/images?inspect=${encodeURIComponent(item.id)}"><span class="primary">${text((item.repo_tags || []).join(", ") || "Untagged")}</span><div class="secondary">${text((item.repo_digests || []).join(", ") || "No digest references")}</div></a></td><td class="mono">${text(shortID(item.id))}</td><td>${text(item.created_unix ? formatTime(item.created_unix * 1000) : "—")}</td><td>${text(formatBytes(item.size_bytes))}</td><td>${item.containers === 0 ? "Unused" : item.containers < 0 ? "Unknown" : `Used by ${text(item.containers)} ${item.containers === 1 ? "Container" : "Containers"}`}</td></tr>`;
+      return `<tr><td><a class="row-button" href="#/hosts/${encodeURIComponent(agentID)}/images?inspect=${encodeURIComponent(item.id)}"><span class="primary">${text((item.repo_tags || []).join(", ") || "Untagged")}</span><div class="secondary">${text((item.repo_digests || []).join(", ") || "No digest references")}</div></a></td><td class="mono">${text(shortID(item.id))}</td><td>${text(item.created_unix ? formatTime(item.created_unix * 1000) : "—")}</td><td>${text(formatBytes(item.size_bytes))}</td><td title="${text(item.containers < 0 ? "Docker did not calculate the Container reference count" : "Running and stopped Containers that reference this Image")}">${item.containers < 0 ? "Unavailable" : text(item.containers)}</td></tr>`;
     if (kind === "networks")
       return `<tr><td><a class="row-button" href="#/hosts/${encodeURIComponent(agentID)}/networks?inspect=${encodeURIComponent(item.id)}"><span class="primary">${text(item.name)}</span><div class="secondary mono">${text(shortID(item.id))}</div></a></td><td>${text(item.driver)}</td><td>${text(item.scope)}</td><td>${[item.internal && badge("Internal"), item.attachable && badge("Attachable"), item.ingress && badge("Ingress")].filter(Boolean).join(" ") || "—"}</td></tr>`;
     return `<tr><td><a class="row-button" href="#/hosts/${encodeURIComponent(agentID)}/volumes?inspect=${encodeURIComponent(item.name)}"><span class="primary">${text(item.name)}</span></a></td><td>${text(item.driver)}</td><td>${text(item.scope)}</td><td>${text(item.created_at || "—")}</td></tr>`;
@@ -980,12 +1124,7 @@ function definitionList(values, valueIDs = {}) {
     .join("")}</dl>`;
 }
 
-function renderSummaryWorkloadSnapshot(frame, engine) {
-  const cpuUsage = $("#engine-cpu-usage");
-  const memoryUsage = $("#engine-memory-usage");
-  const observed = $("#engine-usage-observed");
-  if (!cpuUsage || !memoryUsage || !observed) return;
-
+function summaryWorkloadValues(frame, engine) {
   const totals = frame.host?.totals || {};
   const pending = Number(totals.pending_count || 0);
   const qualifier = pending > 0 ? "Partial · " : "";
@@ -1001,9 +1140,24 @@ function renderSummaryWorkloadSnapshot(frame, engine) {
     ? ` (${((usedMemory / memoryCapacity) * 100).toFixed(1)}%)`
     : "";
 
-  cpuUsage.textContent = `${qualifier}${usedCPUs.toFixed(2)} / ${cpuCapacity} logical CPUs`;
-  memoryUsage.textContent = `${qualifier}${formatBytes(usedMemory)} / ${formatBytes(memoryCapacity)}${memoryPercent}`;
-  observed.textContent = formatTime(frame.observed_at);
+  return {
+    cpu: `${qualifier}${usedCPUs.toFixed(2)} / ${cpuCapacity} logical CPUs`,
+    memory: `${qualifier}${formatBytes(usedMemory)} / ${formatBytes(memoryCapacity)}${memoryPercent}`,
+    observed: formatTime(frame.observed_at),
+  };
+}
+
+function renderSummaryWorkloadSnapshot(frame, engine) {
+  const cpuUsage = $("#engine-cpu-usage");
+  const memoryUsage = $("#engine-memory-usage");
+  const observed = $("#engine-usage-observed");
+  if (!cpuUsage || !memoryUsage || !observed) return;
+
+  const values = summaryWorkloadValues(frame, engine);
+
+  cpuUsage.textContent = values.cpu;
+  memoryUsage.textContent = values.memory;
+  observed.textContent = values.observed;
 }
 
 function markSummaryWorkloadUnavailable(engine) {
@@ -1035,6 +1189,7 @@ function loadSummaryWorkloadSnapshot(host, engine, routeSignal) {
     (kind, frame) => {
       if (kind !== "matrix") return;
       receivedFrame = true;
+      state.summaryWorkloadSnapshots.set(host.id, frame);
       renderSummaryWorkloadSnapshot(frame, engine);
       if (!Number(frame.host?.totals?.pending_count || 0)) {
         controller.abort();
@@ -1049,7 +1204,10 @@ function loadSummaryWorkloadSnapshot(host, engine, routeSignal) {
     .finally(() => window.clearTimeout(timeout));
 }
 
-function projectStatus(project) {
+// This is a Dockpilot condition, not the runtime status printed by
+// `docker compose ls`. It summarizes whether Dockpilot can safely manage the
+// discovered project and gives exceptional conditions precedence.
+function projectCondition(project) {
   if (project.restore_recovery_required)
     return badge("Recovery required", "bad");
   if (project.collision) return badge("Collision", "bad");
@@ -1069,7 +1227,9 @@ function composeConfigState(value) {
   );
 }
 
-function serviceContainerState(runtimeService) {
+// A Compose Service is a model entry, not a Docker runtime object with its own
+// state. This value is a Dockpilot summary of the Service's Container states.
+function serviceRuntimeSummary(runtimeService) {
   const states = [
     ...new Set(
       (runtimeService?.containers || [])
@@ -1094,7 +1254,7 @@ function serviceActionsButton(
   buildUnavailableReason,
   runtimeUnavailableReason,
 ) {
-  const containerState = serviceContainerState(runtimeService);
+  const serviceRuntime = serviceRuntimeSummary(runtimeService);
   return `
     <button
       class="row-menu-trigger"
@@ -1103,7 +1263,7 @@ function serviceActionsButton(
       data-project="${text(project.uid)}"
       data-agent="${text(project.agent_id)}"
       data-target="${text(service.name)}"
-      data-service-status="${text(containerState)}"
+      data-service-runtime="${text(serviceRuntime)}"
       data-pull-available="${pullAvailable ? "true" : "false"}"
       data-up-available="${upAvailable ? "true" : "false"}"
       data-runtime-available="${runtimeAvailable ? "true" : "false"}"
@@ -1178,9 +1338,9 @@ function renderProjectServicesPanel(
       : service.has_build
         ? badge("Configured", "info")
         : badge("Not set");
-    const containerState = runtime
-      ? serviceContainerState(runtimeService)
-      : "Container state unavailable";
+    const serviceRuntime = runtime
+      ? serviceRuntimeSummary(runtimeService)
+      : "Service runtime unavailable";
     const health = containerHealth.join(", ") || "—";
     const profiles = (service.profiles || []).join(", ") || "Default";
     const ports = publishedPorts.length ? portsCell(publishedPorts) : "—";
@@ -1198,7 +1358,7 @@ function renderProjectServicesPanel(
     return `
       <tr>
         <td data-label="Service" title="${text(service.name)}"><span class="primary">${text(service.name)}</span></td>
-        <td data-label="Status" title="${text(containerState)}">${runtime ? stateBadge(containerState) : "—"}</td>
+        <td data-label="Service runtime" title="${text(serviceRuntime)}">${runtime ? stateBadge(serviceRuntime) : "—"}</td>
         <td data-label="Containers" title="${text(runtime ? existingContainers.length : "Unavailable")}">${runtime ? text(existingContainers.length) : "—"}</td>
         <td data-label="Health" title="${text(health)}">${text(health)}</td>
         <td data-label="Image" title="${text(service.image || "No declared Image")}">${text(service.image || "—")}</td>
@@ -1228,7 +1388,7 @@ function renderProjectServicesPanel(
       ${table(
         [
           "Service",
-          "Status",
+          "Service runtime",
           "Containers",
           "Health",
           "Image",
@@ -1288,7 +1448,7 @@ function renderProjectServiceAttention(project, runtime) {
     );
     if (unhealthy.length) {
       findings.push({
-        label: "Unhealthy",
+        label: "unhealthy",
         tone: "bad",
         evidence: `${unhealthy.length} Container${unhealthy.length === 1 ? " is" : "s are"} unhealthy`,
       });
@@ -1300,15 +1460,19 @@ function renderProjectServiceAttention(project, runtime) {
           .filter((containerState) => abnormalStates.has(containerState)),
       ),
     ];
-    if (stateExceptions.length) {
+    for (const containerState of stateExceptions) {
+      const matchingContainers = containers.filter((container) => {
+        return String(container.state).toLowerCase() === containerState;
+      });
       findings.push({
-        label: "Container state",
-        tone: stateExceptions.some((containerState) =>
-          ["dead", "exited", "removing"].includes(containerState),
-        )
+        label: containerState,
+        tone: ["dead", "exited", "removing"].includes(containerState)
           ? "bad"
           : "warn",
-        evidence: `Container state: ${stateExceptions.join(", ")}`,
+        evidence:
+          `${matchingContainers.length} Container` +
+          `${matchingContainers.length === 1 ? " has" : "s have"} Docker state ` +
+          containerState,
       });
     }
     if (!findings.length) continue;
@@ -1402,7 +1566,7 @@ async function renderProject(route, signal) {
       projectAction("Restart", "compose.restart"),
     ].join("");
     const actions = `
-      <span>${projectStatus(project)}</span>
+      <span title="Dockpilot condition">${projectCondition(project)}</span>
       <span class="project-action-group" role="group" aria-label="Apply or remove Compose project">
         ${projectLifecycleActions}
       </span>
@@ -1480,7 +1644,7 @@ async function renderProject(route, signal) {
       "Dockpilot discovery": projectRecord,
       "Compose operations": composeOperations,
       "File access": fileAccess,
-      "Compose config": composeConfigState(project.drift),
+      "Config drift": composeConfigState(project.drift),
       "Last verified": formatTime(project.last_verified_at),
     });
     const runtimeSummary = definitionList({
@@ -1554,10 +1718,6 @@ async function renderProject(route, signal) {
     );
     const rows = [];
     for (const service of runtime.services || []) {
-      if (!(service.containers || []).length)
-        rows.push(
-          `<tr><td class="primary">${text(service.name)}</td><td>—</td><td>${stateBadge(service.status)}</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`,
-        );
       for (const container of service.containers || [])
         rows.push(
           projectContainerRow(
@@ -1577,7 +1737,7 @@ async function renderProject(route, signal) {
           orphan,
         ),
       );
-    view.innerHTML = `${shell()}${runtime.observed_at ? `<div class="notice">Compose containers observed ${text(formatTime(runtime.observed_at))}.</div>` : `<div class="notice warning">Compose container observation time is unavailable.</div>`}<section class="panel flush">${table(["Service", "Container", "State", "Health", "Image", "Published ports", ""], rows, "No Services in the Compose model or observed Containers")}</section>`;
+    view.innerHTML = `${shell()}${runtime.observed_at ? `<div class="notice">Compose containers observed ${text(formatTime(runtime.observed_at))}.</div>` : `<div class="notice warning">Compose container observation time is unavailable.</div>`}<section class="panel flush">${table(["Service", "Compose role", "Container", "State", "Health", "Image", "Published ports", ""], rows, "No observed Compose Containers")}</section>`;
     if (route.inspect) {
       state.inspectorRoute = true;
       inspectContainer(project.agent_id, route.inspect);
@@ -1586,6 +1746,7 @@ async function renderProject(route, signal) {
   }
   if (route.tab === "files") {
     view.innerHTML = shell() + renderFileWorkspace(project);
+    window.requestAnimationFrame(fitFileEditorToViewport);
     bindFiles(project);
     return;
   }
@@ -1608,13 +1769,7 @@ async function renderProject(route, signal) {
 }
 
 function projectContainerRow(projectUID, agentID, service, container) {
-  const markers = [
-    container.one_off && badge("One-off", "info"),
-    container.orphan && badge("Orphan", "warn"),
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return `<tr><td><span class="primary">${text(service)}</span>${markers ? `<div class="secondary">${markers}</div>` : ""}</td><td><a class="row-button" href="#/projects/${encodeURIComponent(projectUID)}/containers?inspect=${encodeURIComponent(container.id)}"><span class="primary">${text((container.names || []).join(", ") || shortID(container.id))}</span><div class="secondary mono">${text(shortID(container.id))}</div></a></td><td>${stateBadge(container.state)}</td><td>${container.health ? stateBadge(container.health) : "—"}</td><td>${text(container.image)}</td><td>${portsCell(container.ports)}</td><td>${containerActionsButton(agentID, projectUID, container)}</td></tr>`;
+  return `<tr><td><span class="primary">${text(service)}</span></td><td>${composeContainerRole(container)}</td><td><a class="row-button" href="#/projects/${encodeURIComponent(projectUID)}/containers?inspect=${encodeURIComponent(container.id)}"><span class="primary">${text((container.names || []).join(", ") || shortID(container.id))}</span><div class="secondary mono">${text(shortID(container.id))}</div></a></td><td>${stateBadge(container.state)}</td><td>${container.health ? stateBadge(container.health) : "—"}</td><td>${text(container.image)}</td><td>${portsCell(container.ports)}</td><td>${containerActionsButton(agentID, projectUID, container)}</td></tr>`;
 }
 
 function sourceButton(kind, path, readable = true) {
@@ -1788,20 +1943,34 @@ async function renderProjectLogs(project, signal) {
     { signal },
   );
   view.append($("#logs-template").content.cloneNode(true));
+  state.loadedLogs = "";
+  window.requestAnimationFrame(fitLogsOutputToViewport);
   $("#logs-agent").value = project.agent_id;
+  const services = runtime.services || [];
   const containers = [
-    ...(runtime.services || []).flatMap((service) => service.containers || []),
+    ...services.flatMap((service) =>
+      (service.containers || []).map((container) => ({
+        ...container,
+        compose_service: container.compose_service || service.name,
+      })),
+    ),
     ...(runtime.orphans || []),
   ];
-  $("#logs-container").insertAdjacentHTML(
+  $("#logs-services").insertAdjacentHTML(
     "beforeend",
-    containers
+    services
       .map(
-        (container) =>
-          `<option value="${text(container.id)}">${text((container.names || []).join(", ") || shortID(container.id))} · ${text(container.compose_service || "orphan")}</option>`,
+        (service) =>
+          `<option value="${text(service.name)}">${text(service.name)}</option>`,
       )
       .join(""),
   );
+  const serviceSelect = $("#logs-services");
+  const containerSelect = $("#logs-container");
+  updateLogContainerOptions(containerSelect, containers, "");
+  serviceSelect.addEventListener("change", () => {
+    updateLogContainerOptions(containerSelect, containers, serviceSelect.value);
+  });
   $("#project-logs-form").addEventListener("submit", (event) => {
     event.preventDefault();
     startProjectLogs(project);
@@ -1839,26 +2008,81 @@ async function renderProjectLogs(project, signal) {
     latest.hidden = true;
   });
   $("#logs-clear").addEventListener("click", () => {
-    output.textContent = "";
+    state.loadedLogs = "";
+    renderLoadedLogs(output);
     $("#logs-status").textContent =
       "Browser view cleared. Docker Engine logs were not deleted.";
   });
   $("#logs-find").addEventListener("input", (event) => {
-    const query = event.target.value.toLowerCase(),
-      content = output.textContent.toLowerCase();
+    const query = event.target.value;
+    const matchingLines = renderLoadedLogs(output, query);
     if (!query) {
-      $("#logs-status").textContent = "Find cleared.";
+      $("#logs-status").textContent = "Showing all loaded log lines.";
       return;
     }
-    let count = 0,
-      index = 0;
-    while ((index = content.indexOf(query, index)) >= 0) {
-      count += 1;
-      index += query.length || 1;
-    }
     $("#logs-status").textContent =
-      `${count} match${count === 1 ? "" : "es"} in the loaded browser view.`;
+      `${matchingLines} matching log line${matchingLines === 1 ? "" : "s"} shown.`;
   });
+}
+
+function updateLogContainerOptions(containerSelect, containers, service) {
+  const matchingContainers = service
+    ? containers.filter((container) => container.compose_service === service)
+    : containers;
+  const allLabel = service ? `All Containers in ${service}` : "All Containers";
+  containerSelect.innerHTML = [
+    `<option value="">${text(allLabel)}</option>`,
+    ...matchingContainers.map(
+      (container) =>
+        `<option value="${text(container.id)}">${text((container.names || []).join(", ") || shortID(container.id))}</option>`,
+    ),
+  ].join("");
+}
+
+function renderLoadedLogs(output, query = $("#logs-find")?.value || "") {
+  if (!query) {
+    output.textContent = state.loadedLogs;
+    return 0;
+  }
+
+  const normalizedQuery = query.toLocaleLowerCase();
+  const matchingLines = state.loadedLogs
+    .split("\n")
+    .filter((line) => line.toLocaleLowerCase().includes(normalizedQuery));
+  output.textContent = matchingLines.join("\n");
+  return matchingLines.length;
+}
+
+function fitLogsOutputToViewport() {
+  fitElementToViewport($("#logs-output"));
+}
+
+function fitFileEditorToViewport() {
+  fitElementToViewport($("#file-editor"));
+}
+
+function fitElementToViewport(element) {
+  if (!element) return;
+
+  const main = $("#main");
+  const mainBottomPadding = Number.parseFloat(
+    window.getComputedStyle(main).paddingBottom,
+  );
+  const containerBottomPadding = Number.parseFloat(
+    window.getComputedStyle(element.parentElement).paddingBottom,
+  );
+  const minimumHeight = Number.parseFloat(
+    window.getComputedStyle(element).minHeight,
+  );
+  const elementDocumentTop =
+    element.getBoundingClientRect().top + window.scrollY;
+  const availableHeight =
+    window.innerHeight -
+    elementDocumentTop -
+    mainBottomPadding -
+    containerBottomPadding;
+
+  element.style.height = `${Math.max(minimumHeight, availableHeight)}px`;
 }
 function localTimeToRFC3339(value) {
   return value ? new Date(value).toISOString() : "";
@@ -1895,7 +2119,8 @@ async function startProjectLogs(project) {
     status.textContent = "Follow and Until cannot be used together.";
     return;
   }
-  output.textContent = "";
+  state.loadedLogs = "";
+  renderLoadedLogs(output);
   output.dataset.autoFollow = "true";
   status.textContent =
     "Streaming Docker Engine-retained logs; Dockpilot does not retain them.";
@@ -2220,9 +2445,10 @@ function appendLog(output, event) {
   let prefix = event.stream === "STDERR" ? "[stderr] " : "";
   if (event.dropped_bytes)
     prefix += `[dropped ${event.dropped_bytes} bytes / ${event.dropped_lines || 0} lines]\n`;
-  output.textContent += prefix + decodeLogData(event.data);
-  if (output.textContent.length > MAX_LOG_CHARACTERS)
-    output.textContent = `[older browser output removed]\n${output.textContent.slice(-MAX_LOG_CHARACTERS)}`;
+  state.loadedLogs += prefix + decodeLogData(event.data);
+  if (state.loadedLogs.length > MAX_LOG_CHARACTERS)
+    state.loadedLogs = `[older browser output removed]\n${state.loadedLogs.slice(-MAX_LOG_CHARACTERS)}`;
+  renderLoadedLogs(output);
   if (output.dataset.autoFollow !== "false")
     output.scrollTop = output.scrollHeight;
 }
@@ -2238,7 +2464,14 @@ function operationDisplayLabel(kind) {
   return `${action.slice(0, 1).toUpperCase()}${action.slice(1)}`;
 }
 
+function composeServiceTarget(operation) {
+  if (!String(operation.kind || "").startsWith("compose.")) return "";
+  return String(operation.target || "");
+}
+
 function operationToastContext(operation) {
+  const service = composeServiceTarget(operation);
+  if (service) return service;
   const project = projectByUID(operation.project_uid);
   const host = hostByID(operation.agent_id);
   return (
@@ -2310,9 +2543,13 @@ function operationPollDelay(milliseconds, signal) {
   });
 }
 
-async function trackOperationToast(operation, explicitLabel = "") {
+async function trackOperationToast(
+  operation,
+  explicitLabel = "",
+  explicitContext = "",
+) {
   const label = explicitLabel || operationDisplayLabel(operation.kind);
-  const context = operationToastContext(operation);
+  const context = explicitContext || operationToastContext(operation);
   const toast = showToast(operationToastOptions(operation, label, context));
   if (!operation.operation_id || !operation.agent_id) return toast;
 
@@ -2593,7 +2830,7 @@ async function startContainerOperation(button) {
         target: button.dataset.container,
       }),
     });
-    void trackOperationToast(operation, operationDisplayLabel(kind)).then(
+    void trackOperationToast(operation, operationDisplayLabel(kind), name).then(
       () => {
         if (state.routeKey === routeKey) renderRoute();
       },
@@ -2612,12 +2849,14 @@ async function startProjectOperation(button) {
   const target = button.dataset.target || "";
   const project = button.dataset.project;
   const agent = button.dataset.agent;
+  const projectName = projectByUID(project)?.name || project;
+  const actionContext = target || projectName;
 
   if (
     !target &&
     kind === "compose.pull" &&
     !(await confirmAction(
-      "Pull declared Images for this project?",
+      `Pull declared Images for ${actionContext}?`,
       "Dockpilot will download Images declared by eligible Services. It will not start Containers, build Images, or fall back to a build.",
       "Pull",
     ))
@@ -2628,7 +2867,7 @@ async function startProjectOperation(button) {
     !target &&
     kind === "compose.up" &&
     !(await confirmAction(
-      "Apply this Compose project?",
+      `Apply ${actionContext}?`,
       "Dockpilot may create, recreate, and start Containers from declared Images. It always uses --no-build and never builds Images.",
       "Up",
     ))
@@ -2638,7 +2877,7 @@ async function startProjectOperation(button) {
   if (
     kind === "compose.down" &&
     !(await confirmAction(
-      "Run Compose Down?",
+      `Run Compose Down for ${actionContext}?`,
       "Containers for Services in the current Compose model and unused Compose-created Networks will be removed. Observed one-off and orphan Containers may remain. Named Volumes and external Networks or Volumes will be retained.",
       "Down",
     ))
@@ -2648,7 +2887,9 @@ async function startProjectOperation(button) {
   if (
     kind === "compose.restart" &&
     !(await confirmAction(
-      "Restart existing Containers?",
+      target
+        ? `Restart ${target} Service?`
+        : `Restart existing Containers for ${actionContext}?`,
       "Restart does not apply Compose configuration or environment changes. Use Up to apply configuration.",
       "Restart",
     ))
@@ -2668,12 +2909,16 @@ async function startProjectOperation(button) {
         target,
       }),
     });
-    void trackOperationToast(operation, operationDisplayLabel(kind));
+    void trackOperationToast(
+      operation,
+      operationDisplayLabel(kind),
+      actionContext,
+    );
   } catch (error) {
     showToast({
       tone: "error",
       title: `${operationDisplayLabel(kind)} failed to start`,
-      message: error.message,
+      message: `${actionContext} · ${error.message}`,
     });
   } finally {
     button.disabled = false;
@@ -2921,14 +3166,17 @@ function operationInspector(operation, freshness) {
   } else if (freshness === "refreshing") {
     notice = `<div class="notice">Showing the last synchronized Server index while current Agent detail loads.</div>`;
   }
+  const project = projectByUID(operation.project_uid);
+  const service = composeServiceTarget(operation);
   openInspectorHTML(
     operation.kind || "Operation",
     notice +
       definitionList({
         "Operation ID": operation.operation_id,
         Agent: operation.agent_id,
-        Project: operation.project_uid,
-        Target: operation.target,
+        "Compose project": project?.name || operation.project_uid,
+        Service: service,
+        Target: service ? "" : operation.target,
         Status: operation.status,
         Phase: operation.phase,
         Revision: operation.revision,
@@ -3027,7 +3275,7 @@ async function inspectContainer(agentID, id) {
   const request = beginInspectorRequest();
   openInspector("Container", {
     "Container ID": id,
-    Status: "Loading current Docker details…",
+    Loading: "Current Docker details…",
   });
   try {
     const item = await jsonRequest(
@@ -3061,7 +3309,6 @@ async function inspectContainer(agentID, id) {
         Image: item.image,
         "Image ID": item.image_id,
         State: item.state,
-        Status: item.status,
         Health: item.health,
         "Exit code": item.exit_code,
         "OOM killed": item.oom_killed,
@@ -3108,7 +3355,7 @@ async function inspectImage(agentID, id) {
   const request = beginInspectorRequest();
   openInspector("Image", {
     "Image ID": id,
-    Status: "Loading current Docker details…",
+    Loading: "Current Docker details…",
   });
   try {
     const item = await jsonRequest(
@@ -3156,7 +3403,7 @@ async function inspectNetwork(agentID, id) {
   const request = beginInspectorRequest();
   openInspector("Network", {
     "Network ID": id,
-    Status: "Loading current Docker details…",
+    Loading: "Current Docker details…",
   });
   try {
     const item = await jsonRequest(
@@ -3214,7 +3461,7 @@ async function inspectVolume(agentID, name) {
   const request = beginInspectorRequest();
   openInspector("Volume", {
     Volume: name,
-    Status: "Loading current Docker details…",
+    Loading: "Current Docker details…",
   });
   try {
     const item = await jsonRequest(
@@ -3259,10 +3506,12 @@ function confirmAction(title, copy, label) {
     $("#confirm-submit").textContent = label;
     const listener = () => {
       dialog.removeEventListener("close", listener);
+      scheduleAutoRefresh();
       resolve(dialog.returnValue === "confirm");
     };
     dialog.addEventListener("close", listener);
     dialog.showModal();
+    scheduleAutoRefresh();
   });
 }
 
@@ -3438,7 +3687,7 @@ function updateColumnResizeHandle(handle) {
   if (tableElement) updateTableResizeHandles(tableElement);
 }
 
-async function renderRoute() {
+async function renderRoute({ showPending = true } = {}) {
   closeServiceActionsMenu();
   closeContainerActionsMenu();
   state.routeController?.abort();
@@ -3454,7 +3703,7 @@ async function renderRoute() {
     state.inspectorRoute = false;
   }
   renderSidebar();
-  showLoading();
+  if (showPending) showLoading();
   try {
     await loadDashboard();
     if (route.kind === "home") await renderHome(state.routeController.signal);
@@ -3466,10 +3715,43 @@ async function renderRoute() {
     else await renderOperations(state.routeController.signal, route.inspect);
     if (state.routeKey === route.key) {
       restoreStoredTableWidths();
-      $("#main").focus({ preventScroll: true });
+      const focusTarget =
+        route.kind === "search" ? $("#global-search") : $("#main");
+      focusTarget.focus({ preventScroll: true });
+      if (route.kind === "search") {
+        const end = focusTarget.value.length;
+        focusTarget.setSelectionRange(end, end);
+      }
     }
   } catch (error) {
     if (error.name !== "AbortError") showError(error);
+  } finally {
+    scheduleAutoRefresh();
+  }
+}
+
+async function refreshDockpilot() {
+  if (state.refreshInFlight) return;
+
+  state.refreshInFlight = true;
+  clearAutoRefreshTimer();
+  const refreshButton = $("#refresh");
+  refreshButton.disabled = true;
+  refreshButton.setAttribute("aria-busy", "true");
+  try {
+    await loadDashboard(true);
+    await renderRoute({ showPending: false });
+  } catch (error) {
+    showToast({
+      tone: "error",
+      title: "Refresh failed",
+      message: error.message,
+    });
+  } finally {
+    state.refreshInFlight = false;
+    refreshButton.disabled = false;
+    refreshButton.removeAttribute("aria-busy");
+    scheduleAutoRefresh();
   }
 }
 
@@ -3477,6 +3759,7 @@ $("#view").addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   const actions = {
+    "go-back": () => history.back(),
     "retry-route": () => renderRoute(),
     "home-filter": () => {
       const filter = button.dataset.filter;
@@ -3569,6 +3852,8 @@ window.addEventListener("resize", () => {
   closeServiceActionsMenu();
   closeContainerActionsMenu();
   if (!activeInspectorResize) restoreInspectorWidth();
+  fitLogsOutputToViewport();
+  fitFileEditorToViewport();
 });
 window.addEventListener(
   "scroll",
@@ -3588,16 +3873,24 @@ window.addEventListener(
   },
   true,
 );
-$("#refresh").addEventListener("click", async () => {
-  state.dashboard = undefined;
-  showLoading("Refreshing Dockpilot");
+state.autoRefreshInterval = storedAutoRefreshInterval();
+updateAutoRefreshControl();
+$("#refresh-interval").addEventListener("change", (event) => {
+  const interval = Number(event.target.value);
+  state.autoRefreshInterval = AUTO_REFRESH_INTERVALS.has(interval)
+    ? interval
+    : 0;
   try {
-    await loadDashboard(true);
-    renderRoute();
-  } catch (error) {
-    showError(error);
+    localStorage.setItem(
+      AUTO_REFRESH_STORAGE_KEY,
+      String(state.autoRefreshInterval),
+    );
+  } catch {
+    // Auto-refresh still works for this tab when browser storage is disabled.
   }
+  scheduleAutoRefresh();
 });
+$("#refresh").addEventListener("click", () => void refreshDockpilot());
 $("#inspector-close").addEventListener("click", closeInspector);
 $("#scrim").addEventListener("click", closeInspector);
 $("#sidebar-toggle").addEventListener("click", () => {
@@ -3611,7 +3904,9 @@ window.addEventListener("hashchange", () => {
   document.body.classList.remove("nav-open");
   renderRoute();
 });
+document.addEventListener("visibilitychange", scheduleAutoRefresh);
 window.addEventListener("beforeunload", () => {
+  clearAutoRefreshTimer();
   state.routeController?.abort();
   state.streamController?.abort();
   state.operationToastControllers.forEach((controller) => controller.abort());

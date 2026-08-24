@@ -238,7 +238,7 @@ const runtime = {
         {
           id: "b".repeat(64),
           names: ["payments-db-1"],
-          state: "running",
+          state: "exited",
           image: "postgres:18",
           ports: [],
         },
@@ -249,6 +249,25 @@ const runtime = {
   orphans: [],
 };
 const containerID = "a".repeat(64);
+const imageID = `sha256:${"c".repeat(64)}`;
+const images = [
+  {
+    id: imageID,
+    repo_tags: ["company/api:1.8"],
+    repo_digests: [],
+    created_unix: 1_777_808_400,
+    size_bytes: 134_217_728,
+    containers: 1,
+  },
+  {
+    id: `sha256:${"d".repeat(64)}`,
+    repo_tags: [],
+    repo_digests: [],
+    created_unix: 1_777_804_800,
+    size_bytes: 67_108_864,
+    containers: -1,
+  },
+];
 const container = {
   id: containerID,
   names: ["payments-api-1"],
@@ -324,6 +343,8 @@ async function mockAPI(page) {
       body = runtime;
     else if (url.pathname === "/api/v1/hosts/agent-east-1/containers")
       body = [container];
+    else if (url.pathname === "/api/v1/hosts/agent-east-1/images")
+      body = images;
     else if (
       url.pathname === `/api/v1/hosts/agent-east-1/containers/${containerID}`
     )
@@ -361,17 +382,52 @@ test("host-first shell renders deterministic fleet state", async ({
   });
   await expect(sidebar.getByRole("link", { name: "Search" })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Home" })).toBeVisible();
-  await expect(
-    sidebar.getByRole("link", { name: "edge-docker-01" }),
-  ).toBeVisible();
-  await expect(
-    sidebar.getByRole("link", { name: "warehouse-docker-02" }),
-  ).toBeVisible();
+  const connectedHostLink = sidebar.getByRole("link", {
+    name: "edge-docker-01",
+  });
+  const offlineHostLink = sidebar.getByRole("link", {
+    name: "warehouse-docker-02",
+  });
+  await expect(connectedHostLink).toBeVisible();
+  await expect(offlineHostLink).toBeVisible();
+  const connectedHostDot = connectedHostLink.locator(".host-dot");
+  const offlineHostDot = offlineHostLink.locator(".host-dot");
+  await expect(connectedHostDot).toHaveClass(/online/);
+  expect(
+    await connectedHostDot.evaluate((element) => {
+      return getComputedStyle(element, "::after").animationName;
+    }),
+  ).toBe("host-online-pulse");
+  await expect(offlineHostDot).toHaveClass(/offline/);
+  const [connectedColor, offlineColor] = await Promise.all([
+    connectedHostDot.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    ),
+    offlineHostDot.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    ),
+  ]);
+  expect(connectedColor).not.toBe(offlineColor);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(
+    await connectedHostDot.evaluate((element) => {
+      return getComputedStyle(element, "::after").animationName;
+    }),
+  ).toBe("none");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await expect(sidebar.getByRole("link", { name: "payments" })).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "Needs attention" }),
   ).toBeVisible();
   await expect(page.getByText("heartbeat unavailable").first()).toBeVisible();
+  const attentionItem = page.locator(".attention-item").first();
+  const attentionReason = attentionItem.locator(".attention-reason");
+  const attentionColumnCount = await attentionItem.evaluate((element) => {
+    return getComputedStyle(element).gridTemplateColumns.split(" ").length;
+  });
+  expect(attentionColumnCount).toBe(page.viewportSize().width > 800 ? 2 : 1);
+  await expect(attentionReason).toHaveAttribute("title", /.+/);
+  await expect(attentionReason).toHaveCSS("white-space", "nowrap");
   await expect(
     page.getByRole("columnheader", { name: "Docker Compose" }),
   ).toBeVisible();
@@ -379,6 +435,121 @@ test("host-first shell renders deterministic fleet state", async ({
     body: await page.screenshot({ fullPage: true }),
     contentType: "image/png",
   });
+});
+
+test("top bar controls a persisted and context-safe refresh cadence", async ({
+  page,
+}, testInfo) => {
+  let dashboardRefreshes = 0;
+  await page.route("**/api/v1/dashboard", async (route) => {
+    dashboardRefreshes += 1;
+    await route.fallback();
+  });
+
+  const refreshButton = page.getByRole("button", {
+    name: "Refresh",
+    exact: true,
+  });
+  const intervalSelect = page.locator("#refresh-interval");
+  const refreshState = page.locator("#refresh-interval-state");
+  await expect(intervalSelect.locator("option")).toHaveText([
+    "Auto off",
+    "Every 15s",
+    "Every 30s",
+    "Every 1m",
+    "Every 5m",
+  ]);
+
+  const refreshBox = await refreshButton.boundingBox();
+  const intervalBox = await intervalSelect.boundingBox();
+  expect(refreshBox).not.toBeNull();
+  expect(intervalBox).not.toBeNull();
+  expect(intervalBox.x).toBeGreaterThan(refreshBox.x);
+
+  if (testInfo.project.name === "desktop-1440") {
+    await intervalSelect.selectOption("15000");
+    await expect
+      .poll(() => dashboardRefreshes, { timeout: 20_000 })
+      .toBeGreaterThan(0);
+  }
+  await intervalSelect.selectOption("300000");
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem("dockpilot.auto-refresh-interval.v1"),
+    ),
+  ).toBe("300000");
+
+  await page.goto("/#/projects/project-payments/logs");
+  await expect(intervalSelect).toHaveValue("300000");
+  await expect(intervalSelect).toHaveAttribute(
+    "title",
+    "Log output already updates as a live stream",
+  );
+  expect(await refreshState.getAttribute("hidden")).toBeNull();
+  await expect(refreshState).toHaveText("Paused");
+
+  await page.reload();
+  await expect(intervalSelect).toHaveValue("300000");
+  await expect(intervalSelect).toHaveAttribute(
+    "title",
+    "Log output already updates as a live stream",
+  );
+
+  await page.goto("/#/hosts/agent-east-1/summary");
+  await expect(refreshState).toHaveAttribute("hidden", "");
+  const horizontalOverflow = await page.evaluate(() => {
+    return document.documentElement.scrollWidth - window.innerWidth;
+  });
+  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+});
+
+test("Refresh keeps current data visible while replacement data loads", async ({
+  page,
+}) => {
+  let releaseDashboard;
+  const dashboardBlocked = new Promise((resolve) => {
+    releaseDashboard = resolve;
+  });
+  await page.route("**/api/v1/dashboard", async (route) => {
+    await dashboardBlocked;
+    await route.fallback();
+  });
+
+  const refreshButton = page.getByRole("button", {
+    name: "Refresh",
+    exact: true,
+  });
+  await refreshButton.click();
+  await expect(refreshButton).toBeDisabled();
+  await expect(refreshButton).toHaveAttribute("aria-busy", "true");
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  await expect(page.getByText("Loading current state")).toHaveCount(0);
+  await expect(page.getByText("Refreshing Dockpilot")).toHaveCount(0);
+
+  releaseDashboard();
+  await expect(refreshButton).toBeEnabled();
+  await expect(refreshButton).not.toHaveAttribute("aria-busy");
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+});
+
+test("Home search hands keyboard focus to the Search input", async ({
+  page,
+}) => {
+  const homeSearch = page.getByLabel(
+    "Search Docker hosts and Compose projects",
+  );
+  await homeSearch.focus();
+  await page.keyboard.type("payments", { delay: 120 });
+
+  const globalSearch = page.locator("#global-search");
+  await expect(page).toHaveURL(/#\/search\?q=p$/);
+  await expect(globalSearch).toBeFocused();
+  await expect(globalSearch).toHaveValue("payments");
+
+  await globalSearch.press("End");
+  await page.keyboard.type(" api");
+  await expect(globalSearch).toBeFocused();
+  await expect(globalSearch).toHaveValue("payments api");
 });
 
 test("Host Summary separates visible Engine details without repeating overview facts", async ({
@@ -393,6 +564,18 @@ test("Host Summary separates visible Engine details without repeating overview f
 
   const hostPanel = page.locator("section.host-summary-panel");
   const enginePanel = page.locator("section.engine-summary-panel");
+  const composeExceptions = page
+    .getByRole("heading", { name: "Compose projects", exact: true })
+    .locator("xpath=ancestor::section");
+  await expect(composeExceptions.getByRole("columnheader")).toHaveText([
+    "Project",
+    "Dockpilot condition",
+    "Config drift",
+  ]);
+  const staleProject = composeExceptions.locator("tbody tr").filter({
+    hasText: "archive",
+  });
+  await expect(staleProject.locator("td").nth(1)).toHaveText("Stale");
   await expect(enginePanel).toBeVisible();
   const technicalPanel = enginePanel.locator(".engine-technical-section");
   await expect(
@@ -439,6 +622,27 @@ test("Host Summary separates visible Engine details without repeating overview f
     })
     .locator("..");
   await expect(observedUsageRow.locator("dd")).toContainText("Aug 23, 2026");
+
+  let releaseRefreshedMatrix;
+  const refreshedMatrixBlocked = new Promise((resolve) => {
+    releaseRefreshedMatrix = resolve;
+  });
+  await page.route("**/api/v1/live/matrix?*", async (route) => {
+    await refreshedMatrixBlocked;
+    await route.fallback();
+  });
+  const refreshButton = page.getByRole("button", {
+    name: "Refresh",
+    exact: true,
+  });
+  await refreshButton.click();
+  await expect(refreshButton).toBeEnabled();
+  await expect(cpuUsageRow.locator("dd")).toHaveText("2.75 / 8 logical CPUs");
+  await expect(memoryUsageRow.locator("dd")).toHaveText(
+    "4.0 GiB / 16.0 GiB (25.0%)",
+  );
+  releaseRefreshedMatrix();
+
   await expect(
     enginePanel.getByText("CPU capacity", {
       exact: true,
@@ -507,6 +711,152 @@ test("Host Summary separates visible Engine details without repeating overview f
   );
 });
 
+test("Host Summary uses one current Agent connection state", async ({
+  page,
+}) => {
+  const offlineHost = {
+    ...dashboard.hosts[0],
+    capabilities: {
+      ...dashboard.hosts[0].capabilities,
+      connection: capability(false, "agent offline"),
+    },
+  };
+  const offlineDetail = {
+    ...hostDetail,
+    ...offlineHost,
+    engine_summary: undefined,
+    engine_summary_reason: "agent offline",
+  };
+
+  await page.route("**/api/v1/dashboard", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...dashboard,
+        hosts: [offlineHost, dashboard.hosts[1]],
+      }),
+    });
+  });
+  await page.route("**/api/v1/hosts/agent-east-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(offlineDetail),
+    });
+  });
+
+  await page.goto("/#/hosts/agent-east-1/summary");
+  await page.reload();
+
+  await expect(
+    page.getByText("Agent agent-east-1 · Offline", { exact: true }),
+  ).toBeVisible();
+  const warning = page.locator(".notice.warning").first();
+  await expect(warning).toContainText("Agent connection: Offline");
+  await expect(warning).toContainText(
+    "Current Docker Engine data is unavailable until the Agent reconnects.",
+  );
+  await expect(warning).not.toHaveText(/^agent offline$/i);
+});
+
+test("Docker object and Compose summaries use source-specific state terms", async ({
+  page,
+}) => {
+  await page.goto("/#/hosts/agent-east-1/containers");
+  const containersTable = page.locator("section.panel.flush table");
+  await expect(containersTable.getByRole("columnheader")).toHaveText([
+    "Compose project",
+    "Service",
+    "Compose role",
+    "Container",
+    "State",
+    "Health",
+    "Image",
+    "Published ports",
+    "Protection",
+    "",
+  ]);
+  await expect(containersTable.locator("tbody tr").first()).toContainText(
+    "running",
+  );
+  await expect(containersTable.locator("tbody tr").first()).toContainText(
+    "healthy",
+  );
+  await expect(containersTable.locator("tbody tr").first()).toContainText(
+    "Service",
+  );
+
+  await page.goto("/#/hosts/agent-east-1/images");
+  const imagesTable = page.locator("section.panel.flush table");
+  await expect(imagesTable.getByRole("columnheader")).toHaveText([
+    "Repository / tags",
+    "Image ID",
+    "Created",
+    "Size",
+    "Container references",
+  ]);
+  const taggedImage = imagesTable.locator("tbody tr").filter({
+    hasText: "company/api:1.8",
+  });
+  await expect(taggedImage.locator("td").last()).toHaveText("1");
+  const untaggedImage = imagesTable.locator("tbody tr").filter({
+    hasText: "Untagged",
+  });
+  await expect(untaggedImage.locator("td").last()).toHaveText("Unavailable");
+
+  await page.goto("/#/projects/project-payments/summary");
+  const dbAttention = page
+    .locator("section.project-service-attention-panel tbody tr")
+    .filter({ hasText: "db" });
+  await expect(dbAttention.locator("td").nth(1)).toHaveText("exited");
+  await expect(dbAttention.locator("td").nth(1)).not.toContainText(
+    "Container state",
+  );
+
+  await page.goto("/#/projects/project-payments/services");
+  const servicesTable = page.locator("section.project-services-panel table");
+  await expect(
+    servicesTable.getByRole("columnheader", { name: "Service runtime" }),
+  ).toBeVisible();
+  await expect(
+    servicesTable.getByRole("columnheader", { name: "Status", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("unavailable live views offer only Back and Try again", async ({
+  page,
+}) => {
+  await page.route(
+    "**/api/v1/projects/project-payments/runtime",
+    async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          code: "CAPABILITY_UNAVAILABLE",
+          message: 'serverapi: agent offline: "agent-east-1"',
+        }),
+      });
+    },
+  );
+
+  await page.goto("/#/projects/project-payments/containers");
+  const unavailable = page.locator(".state-panel");
+  await expect(
+    unavailable.getByRole("heading", { name: "This view is unavailable" }),
+  ).toBeVisible();
+  await expect(unavailable.getByRole("button", { name: "Back" })).toBeVisible();
+  await expect(
+    unavailable.getByRole("button", { name: "Try again" }),
+  ).toBeVisible();
+  await expect(unavailable.getByRole("button")).toHaveCount(2);
+  await expect(unavailable.getByRole("link")).toHaveCount(0);
+
+  await unavailable.getByRole("button", { name: "Back" }).click();
+  await expect(page).toHaveURL(/#\/home$/);
+});
+
 test("operation Toast distinguishes started, completed, and failed-to-start states", async ({
   page,
 }, testInfo) => {
@@ -532,6 +882,7 @@ test("operation Toast distinguishes started, completed, and failed-to-start stat
         agent_id: request.agent_id,
         project_uid: request.project_uid,
         kind: request.kind,
+        target: request.target,
         status: "running",
         phase: "EXECUTING",
         revision: 1,
@@ -582,6 +933,9 @@ test("operation Toast distinguishes started, completed, and failed-to-start stat
   const pullConfirmation = page.locator("#confirm-dialog");
   await expect(pullConfirmation).toBeVisible();
   await expect(pullConfirmation).toContainText(
+    "Pull declared Images for payments?",
+  );
+  await expect(pullConfirmation).toContainText(
     "It will not start Containers, build Images, or fall back to a build.",
   );
   await pullConfirmation.getByRole("button", { name: "Pull" }).click();
@@ -610,6 +964,24 @@ test("operation Toast distinguishes started, completed, and failed-to-start stat
     body: await page.screenshot({ fullPage: true }),
     contentType: "image/png",
   });
+
+  await page.goto("/#/projects/project-payments/services");
+  const apiServiceRow = page.locator("tbody tr").filter({
+    has: page
+      .locator('td[data-label="Service"]')
+      .getByText("api", { exact: true }),
+  });
+  await apiServiceRow
+    .getByRole("button", { name: "Actions for api Service" })
+    .click();
+  await page
+    .locator("#service-actions-menu")
+    .getByRole("menuitem", { name: "Pull", exact: true })
+    .click();
+  const serviceToast = page.locator(".toast").first();
+  await expect(serviceToast).toContainText("api · EXECUTING");
+  await expect(serviceToast).not.toContainText("payments · EXECUTING");
+
   await operationLink.click();
   await expect(page).toHaveURL(/#\/operations\?inspect=/);
   await expect(
@@ -681,7 +1053,7 @@ test("Compose list separates current Container counts from observation time", as
     "Services",
     "Containers",
     "Last observed",
-    "Compose config",
+    "Config drift",
     "Needs attention",
   ]);
 
@@ -906,7 +1278,7 @@ test("Compose build policy is visible and blocks whole-project Up", async ({
   const servicesPanel = page.locator("section.project-services-panel");
   await expect(servicesPanel.getByRole("columnheader")).toHaveText([
     "Service",
-    "Status",
+    "Service runtime",
     "Containers",
     "Health",
     "Image",
@@ -929,9 +1301,9 @@ test("Compose build policy is visible and blocks whole-project Up", async ({
   await expect(apiServiceRow.locator('td[data-label="Containers"]')).toHaveText(
     "1",
   );
-  await expect(apiServiceRow.locator('td[data-label="Status"]')).toContainText(
-    "running",
-  );
+  await expect(
+    apiServiceRow.locator('td[data-label="Service runtime"]'),
+  ).toContainText("running");
   await expect(apiServiceRow.locator('td[data-label="Image"]')).toHaveText(
     "company/api:1.8",
   );
@@ -962,11 +1334,22 @@ test("Compose build policy is visible and blocks whole-project Up", async ({
     ).toBeEnabled();
   }
   await testInfo.attach(`service-actions-menu-${testInfo.project.name}`, {
-    body: await page.screenshot({ fullPage: true }),
+    // A full-page screenshot temporarily resizes the viewport. The product
+    // intentionally closes floating row menus on resize, so capture the
+    // visible viewport while this menu is under test.
+    body: await page.screenshot({ fullPage: false }),
     contentType: "image/png",
   });
-  await page.keyboard.press("Escape");
-  await expect(serviceActionsMenu).toBeHidden();
+  await serviceActionsMenu
+    .getByRole("menuitem", { name: "Restart", exact: true })
+    .click();
+  const serviceRestartConfirmation = page.locator("#confirm-dialog");
+  await expect(serviceRestartConfirmation).toContainText(
+    "Restart api Service?",
+  );
+  await serviceRestartConfirmation
+    .getByRole("button", { name: "Cancel" })
+    .click();
   const workerServiceRow = servicesPanel.locator("tbody tr").filter({
     hasText: "worker",
   });
@@ -1088,6 +1471,17 @@ test("Logs controls stay compact and keep browser-only search near output", asyn
 
   await expect(page.locator("#logs-agent")).toHaveAttribute("type", "hidden");
   await expect(page.locator(".logs-field")).toHaveCount(5);
+  await expect(page.locator(".logs-field > span")).toHaveText([
+    "Service",
+    "Container",
+    "Tail",
+    "Since",
+    "Until",
+  ]);
+  await expect(page.locator("#logs-services")).toHaveAttribute(
+    "name",
+    "services",
+  );
 
   const viewportWidth = page.viewportSize().width;
   const filterColumnCount = await page
@@ -1117,15 +1511,117 @@ test("Logs controls stay compact and keep browser-only search near output", asyn
     }),
   ).toBeVisible();
 
+  const logViewportFit = await page.evaluate(() => {
+    const output = document.querySelector("#logs-output");
+    const main = document.querySelector("#main");
+    const outputBounds = output.getBoundingClientRect();
+    const containerBottomPadding = Number.parseFloat(
+      getComputedStyle(output.parentElement).paddingBottom,
+    );
+    const minimumHeight = Number.parseFloat(getComputedStyle(output).minHeight);
+    const mainBottomPadding = Number.parseFloat(
+      getComputedStyle(main).paddingBottom,
+    );
+    const outputDocumentTop = outputBounds.top + window.scrollY;
+    const trailingSpace = mainBottomPadding + containerBottomPadding;
+    const availableHeight =
+      window.innerHeight - outputDocumentTop - trailingSpace;
+
+    return {
+      availableHeight,
+      bottomGap: window.innerHeight - outputBounds.bottom,
+      minimumHeight,
+      outputHeight: outputBounds.height,
+      trailingSpace,
+    };
+  });
+  if (logViewportFit.availableHeight >= logViewportFit.minimumHeight) {
+    expect(
+      Math.abs(logViewportFit.bottomGap - logViewportFit.trailingSpace),
+    ).toBeLessThanOrEqual(1);
+  } else {
+    expect(logViewportFit.outputHeight).toBeGreaterThanOrEqual(
+      logViewportFit.minimumHeight,
+    );
+  }
+
   const horizontalOverflow = await page.evaluate(() => {
     return document.documentElement.scrollWidth - window.innerWidth;
   });
   expect(horizontalOverflow).toBeLessThanOrEqual(1);
 
   await testInfo.attach(`logs-compact-controls-${testInfo.project.name}`, {
-    body: await page.screenshot({ fullPage: true }),
+    body: await page.screenshot({ fullPage: false }),
     contentType: "image/png",
   });
+});
+
+test("Find in loaded logs shows only matching log lines", async ({ page }) => {
+  const loadedLogs = [
+    "web-1 | request completed",
+    "web-1 | database timeout",
+    "worker-1 | retry scheduled",
+    "web-1 | timeout recovered",
+  ].join("\n");
+
+  let requestedLogURL = "";
+  await page.route(
+    "**/api/v1/projects/project-payments/compose/logs?*",
+    async (route) => {
+      requestedLogURL = route.request().url();
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: [
+          "event: log",
+          `data: ${JSON.stringify({
+            stream: "STDOUT",
+            data: Buffer.from(`${loadedLogs}\n`).toString("base64"),
+          })}`,
+          "",
+          "",
+        ].join("\n"),
+      });
+    },
+  );
+
+  await page.goto("/#/projects/project-payments/logs");
+  const serviceSelect = page.locator("#logs-services");
+  const containerSelect = page.locator("#logs-container");
+  await expect(serviceSelect.locator("option")).toHaveText([
+    "All Services",
+    "api",
+    "db",
+    "worker",
+  ]);
+  await serviceSelect.selectOption("api");
+  await expect(containerSelect.locator("option")).toHaveText([
+    "All Containers in api",
+    "payments-api-1",
+  ]);
+  await page.getByRole("button", { name: "Start stream" }).click();
+
+  const output = page.getByRole("log", { name: "Live project logs" });
+  await expect(output).toContainText("request completed");
+  await expect(output).toContainText("retry scheduled");
+  expect(new URL(requestedLogURL).searchParams.getAll("service")).toEqual([
+    "api",
+  ]);
+  expect(new URL(requestedLogURL).searchParams.has("container_id")).toBe(false);
+
+  await page.getByLabel("Find in loaded logs").fill("timeout");
+  await expect(output).toHaveText(
+    ["web-1 | database timeout", "web-1 | timeout recovered"].join("\n"),
+  );
+  await expect(page.locator("#logs-status")).toHaveText(
+    "2 matching log lines shown.",
+  );
+
+  await page.getByLabel("Find in loaded logs").fill("");
+  await expect(output).toHaveText(loadedLogs);
+  await expect(page.locator("#logs-status")).toHaveText(
+    "Showing all loaded log lines.",
+  );
 });
 
 test("Files distinguishes source categories from source items", async ({
@@ -1182,13 +1678,47 @@ test("Files distinguishes source categories from source items", async ({
     }),
   ).toBe("1px");
 
+  const fileViewportFit = await page.evaluate(() => {
+    const editor = document.querySelector("#file-editor");
+    const main = document.querySelector("#main");
+    const editorBounds = editor.getBoundingClientRect();
+    const containerBottomPadding = Number.parseFloat(
+      getComputedStyle(editor.parentElement).paddingBottom,
+    );
+    const mainBottomPadding = Number.parseFloat(
+      getComputedStyle(main).paddingBottom,
+    );
+    const minimumHeight = Number.parseFloat(getComputedStyle(editor).minHeight);
+    const editorDocumentTop = editorBounds.top + window.scrollY;
+    const trailingSpace = mainBottomPadding + containerBottomPadding;
+    const availableHeight =
+      window.innerHeight - editorDocumentTop - trailingSpace;
+
+    return {
+      availableHeight,
+      bottomGap: window.innerHeight - editorBounds.bottom,
+      editorHeight: editorBounds.height,
+      minimumHeight,
+      trailingSpace,
+    };
+  });
+  if (fileViewportFit.availableHeight >= fileViewportFit.minimumHeight) {
+    expect(
+      Math.abs(fileViewportFit.bottomGap - fileViewportFit.trailingSpace),
+    ).toBeLessThanOrEqual(1);
+  } else {
+    expect(fileViewportFit.editorHeight).toBeGreaterThanOrEqual(
+      fileViewportFit.minimumHeight,
+    );
+  }
+
   const horizontalOverflow = await page.evaluate(() => {
     return document.documentElement.scrollWidth - window.innerWidth;
   });
   expect(horizontalOverflow).toBeLessThanOrEqual(1);
 
   await testInfo.attach(`files-source-hierarchy-${testInfo.project.name}`, {
-    body: await page.screenshot({ fullPage: true }),
+    body: await page.screenshot({ fullPage: false }),
     contentType: "image/png",
   });
 });
@@ -1344,7 +1874,7 @@ test("Inspector requests cannot reopen an object after route navigation", async 
   );
 
   await page.goto(`/#/hosts/agent-east-1/containers?inspect=${containerID}`);
-  await expect(page.getByText("Loading current Docker details…")).toBeVisible();
+  await expect(page.getByText("Current Docker details…")).toBeVisible();
 
   await page.evaluate(() => {
     window.location.hash = "#/home";
