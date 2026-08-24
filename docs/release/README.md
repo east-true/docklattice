@@ -12,6 +12,13 @@ This directory exists because "the tests pass" is not evidence. Each gate here
 records what it ran, on which images, on which kernel, and what it deliberately
 did *not* measure.
 
+## Published version
+
+[`v0.0.0`](https://github.com/east-true/dockpilot/releases/tag/v0.0.0) is the
+first source-only pre-release. GitHub provides source archives for the tag; the
+release intentionally does not claim signed Server/Agent images or prebuilt
+binaries. Image placeholders in the installation guide remain placeholders.
+
 ## Gates
 
 | Gate | Status | What it proves |
