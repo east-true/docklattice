@@ -213,6 +213,22 @@ const operations = {
       started_at: "2026-08-23T09:58:01Z",
       output_tail: "Pulling declared Images",
     },
+    {
+      operation_id: "compose-file-write-20260823",
+      agent_id: "agent-east-1",
+      project_uid: "project-payments",
+      kind: "compose.file.write",
+      target: "compose.yaml",
+      status: "success",
+      phase: "FINALIZING",
+      revision: 3,
+      can_cancel: false,
+      cancel_mode: "NONE",
+      requested_at: "2026-08-23T09:57:00Z",
+      started_at: "2026-08-23T09:57:01Z",
+      finished_at: "2026-08-23T09:57:02Z",
+      output_tail: "Compose configuration saved",
+    },
   ],
 };
 const runtime = {
@@ -331,7 +347,14 @@ async function mockAPI(page) {
     if (url.pathname === "/api/v1/dashboard") body = dashboard;
     else if (url.pathname === "/api/v1/hosts/agent-east-1") body = hostDetail;
     else if (url.pathname === "/api/v1/operations") body = operations;
-    else if (url.pathname === "/api/v1/live/matrix") {
+    else if (
+      url.pathname.startsWith("/api/v1/agents/agent-east-1/operations/")
+    ) {
+      const operationID = decodeURIComponent(url.pathname.split("/").pop());
+      body = operations.operations.find(
+        (operation) => operation.operation_id === operationID,
+      );
+    } else if (url.pathname === "/api/v1/live/matrix") {
       await route.fulfill({
         status: 200,
         contentType: "text/event-stream",
@@ -530,6 +553,43 @@ test("Refresh keeps current data visible while replacement data loads", async ({
   await expect(refreshButton).toBeEnabled();
   await expect(refreshButton).not.toHaveAttribute("aria-busy");
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+});
+
+test("Refresh preserves the current route when detail reload fails", async ({
+  page,
+}) => {
+  await page.goto("/#/hosts/agent-east-1/summary");
+  await expect(
+    page.getByRole("heading", { name: "Docker Engine", exact: true }),
+  ).toBeVisible();
+
+  await page.route("**/api/v1/hosts/agent-east-1", async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: "AGENT_OFFLINE",
+        message: "host detail refresh fixture failed",
+      }),
+    });
+  });
+
+  const refreshButton = page.getByRole("button", {
+    name: "Refresh",
+    exact: true,
+  });
+  await refreshButton.click();
+  await expect(refreshButton).toBeEnabled();
+  await expect(
+    page.getByRole("heading", { name: "Docker Engine", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "This view is unavailable" }),
+  ).toHaveCount(0);
+  await expect(page.locator("#toast-region")).toContainText("Refresh failed");
+  await expect(page.locator("#toast-region")).toContainText(
+    "host detail refresh fixture failed",
+  );
 });
 
 test("Home search hands keyboard focus to the Search input", async ({
@@ -1967,6 +2027,28 @@ test("Operation Center keeps Agent cancelability separate from current reachabil
     ),
   ).toBeVisible();
   await expect(inspector.getByText("Pulling declared Images")).toBeVisible();
+  await inspector.getByRole("button", { name: "Close details panel" }).click();
+
+  const fileOperationRow = page
+    .getByRole("row")
+    .filter({ hasText: "compose-file-write-20260823" });
+  await fileOperationRow.getByRole("button").click();
+  const fileInspector = page.getByRole("complementary", {
+    name: "compose.file.write",
+  });
+  await expect(fileInspector).toBeVisible();
+  await expect(
+    fileInspector
+      .getByText("Service", { exact: true })
+      .locator("..")
+      .locator("dd"),
+  ).toHaveText("—");
+  await expect(
+    fileInspector
+      .getByText("Target", { exact: true })
+      .locator("..")
+      .locator("dd"),
+  ).toHaveText("compose.yaml");
   await testInfo.attach(`operations-${testInfo.project.name}`, {
     body: await page.screenshot({ fullPage: true }),
     contentType: "image/png",

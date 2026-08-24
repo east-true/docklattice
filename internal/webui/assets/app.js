@@ -2464,8 +2464,18 @@ function operationDisplayLabel(kind) {
   return `${action.slice(0, 1).toUpperCase()}${action.slice(1)}`;
 }
 
+const COMPOSE_SERVICE_OPERATION_KINDS = new Set([
+  "compose.pull",
+  "compose.up",
+  "compose.start",
+  "compose.stop",
+  "compose.restart",
+]);
+
 function composeServiceTarget(operation) {
-  if (!String(operation.kind || "").startsWith("compose.")) return "";
+  if (!COMPOSE_SERVICE_OPERATION_KINDS.has(String(operation.kind || ""))) {
+    return "";
+  }
   return String(operation.target || "");
 }
 
@@ -3687,7 +3697,7 @@ function updateColumnResizeHandle(handle) {
   if (tableElement) updateTableResizeHandles(tableElement);
 }
 
-async function renderRoute({ showPending = true } = {}) {
+async function renderRoute({ showPending = true, throwOnError = false } = {}) {
   closeServiceActionsMenu();
   closeContainerActionsMenu();
   state.routeController?.abort();
@@ -3724,7 +3734,9 @@ async function renderRoute({ showPending = true } = {}) {
       }
     }
   } catch (error) {
-    if (error.name !== "AbortError") showError(error);
+    if (error.name === "AbortError") return;
+    if (throwOnError) throw error;
+    showError(error);
   } finally {
     scheduleAutoRefresh();
   }
@@ -3740,13 +3752,15 @@ async function refreshDockpilot() {
   refreshButton.setAttribute("aria-busy", "true");
   try {
     await loadDashboard(true);
-    await renderRoute({ showPending: false });
+    await renderRoute({ showPending: false, throwOnError: true });
   } catch (error) {
-    showToast({
-      tone: "error",
-      title: "Refresh failed",
-      message: error.message,
-    });
+    if (error.name !== "AbortError") {
+      showToast({
+        tone: "error",
+        title: "Refresh failed",
+        message: error.message,
+      });
+    }
   } finally {
     state.refreshInFlight = false;
     refreshButton.disabled = false;
