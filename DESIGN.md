@@ -80,7 +80,7 @@ Do not turn the UI into a terminal theme.
 Desktop structure:
 
 ```text
-Sidebar | Main content | optional right Inspector
+Sidebar | Main content | optional right details panel
 ```
 
 Sidebar contains only:
@@ -112,7 +112,7 @@ Rules:
 Selecting a Docker host opens a host header and flat internal navigation:
 
 ```text
-Summary | Compose | Containers | Images | Networks | Volumes | Live Metrics | Audit
+Summary | Compose | Containers | Images | Networks | Volumes | Container stats | Audit
 ```
 
 On narrow widths, horizontally scroll this navigation. Do not wrap it into multiple lines.
@@ -124,10 +124,17 @@ A Compose project is a full route with breadcrumb preserving host context.
 ```text
 production-01 / Compose / backend
 
-Summary | Containers | Files | Logs | Backups | Activity
+Summary | Services | Containers | Files | Logs | Backups | Activity
 ```
 
-Service remains a first-class Compose concept but is not a page depth. It appears as a column/filter/context inside project Containers and other relevant views.
+The Services collection is a project tab because it owns a complete effective
+model and per-Service operations. An individual Service is still context, not a
+new page depth: do not introduce a `/services/:name` detail route.
+
+Do not mirror the Host's Engine-wide Images, Networks, or Volumes inventories
+under a Compose project. Compose depth exists for the effective model, source
+files, project-scoped logs/history, backups, and Compose operations; Engine
+objects remain in Host scope.
 
 ## 7. Tables
 
@@ -142,17 +149,17 @@ Operational tables are the primary repeated-object primitive.
 - Avoid card grids for large inventories.
 - Avoid making every row a button.
 
-## 8. Inspector
+## 8. Details panel
 
-Use a route-aware, non-modal right Inspector for Container, Image, Network, and Volume detail.
+Use a route-aware, non-modal right details panel for Container, Image, Network, and Volume detail.
 
 Requirements:
 
 - Selected object is reflected in URL/query state.
 - Browser Back closes/changes selection naturally.
 - Refresh restores the selected object when possible.
-- On narrow layouts, Inspector becomes a full-width detail route.
-- Inspector is not a focus-trapping modal.
+- On narrow layouts, the details panel becomes a full-width detail route.
+- The details panel is not a focus-trapping modal.
 - Dangerous actions are visually separated.
 - Disabled actions show a reason rather than silently disappearing when practical.
 
@@ -165,7 +172,7 @@ These labels are part of the product contract:
 ```text
 Inventory/Home snapshot     Checked 14:52
 Discovery                   Last completed scan 14:47
-Live Metrics                Live · sample 1s ago
+Container stats             Live · sample 1s ago
 Docker logs                 Docker Engine logs · Not retained by Dockpilot Server
 Audit / Activity            Stored audit history
 Last-known stale value      Last checked 14:32 · current state unavailable
@@ -182,7 +189,7 @@ Use these terms consistently:
 - `Blocked`: mutation prevented by a safety rule/state
 - `Read-only`: read is available, write is not
 - `No container`: active Compose service exists but no corresponding Container exists
-- `Profile inactive`: Compose service is excluded by inactive profile
+- `Excluded by profile`: Compose Service is ignored because none of its profiles are active
 - `One-off`: Container created as a one-off Compose run
 - `Orphan`: Container remains but no service exists in the current effective Compose model
 - `No baseline`: no authoritative Dockpilot baseline exists for comparison
@@ -194,7 +201,7 @@ Do not collapse Audit gap and Audit continuity uncertainty into one generic heal
 
 Motion is minimal and functional.
 
-- 120–200ms disclosures/Inspector transition
+- 120–200ms disclosure/details-panel transition
 - no count-up animations
 - no live-number tweening
 - no blinking Live indicator
@@ -209,16 +216,16 @@ Live tables update values without constantly moving rows.
 - Use semantic headings, tables, links, buttons, forms, and dialogs.
 - Do not rely on color alone.
 - Dialogs trap focus correctly; closing returns focus to the invoking control.
-- Non-modal Inspector does not trap focus.
+- Non-modal details panel does not trap focus.
 - Screen-reader live regions must not announce every metrics sample.
 - Technical reasons should be programmatically associated with disabled/error state.
 
 ## 13. Responsive rules
 
-- >=1280px: Sidebar + Main + optional Inspector
-- 1024–1279px: narrow Sidebar, priority columns, Inspector may overlay or narrow Main
+- > =1280px: Sidebar + Main + optional details panel
+- 1024–1279px: narrow Sidebar, priority columns, details panel may overlay or narrow Main
 - 768–1023px: collapsible Sidebar, key columns retained, optional horizontal table scroll
-- <768px: navigation drawer, single-column detail; Inspector becomes full-page
+- <768px: navigation drawer, single-column detail; details panel becomes full-page
 
 Dockpilot remains desktop-first.
 

@@ -1,87 +1,349 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#f5f7fa">
-  <title>Dockpilot</title>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/app.css">
-</head>
-<body>
-  <a class="skip" href="#main">Skip to content</a>
-  <div class="app-shell">
-    <aside class="sidebar" aria-label="Dockpilot navigation">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">D</span><span>Dockpilot</span></div>
-      <a class="nav-item" data-route="search" href="#/search"><span aria-hidden="true">⌕</span> Search</a>
-      <a class="nav-item" data-route="home" href="#/home"><span aria-hidden="true">⌂</span> Home</a>
-      <div class="nav-section-label">Docker hosts</div>
-      <nav id="host-tree" aria-label="Docker hosts"><p class="nav-empty">Loading hosts…</p></nav>
-      <div class="sidebar-footer">
-        <span id="sidebar-summary">Connecting…</span>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#f5f7fa" />
+    <title>Dockpilot</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Dockpilot navigation">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">D</span
+          ><span>Dockpilot</span>
+        </div>
+        <a class="nav-item" data-route="search" href="#/search"
+          ><span aria-hidden="true">⌕</span> Search</a
+        >
+        <a class="nav-item" data-route="home" href="#/home"
+          ><span aria-hidden="true">⌂</span> Home</a
+        >
+        <div class="nav-section-label">Docker hosts</div>
+        <nav id="host-tree" aria-label="Docker hosts">
+          <p class="nav-empty">Loading hosts…</p>
+        </nav>
+        <div class="sidebar-footer">
+          <span id="sidebar-summary">Connecting…</span>
+        </div>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <button
+            id="sidebar-toggle"
+            class="icon-button mobile-only"
+            type="button"
+            aria-label="Toggle navigation"
+            aria-expanded="false"
+          >
+            ☰
+          </button>
+          <nav id="breadcrumbs" class="breadcrumbs" aria-label="Breadcrumb">
+            <a href="#/home">Home</a>
+          </nav>
+          <div class="top-actions">
+            <span class="authority-note">Live from Docker Engine</span
+            ><a
+              id="operation-trigger"
+              class="quiet-button operation-trigger"
+              href="#/operations"
+              >Operations <span id="operation-count">0</span></a
+            ><button id="refresh" class="quiet-button" type="button">
+              Refresh
+            </button>
+          </div>
+        </header>
+        <main id="main" tabindex="-1">
+          <div id="global-error" class="notice error" role="alert" hidden></div>
+          <div id="view">
+            <div class="state-panel">
+              <span class="spinner" aria-hidden="true"></span>
+              <h1>Loading Dockpilot</h1>
+              <p>Reading the current host and project index.</p>
+            </div>
+          </div>
+        </main>
       </div>
-    </aside>
-
-    <div class="workspace">
-      <header class="topbar">
-        <button id="sidebar-toggle" class="icon-button mobile-only" type="button" aria-label="Toggle navigation" aria-expanded="false">☰</button>
-        <nav id="breadcrumbs" class="breadcrumbs" aria-label="Breadcrumb"><a href="#/home">Home</a></nav>
-        <div class="top-actions"><span class="authority-note">Live from Docker Engine</span><a id="operation-trigger" class="quiet-button operation-trigger" href="#/operations">Operations <span id="operation-count">0</span></a><button id="refresh" class="quiet-button" type="button">Refresh</button></div>
-      </header>
-      <main id="main" tabindex="-1">
-        <div id="global-error" class="notice error" role="alert" hidden></div>
-        <div id="view"><div class="state-panel"><span class="spinner" aria-hidden="true"></span><h1>Loading Dockpilot</h1><p>Reading the current host and project index.</p></div></div>
-      </main>
     </div>
-  </div>
 
-  <aside id="inspector" class="inspector" aria-labelledby="inspector-title" hidden>
-    <div class="inspector-header"><h2 id="inspector-title">Details</h2><button id="inspector-close" class="icon-button" type="button" aria-label="Close Inspector">×</button></div>
-    <div id="inspector-body"></div>
-  </aside>
-  <div id="scrim" class="scrim" hidden></div>
+    <aside
+      id="inspector"
+      class="inspector"
+      aria-labelledby="inspector-title"
+      hidden
+    >
+      <div
+        id="inspector-resize-handle"
+        class="inspector-resize-handle"
+        role="separator"
+        aria-label="Resize details panel"
+        aria-orientation="vertical"
+        aria-valuemin="420"
+        aria-valuemax="520"
+        aria-valuenow="520"
+        tabindex="0"
+      ></div>
+      <div class="inspector-header">
+        <h2 id="inspector-title">Details</h2>
+        <button
+          id="inspector-close"
+          class="icon-button"
+          type="button"
+          aria-label="Close details panel"
+        >
+          ×
+        </button>
+      </div>
+      <div id="inspector-body"></div>
+    </aside>
+    <div id="scrim" class="scrim" hidden></div>
 
-  <dialog id="confirm-dialog" aria-labelledby="confirm-title">
-    <form method="dialog">
-      <p class="eyebrow">Confirm operation</p>
-      <h2 id="confirm-title">Confirm</h2>
-      <p id="confirm-copy"></p>
-      <label id="confirm-label" for="confirm-value" hidden>Type to confirm</label>
-      <input id="confirm-value" autocomplete="off" hidden>
-      <div class="dialog-actions"><button value="cancel" class="quiet-button">Cancel</button><button id="confirm-submit" value="confirm" class="danger-button">Confirm</button></div>
-    </form>
-  </dialog>
-  <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
-
-  <template id="logs-template">
-    <section class="panel">
-      <form id="project-logs-form" class="control-grid">
-        <label for="logs-agent">Agent ID</label><input id="logs-agent" name="agent_id" readonly>
-        <label for="logs-container">Container</label><select id="logs-container" name="container_id"><option value="">All selected Services</option></select>
-        <label for="logs-services">Services</label><input id="logs-services" name="services" placeholder="api, worker">
-        <label for="logs-since">Since</label><input id="logs-since" name="since" type="datetime-local" step="1">
-        <label for="logs-until">Until</label><input id="logs-until" name="until" type="datetime-local" step="1">
-        <label for="logs-tail">Tail lines</label><input id="logs-tail" name="tail" type="number" min="0" max="10000" value="200">
-        <label class="check"><input id="logs-timestamps" name="timestamps" type="checkbox"> Include timestamps</label>
-        <label class="check"><input id="logs-follow" name="follow" type="checkbox" checked> Follow live output</label>
-        <label for="logs-find">Find in loaded logs</label><input id="logs-find" type="search" placeholder="Browser-only find">
-        <div class="form-actions"><button type="submit" class="primary-button">Start stream</button><button id="logs-stop" type="button" class="quiet-button" disabled>Stop</button><button id="logs-clear" type="button" class="quiet-button">Clear view</button><button id="logs-latest" type="button" class="quiet-button" hidden>Jump to latest</button></div>
+    <dialog id="confirm-dialog" aria-labelledby="confirm-title">
+      <form method="dialog">
+        <p class="eyebrow">Confirm operation</p>
+        <h2 id="confirm-title">Confirm</h2>
+        <p id="confirm-copy"></p>
+        <label id="confirm-label" for="confirm-value" hidden
+          >Type to confirm</label
+        >
+        <input id="confirm-value" autocomplete="off" hidden />
+        <div class="dialog-actions">
+          <button value="cancel" class="quiet-button">Cancel</button
+          ><button id="confirm-submit" value="confirm" class="danger-button">
+            Confirm
+          </button>
+        </div>
       </form>
-      <p id="logs-status" class="inline-status">Not connected. Streams are never stored or resumed.</p>
-      <pre id="logs-output" class="terminal" role="log" aria-live="polite" aria-label="Live project logs" tabindex="0"></pre>
-    </section>
-  </template>
+    </dialog>
+    <div
+      id="container-actions-menu"
+      class="row-actions-menu"
+      role="menu"
+      hidden
+    >
+      <button
+        type="button"
+        role="menuitem"
+        data-action="container-operation"
+        data-kind="container.start"
+      >
+        Start
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        data-action="container-operation"
+        data-kind="container.stop"
+      >
+        Stop
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        data-action="container-operation"
+        data-kind="container.restart"
+      >
+        Restart
+      </button>
+      <div class="row-actions-menu-separator" role="separator"></div>
+      <button
+        type="button"
+        class="danger-menu-item"
+        role="menuitem"
+        data-action="container-operation"
+        data-kind="container.remove"
+      >
+        Remove
+      </button>
+      <p id="container-actions-menu-reason" class="row-actions-menu-reason"></p>
+    </div>
+    <div id="service-actions-menu" class="row-actions-menu" role="menu" hidden>
+      <button
+        type="button"
+        role="menuitem"
+        data-action="service-operation"
+        data-kind="compose.pull"
+      >
+        Pull
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        data-action="service-operation"
+        data-kind="compose.up"
+      >
+        Up
+      </button>
+      <div class="row-actions-menu-separator" role="separator"></div>
+      <button
+        type="button"
+        role="menuitem"
+        data-action="service-operation"
+        data-kind="compose.start"
+      >
+        Start
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        data-action="service-operation"
+        data-kind="compose.stop"
+      >
+        Stop
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        data-action="service-operation"
+        data-kind="compose.restart"
+      >
+        Restart
+      </button>
+      <p id="service-actions-menu-reason" class="row-actions-menu-reason"></p>
+    </div>
+    <div
+      id="toast-region"
+      class="toast-region"
+      aria-label="Notifications"
+    ></div>
 
-  <template id="metrics-template">
-    <section class="panel">
-      <div class="panel-header"><div><h2>Live Metrics</h2><p>Collected only while this view is open. Not retained by Dockpilot.</p></div><div class="segmented"><button id="metrics-hierarchy" class="quiet-button active" type="button">Hierarchy</button><button id="metrics-top" class="quiet-button" type="button">Top Containers</button></div></div>
-      <label for="metrics-container"><span hidden>Container ID</span></label><input id="metrics-container" hidden aria-hidden="true">
-      <div id="metrics-status" class="inline-status">Opening host metrics…</div>
-      <div id="metrics-table" class="table-wrap"></div>
-    </section>
-  </template>
+    <template id="logs-template">
+      <section class="panel logs-panel">
+        <form id="project-logs-form" class="logs-controls">
+          <input id="logs-agent" name="agent_id" type="hidden" />
+          <div class="logs-filter-grid">
+            <label class="logs-field logs-field-container" for="logs-container">
+              <span>Container</span>
+              <select id="logs-container" name="container_id">
+                <option value="">All selected Services</option>
+              </select>
+            </label>
+            <label class="logs-field logs-field-services" for="logs-services">
+              <span>Services</span>
+              <input
+                id="logs-services"
+                name="services"
+                placeholder="api, worker"
+              />
+            </label>
+            <label class="logs-field logs-field-tail" for="logs-tail">
+              <span>Tail</span>
+              <input
+                id="logs-tail"
+                name="tail"
+                type="number"
+                min="0"
+                max="10000"
+                value="200"
+              />
+            </label>
+            <label class="logs-field logs-field-time" for="logs-since">
+              <span>Since</span>
+              <input
+                id="logs-since"
+                name="since"
+                type="datetime-local"
+                step="1"
+              />
+            </label>
+            <label class="logs-field logs-field-time" for="logs-until">
+              <span>Until</span>
+              <input
+                id="logs-until"
+                name="until"
+                type="datetime-local"
+                step="1"
+              />
+            </label>
+          </div>
+          <div class="logs-control-footer">
+            <div class="logs-options" aria-label="Log display options">
+              <label class="check">
+                <input id="logs-timestamps" name="timestamps" type="checkbox" />
+                Include timestamps
+              </label>
+              <label class="check">
+                <input id="logs-follow" name="follow" type="checkbox" checked />
+                Follow live output
+              </label>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="primary-button">Start stream</button>
+              <button
+                id="logs-stop"
+                type="button"
+                class="quiet-button"
+                disabled
+              >
+                Stop
+              </button>
+              <button id="logs-clear" type="button" class="quiet-button">
+                Clear view
+              </button>
+              <button
+                id="logs-latest"
+                type="button"
+                class="quiet-button"
+                hidden
+              >
+                Jump to latest
+              </button>
+            </div>
+          </div>
+        </form>
+        <div class="logs-browser-tools">
+          <label for="logs-find">Find in loaded logs</label>
+          <input id="logs-find" type="search" placeholder="Browser-only find" />
+        </div>
+        <p id="logs-status" class="inline-status">
+          Not connected. Streams are never stored or resumed.
+        </p>
+        <pre
+          id="logs-output"
+          class="terminal"
+          role="log"
+          aria-live="polite"
+          aria-label="Live project logs"
+          tabindex="0"
+        ></pre>
+      </section>
+    </template>
 
-  <script src="/app.js" defer></script>
-</body>
+    <template id="metrics-template">
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Container stats</h2>
+            <p>
+              Collected only while this view is open. Not retained by Dockpilot.
+            </p>
+          </div>
+          <div class="segmented">
+            <button
+              id="metrics-hierarchy"
+              class="quiet-button active"
+              type="button"
+            >
+              Hierarchy</button
+            ><button id="metrics-top" class="quiet-button" type="button">
+              Top Containers
+            </button>
+          </div>
+        </div>
+        <label for="metrics-container"><span hidden>Container ID</span></label
+        ><input id="metrics-container" hidden aria-hidden="true" />
+        <div id="metrics-status" class="inline-status">
+          Opening container stats…
+        </div>
+        <div id="metrics-table" class="table-wrap"></div>
+      </section>
+    </template>
+
+    <script src="/app.js" defer></script>
+  </body>
 </html>

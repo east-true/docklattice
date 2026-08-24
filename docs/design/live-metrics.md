@@ -1,4 +1,4 @@
-# Live Metrics — design
+# Container stats — design
 
 Status: implemented and validated, revision 2, except the §13 matrix view,
 which is deferred. §2 items 1-3 have shipped; item 4 has not.
@@ -17,15 +17,15 @@ the same way.
 Most of this feature is already in the tree, and that decides the shape of the
 rest.
 
-| Piece | Where | State |
-|---|---|---|
-| Per-container sampling, on demand | `internal/livestats` | works |
-| Sample: CPU, memory + limit, net RX/TX, block r/w, restarts, health, uptime | `producttransport.StatsSample` | works |
-| Agent handler | `agentproduct.Handler.StreamStats` | works |
-| Server → browser SSE | `GET /api/v1/live/stats` | works |
-| Traffic class for metrics | `transport.ClassLive` (P4), latest-wins | works |
-| Default sample interval | `config.Defaults.StatsSampleInterval` = 2s | works |
-| Docker event subscription | `dockeradapter.SubscribeEvents` | works, used by observed audit |
+| Piece                                                                       | Where                                      | State                         |
+| --------------------------------------------------------------------------- | ------------------------------------------ | ----------------------------- |
+| Per-container sampling, on demand                                           | `internal/livestats`                       | works                         |
+| Sample: CPU, memory + limit, net RX/TX, block r/w, restarts, health, uptime | `producttransport.StatsSample`             | works                         |
+| Agent handler                                                               | `agentproduct.Handler.StreamStats`         | works                         |
+| Server → browser SSE                                                        | `GET /api/v1/live/stats`                   | works                         |
+| Traffic class for metrics                                                   | `transport.ClassLive` (P4), latest-wins    | works                         |
+| Default sample interval                                                     | `config.Defaults.StatsSampleInterval` = 2s | works                         |
+| Docker event subscription                                                   | `dockeradapter.SubscribeEvents`            | works, used by observed audit |
 
 `livestats.Hub` already behaves the way §6 and §7 ask, and not because of this
 feature: one relay per container shared by all viewers, collection started by
@@ -112,10 +112,10 @@ next frame carries every container again, so nothing starves and nothing queues.
 ▲ Revision 1 proposed reading host CPU, memory, load and network from `/proc`.
 Measured on this machine, that is partly wrong and entirely unsafe to promise:
 
-| File | In a bridge-networked container | Verdict |
-|---|---|---|
-| `/proc/net/dev` | shows `lo eth0` — the container's own interfaces, host shows 26 | **wrong data, silently** |
-| `/proc/stat`, `/proc/meminfo`, `/proc/loadavg` | identical to the host (same `MemTotal`, same load) | right *here* |
+| File                                           | In a bridge-networked container                                 | Verdict                  |
+| ---------------------------------------------- | --------------------------------------------------------------- | ------------------------ |
+| `/proc/net/dev`                                | shows `lo eth0` — the container's own interfaces, host shows 26 | **wrong data, silently** |
+| `/proc/stat`, `/proc/meminfo`, `/proc/loadavg` | identical to the host (same `MemTotal`, same load)              | right _here_             |
 
 The network case settles it: the official deployment is a container, and host
 network RX/TX read this way would be the Agent's own traffic presented as the
@@ -127,12 +127,12 @@ So v1 does not read host `/proc` at all. The host row is **the Docker workload
 this Agent manages**, built from sources that mean the same thing in every
 deployment:
 
-| Row field | Source | Namespace-independent because |
-|---|---|---|
-| CPU capacity, memory capacity | Docker Engine `info` (`NCPU`, `MemTotal`) | the daemon runs on the host |
-| containers running / total | Docker Engine `info` | same |
-| CPU / memory / network / block I/O in use | sum of the container samples in this frame | measured per container by the Engine |
-| managed filesystems: total and free | `statfs` on discovery roots and the Agent state directory | these are the paths Dockpilot writes to, whatever they are mounted from |
+| Row field                                 | Source                                                    | Namespace-independent because                                           |
+| ----------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------- |
+| logical CPU count, memory capacity        | Docker Engine `info` (`NCPU`, `MemTotal` bytes)           | the daemon runs on the host                                             |
+| containers running / total                | Docker Engine `info`                                      | same                                                                    |
+| CPU / memory / network / block I/O in use | sum of the container samples in this frame                | measured per container by the Engine                                    |
+| managed filesystems: total and free       | `statfs` on discovery roots and the Agent state directory | these are the paths Dockpilot writes to, whatever they are mounted from |
 
 `dockeradapter` gained an `Info()` accessor.
 
@@ -164,17 +164,20 @@ discovery holds.
 
 Per metric, because they do not mean the same thing:
 
-| Metric | Aggregate |
-|---|---|
-| CPU percent, memory usage, network RX/TX, block I/O, restarts | sum |
-| memory limit | **unbounded** if any member is unlimited — not a number |
-| memory percent | **not computed** when the limit is unbounded |
-| health | worst *answered* status, with unanswered counted separately - see below |
-| uptime | minimum — a service is only as old as its youngest container |
+| Metric                                                        | Aggregate                                                               |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| CPU percent, memory usage, network RX/TX, block I/O, restarts | sum                                                                     |
+| memory limit                                                  | **unbounded** if any member is unlimited — not a number                 |
+| memory percent                                                | **not computed** when the limit is unbounded                            |
+| health                                                        | worst _answered_ status, with unanswered counted separately - see below |
+| uptime                                                        | minimum — a service is only as old as its youngest container            |
 
 ▲ Revision 1 summed memory limits and marked the result "partial". A number
 labelled partial still gets read as a number and divided into. Unbounded is a
 different kind of answer and is presented as one.
+The API/model keeps that precise `unbounded` state. The operator-facing UI
+labels it `No container memory limit · {usage} used`, which follows Docker's familiar
+"no memory limit" language without implying that physical memory is infinite.
 
 Every service row states how many containers it covers.
 
@@ -188,13 +191,13 @@ overstate its confidence or bury a real `healthy` result.
 
 So a row reports two facts. The status is exactly one of:
 
-| Row health | When |
-|---|---|
-| `unhealthy` | any member reports unhealthy |
-| `starting` | no member is unhealthy and any member is starting |
-| `healthy` | every member that **has** a healthcheck reports healthy |
-| `none` | the row has members and not one of them has a healthcheck |
-| empty | there is nothing to report: every member is still pending |
+| Row health  | When                                                      |
+| ----------- | --------------------------------------------------------- |
+| `unhealthy` | any member reports unhealthy                              |
+| `starting`  | no member is unhealthy and any member is starting         |
+| `healthy`   | every member that **has** a healthcheck reports healthy   |
+| `none`      | the row has members and not one of them has a healthcheck |
+| empty       | there is nothing to report: every member is still pending |
 
 alongside a count of members that answered nothing - no healthcheck, or a
 status this build does not recognise. An unrecognised status counts as no
@@ -261,12 +264,12 @@ something has just been deployed.
 rather than containers, while also stating there would be 200 relays for 200
 containers. Both cannot be true, and the second one is.
 
-| Quantity | Order | Changed by this design |
-|---|---|---|
-| Browser → Server streams | O(hosts being viewed) | yes — one per host view, not per container |
-| Server → Agent streams | O(hosts being viewed) | yes — one per host, fanned out to N browsers |
-| Agent Docker stats collectors | **O(running containers)** | no — unchanged, and this is the real cost |
-| Agent collectors while nobody is watching | 0 | unchanged |
+| Quantity                                  | Order                     | Changed by this design                       |
+| ----------------------------------------- | ------------------------- | -------------------------------------------- |
+| Browser → Server streams                  | O(hosts being viewed)     | yes — one per host view, not per container   |
+| Server → Agent streams                    | O(hosts being viewed)     | yes — one per host, fanned out to N browsers |
+| Agent Docker stats collectors             | **O(running containers)** | no — unchanged, and this is the real cost    |
+| Agent collectors while nobody is watching | 0                         | unchanged                                    |
 
 The protocol change fixes stream count. It does not and cannot make the Docker
 stats collection sublinear — something has to ask the Engine about each
@@ -293,14 +296,19 @@ asks for one. Discovery's five-minute cycle is untouched and unrelated.
 
 ## 13. UI
 
-One view, existing components. Rows are host → project → service → container;
-columns CPU, memory, network, block I/O, and image for container rows. Sorting
-and filtering only — no charts, because a chart implies a history this feature
-does not keep.
+The Container stats view uses existing components. Rows are host → project →
+service → container; columns CPU, memory, network, block I/O, and image for
+container rows. Sorting and filtering only — no charts, because a chart implies
+a history this feature does not keep.
 
 The host row shows managed workload against Engine-reported capacity, and says
 plainly that host OS metrics are not included. Hosts whose Agent predates the
 capability show the reason where capability reasons already appear.
+
+Host Summary may open the same viewer-scoped stream long enough to receive one
+current workload snapshot. It shows Container CPU and memory as `used / total`,
+includes the observation time, aborts the viewer after a complete frame or a
+short timeout, and does not retain the result.
 
 ## 14. Deliberately not built
 
@@ -352,11 +360,11 @@ matter and they are not the same number.
 
 **On the wire, Agent to Server** (protobuf), one frame per host per tick:
 
-| Containers | Frame | Per container | Assembly | At a 2s cadence |
-|---|---|---|---|---|
-| 1 | 194 B | 194 B | 1.6 µs | 0.1 KiB/s |
-| 200 | 26.5 KB | 132 B | 178 µs | 12.9 KiB/s |
-| 500 | 66.6 KB | 133 B | 337 µs | 32.5 KiB/s |
+| Containers | Frame   | Per container | Assembly | At a 2s cadence |
+| ---------- | ------- | ------------- | -------- | --------------- |
+| 1          | 194 B   | 194 B         | 1.6 µs   | 0.1 KiB/s       |
+| 200        | 26.5 KB | 132 B         | 178 µs   | 12.9 KiB/s      |
+| 500        | 66.6 KB | 133 B         | 337 µs   | 32.5 KiB/s      |
 
 Both lines are linear: 2.5× the containers costs 2.52× the bytes and 1.89× the
 assembly. Nothing on this path is quadratic.
@@ -378,19 +386,19 @@ containers, watched by five viewers. Both columns were measured at `c374866`;
 the 500 column was measured again on the merged revision, which is the next
 section.
 
-| | 200 containers | 500 containers |
-|---|---|---|
-| Container rows in a frame | 202 | 502 |
-| Agent descriptors, no viewer | 12 | 10 |
-| Agent descriptors, watched | — | **515** |
-| Agent RSS, no viewer | — | 26.1 MiB |
-| Agent RSS, watched | 45.1 MiB | 75.6 MiB |
-| Agent threads | 11 | 11 |
-| Server RSS | 32.7 MiB | 40.8 MiB |
-| JSON frame to the browser | 105.8 KB | 260.2 KB |
-| Per container, JSON | 524 B | 518 B |
-| Agent / Server dropped frames | 0 / 0 | 0 / 0 |
-| VM load, 4 vCPU | 1.9 | 5.3 |
+|                               | 200 containers | 500 containers |
+| ----------------------------- | -------------- | -------------- |
+| Container rows in a frame     | 202            | 502            |
+| Agent descriptors, no viewer  | 12             | 10             |
+| Agent descriptors, watched    | —              | **515**        |
+| Agent RSS, no viewer          | —              | 26.1 MiB       |
+| Agent RSS, watched            | 45.1 MiB       | 75.6 MiB       |
+| Agent threads                 | 11             | 11             |
+| Server RSS                    | 32.7 MiB       | 40.8 MiB       |
+| JSON frame to the browser     | 105.8 KB       | 260.2 KB       |
+| Per container, JSON           | 524 B          | 518 B          |
+| Agent / Server dropped frames | 0 / 0          | 0 / 0          |
+| VM load, 4 vCPU               | 1.9            | 5.3            |
 
 Three things this settles.
 
@@ -436,21 +444,20 @@ stream topology, collector topology, buffers or the frame path.
 
 That is a change to the steady-state reconcile loop, so the 500-container case
 was measured again on the merged revision `326a847`, on the same VM shape as
-before - 4 vCPU, 12 GiB, kernel 6.8.0-137, Docker 29.1.3, cgroup v2, `nofile`
-1024. The 200-container case was not repeated: it exercises the same O(N) path
+before - 4 vCPU, 12 GiB, kernel 6.8.0-137, Docker 29.1.3, cgroup v2, `nofile` 1024. The 200-container case was not repeated: it exercises the same O(N) path
 at a smaller N and would say less than the 500 case already does.
 
-| | `c374866` | `326a847` |
-|---|---|---|
-| Container rows in a frame | 502 | 502 |
-| Agent descriptors, no viewer | 10 | 10 |
-| Agent descriptors, watched | 515 | 514 |
-| Agent RSS, no viewer | 26.1 MiB | 25.3 MiB |
-| Agent RSS, watched | 75.6 MiB | 78.7 MiB |
-| Agent threads | 11 | 9-10 |
-| Server RSS | 40.8 MiB | 39.9 MiB |
-| JSON frame to the browser | 260.2 KB | 260.8 KB |
-| Agent / Server dropped frames | 0 / 0 | 0 / 0 |
+|                               | `c374866` | `326a847` |
+| ----------------------------- | --------- | --------- |
+| Container rows in a frame     | 502       | 502       |
+| Agent descriptors, no viewer  | 10        | 10        |
+| Agent descriptors, watched    | 515       | 514       |
+| Agent RSS, no viewer          | 26.1 MiB  | 25.3 MiB  |
+| Agent RSS, watched            | 75.6 MiB  | 78.7 MiB  |
+| Agent threads                 | 11        | 9-10      |
+| Server RSS                    | 40.8 MiB  | 39.9 MiB  |
+| JSON frame to the browser     | 260.2 KB  | 260.8 KB  |
+| Agent / Server dropped frames | 0 / 0     | 0 / 0     |
 
 The same envelope, and the same shape. Descriptors still follow containers and
 only while somebody is watching: 497 containers with no viewer cost the Agent
@@ -468,10 +475,11 @@ returns heap on its own schedule; the bounded resource comes back at once.
 The reconcile cost the fix adds was measured directly rather than inferred. At
 500 members a full `reconcileMembership` takes 43-53 µs at the median and 0.8-3.6
 ms at its worst, of which the completion check over all 500 members is 4.4-4.9 µs
+
 - about nine nanoseconds per member, and roughly a tenth of the median reconcile.
-Against a two second frame cadence the check is 0.0002% of the budget, so the
-O(N) growth the fix introduces is real and irrelevant at this size; a reconcile
-cannot run into the next one on this path.
+  Against a two second frame cadence the check is 0.0002% of the budget, so the
+  O(N) growth the fix introduces is real and irrelevant at this size; a reconcile
+  cannot run into the next one on this path.
 
 Cadence needs one honest note. Two runs were taken. The first, sampled only from
 `/proc`, held 13 frames across 23.33 s - a 1.944 s mean whose worst interval was

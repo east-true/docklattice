@@ -900,10 +900,20 @@ func (s *Service) fileRead(ctx context.Context, request producttransport.QueryRe
 		return FileResponse{}, err
 	}
 	defer clear(file.Content)
+	secret := isEnvironmentFile(file.RelativePath)
+	if project, found := s.config.Projects.ProjectSnapshot(request.Target); found {
+		for _, reference := range project.EnvFiles {
+			if reference.Readable &&
+				displayProjectPath(project.WorkingDir, reference.Path) == file.RelativePath {
+				secret = true
+				break
+			}
+		}
+	}
 	return FileResponse{
 		RelativePath: file.RelativePath, Content: string(file.Content), SHA256: file.SHA256,
 		MTime: file.MTime, Mode: uint32(file.Mode.Perm()), LineEndings: file.LineEndings,
-		Secret: isEnvironmentFile(file.RelativePath),
+		Secret: secret,
 	}, nil
 }
 

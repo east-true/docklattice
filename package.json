@@ -6,12 +6,13 @@
     "node": ">=20"
   },
   "scripts": {
-    "format": "prettier --write .github/workflows/ci.yml package.json playwright.config.mjs internal/webui/assets/app.js tests/ui/*.mjs",
-    "check:format": "prettier --check .github/workflows/ci.yml package.json playwright.config.mjs internal/webui/assets/app.js tests/ui/*.mjs",
+    "format": "prettier --write .github/workflows/ci.yml package.json playwright.config.mjs internal/webui/assets/app.css internal/webui/assets/app.js tests/ui/*.mjs",
+    "check:format": "prettier --check .github/workflows/ci.yml package.json playwright.config.mjs internal/webui/assets/app.css internal/webui/assets/app.js tests/ui/*.mjs",
     "test:ui:install": "node tests/ui/run-playwright.mjs install chromium",
     "test:ui": "node tests/ui/run-playwright.mjs test",
     "test:ui:headed": "node tests/ui/run-playwright.mjs test --headed",
     "test:ui:open": "node tests/ui/run-playwright.mjs test --ui",
+    "test:ui:vm:visual": "node tests/ui/verify-vm-visuals.mjs",
     "test:ui:report": "node tests/ui/run-playwright.mjs show-report"
   },
   "devDependencies": {

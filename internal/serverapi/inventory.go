@@ -116,12 +116,12 @@ func (b *Backend) HostContainer(ctx context.Context, agentID, containerID string
 		return webui.HostContainer{}, fmt.Errorf("%w: canonical Container ID is required", webui.ErrInvalidRequest)
 	}
 	var item agentContainer
-	if err := b.queryHostObject(ctx, agentID, "container.inspect", containerID, "Container Inspector", &item); err != nil {
+	if err := b.queryHostObject(ctx, agentID, "container.inspect", containerID, "Container details", &item); err != nil {
 		return webui.HostContainer{}, err
 	}
 	defer clearContainerDetails(&item)
 	if item.ID != containerID || !validContainerBase(&item) || !validContainerDetails(&item) || !validContainerInspect(&item) {
-		return webui.HostContainer{}, invalidInventory("Container Inspector", 0)
+		return webui.HostContainer{}, invalidInventory("Container details", 0)
 	}
 	result := webContainer(item)
 	result.Labels = cloneMap(item.Labels)
@@ -178,11 +178,11 @@ func (b *Backend) HostImage(ctx context.Context, agentID, imageID string) (webui
 		return webui.HostImageDetails{}, fmt.Errorf("%w: canonical Image ID is required", webui.ErrInvalidRequest)
 	}
 	var result webui.HostImageDetails
-	if err := b.queryHostObject(ctx, agentID, "image.inspect", imageID, "Image Inspector", &result); err != nil {
+	if err := b.queryHostObject(ctx, agentID, "image.inspect", imageID, "Image details", &result); err != nil {
 		return webui.HostImageDetails{}, err
 	}
 	if !validImageInspect(result) || strings.TrimPrefix(result.ID, "sha256:") != strings.TrimPrefix(imageID, "sha256:") {
-		return webui.HostImageDetails{}, invalidInventory("Image Inspector", 0)
+		return webui.HostImageDetails{}, invalidInventory("Image details", 0)
 	}
 	return result, nil
 }
@@ -215,11 +215,11 @@ func (b *Backend) HostNetwork(ctx context.Context, agentID, networkID string) (w
 		return webui.HostNetworkDetails{}, fmt.Errorf("%w: canonical Network ID is required", webui.ErrInvalidRequest)
 	}
 	var result webui.HostNetworkDetails
-	if err := b.queryHostObject(ctx, agentID, "network.inspect", networkID, "Network Inspector", &result); err != nil {
+	if err := b.queryHostObject(ctx, agentID, "network.inspect", networkID, "Network details", &result); err != nil {
 		return webui.HostNetworkDetails{}, err
 	}
 	if result.ID != networkID || !validNetworkInspect(result) {
-		return webui.HostNetworkDetails{}, invalidInventory("Network Inspector", 0)
+		return webui.HostNetworkDetails{}, invalidInventory("Network details", 0)
 	}
 	return result, nil
 }
@@ -251,11 +251,11 @@ func (b *Backend) HostVolume(ctx context.Context, agentID, name string) (webui.H
 		return webui.HostVolumeDetails{}, fmt.Errorf("%w: valid Volume name is required", webui.ErrInvalidRequest)
 	}
 	var result webui.HostVolumeDetails
-	if err := b.queryHostObject(ctx, agentID, "volume.inspect", name, "Volume Inspector", &result); err != nil {
+	if err := b.queryHostObject(ctx, agentID, "volume.inspect", name, "Volume details", &result); err != nil {
 		return webui.HostVolumeDetails{}, err
 	}
 	if result.Name != name || !validVolumeInspect(result) {
-		return webui.HostVolumeDetails{}, invalidInventory("Volume Inspector", 0)
+		return webui.HostVolumeDetails{}, invalidInventory("Volume details", 0)
 	}
 	return result, nil
 }

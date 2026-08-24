@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -453,7 +454,7 @@ func (b *Backend) ProjectRuntime(ctx context.Context, projectUID string) (webui.
 		known[service.Name] = index
 		status := "No container"
 		if !service.Active {
-			status = "Profile inactive"
+			status = "Excluded by profile"
 		}
 		result.Services[index] = webui.ServiceRuntime{
 			Name: service.Name, Status: status, ProfileInactive: !service.Active, Containers: []webui.HostContainer{},
@@ -513,12 +514,15 @@ type agentBackup struct {
 }
 
 func (b *Backend) ProjectFile(ctx context.Context, projectUID, relativePath string) (webui.ProjectFile, error) {
-	if !validManagedPath(relativePath) {
+	if !validProjectRelativePath(relativePath) {
 		return webui.ProjectFile{}, fmt.Errorf("%w: a managed project relative_path is required", webui.ErrInvalidRequest)
 	}
 	access, err := b.projectAccess(ctx, projectUID, projectRead)
 	if err != nil {
 		return webui.ProjectFile{}, err
+	}
+	if !projectFileReadable(relativePath, access) {
+		return webui.ProjectFile{}, fmt.Errorf("%w: file is not allowlisted for project reads", webui.ErrInvalidRequest)
 	}
 	if !access.capabilities.FSRead {
 		reason := access.capabilities.FSReadReason
@@ -557,7 +561,7 @@ func (b *Backend) ProjectFile(ctx context.Context, projectUID, relativePath stri
 	mtime, err := time.Parse(time.RFC3339Nano, value.MTime)
 	if err != nil || mtime.IsZero() || value.RelativePath != relativePath || !utf8.ValidString(value.Content) ||
 		!canonicalSHA256.MatchString(value.SHA256) || len(value.Content) > maxProjectFileBytes || value.Mode > 0o7777 ||
-		!validLineEndings(value.LineEndings) || isEnvironmentPath(relativePath) && !value.Secret {
+		!validLineEndings(value.LineEndings) || projectFileSensitive(relativePath, access.flags) && !value.Secret {
 		return webui.ProjectFile{}, &corruptDataError{boundary: "Agent file response", cause: errors.New("invalid file metadata or content")}
 	}
 	return webui.ProjectFile{
@@ -1142,8 +1146,18 @@ func (b *Backend) mergeOperation(ctx context.Context, spec operationSpec, incomi
 	if storedSpec.AgentID != spec.AgentID || storedSpec.ProjectUID != spec.ProjectUID || storedSpec.Kind != spec.Kind || storedSpec.Target != spec.Target {
 		return webui.Operation{}, fmt.Errorf("%w: operation ID is already bound to a different Agent or request", webui.ErrConflict)
 	}
-	if canonical.Revision == incoming.Revision && !sameAgentOperation(canonical, incoming) {
-		return webui.Operation{}, fmt.Errorf("%w: Agent changed an operation without increasing its revision", webui.ErrConflict)
+	if canonical.Revision == incoming.Revision {
+		if !sameAgentOperationState(canonical, incoming) ||
+			operationStatusTerminal(canonical.Status) &&
+				(canonical.OutputTail != incoming.OutputTail || canonical.OutputTruncated != incoming.OutputTruncated) {
+			return webui.Operation{}, fmt.Errorf("%w: Agent changed an operation without increasing its revision", webui.ErrConflict)
+		}
+		// Output is streamed while an operation remains in the same state and
+		// therefore does not advance the state-transition revision. Return the
+		// current Agent-authoritative tail without weakening the monotonic Server
+		// mirror or allowing terminal records to change in place.
+		canonical.OutputTail = incoming.OutputTail
+		canonical.OutputTruncated = incoming.OutputTruncated
 	}
 	return canonical, nil
 }
@@ -1155,13 +1169,21 @@ func nullableTime(value *time.Time) any {
 	return value.UTC().Format(time.RFC3339Nano)
 }
 
-func sameAgentOperation(stored, incoming webui.Operation) bool {
+func sameAgentOperationState(stored, incoming webui.Operation) bool {
 	return stored.Status == incoming.Status && stored.Phase == incoming.Phase && stored.Revision == incoming.Revision &&
 		stored.PartialEffectsPossible == incoming.PartialEffectsPossible && stored.Error == incoming.Error &&
-		stored.OutputTail == incoming.OutputTail && stored.OutputTruncated == incoming.OutputTruncated &&
 		stored.CancelMode == incoming.CancelMode && stored.CanCancel == incoming.CanCancel && stored.CancelabilityReason == incoming.CancelabilityReason &&
 		timePointerEqualWhenKnown(stored.RequestedAt, incoming.RequestedAt) &&
 		timePointerEqualWhenKnown(stored.StartedAt, incoming.StartedAt) && timePointerEqualWhenKnown(stored.FinishedAt, incoming.FinishedAt)
+}
+
+func operationStatusTerminal(status string) bool {
+	switch status {
+	case "success", "failed", "canceled", "interrupted", "rejected":
+		return true
+	default:
+		return false
+	}
 }
 
 func timePointerEqualWhenKnown(stored, incoming *time.Time) bool {
@@ -1572,6 +1594,7 @@ func (b *Backend) loadProjects(ctx context.Context) ([]webui.Project, error) {
 
 type projectAccessState struct {
 	agentID      string
+	workingDir   string
 	capabilities storedCapabilities
 	flags        projectFlags
 }
@@ -1596,18 +1619,19 @@ func (b *Backend) projectAccess(ctx context.Context, projectUID string, intent p
 	var state projectAccessState
 	var rawCapabilities, rawFlags string
 	err := b.store.DB().QueryRowContext(ctx, `
-		SELECT agents.id, agents.capabilities_json, projects.flags_json
+		SELECT agents.id, projects.working_dir, agents.capabilities_json, projects.flags_json
 		FROM projects JOIN agents ON agents.id = projects.agent_id
 		WHERE projects.project_uid = ? AND agents.retired_at IS NULL
-	`, projectUID).Scan(&state.agentID, &rawCapabilities, &rawFlags)
+	`, projectUID).Scan(&state.agentID, &state.workingDir, &rawCapabilities, &rawFlags)
 	if errors.Is(err, sql.ErrNoRows) {
 		return projectAccessState{}, fmt.Errorf("%w: project %q", webui.ErrNotFound, projectUID)
 	}
 	if err != nil {
 		return projectAccessState{}, fmt.Errorf("serverapi: load project access: %w", err)
 	}
-	if state.agentID == "" || !utf8.ValidString(state.agentID) {
-		return projectAccessState{}, &corruptDataError{boundary: "project access", cause: errors.New("invalid Agent ID")}
+	if state.agentID == "" || !utf8.ValidString(state.agentID) ||
+		!filepath.IsAbs(state.workingDir) || filepath.Clean(state.workingDir) != state.workingDir {
+		return projectAccessState{}, &corruptDataError{boundary: "project access", cause: errors.New("invalid Agent ID or working directory")}
 	}
 	if err := decodeStrictJSON([]byte(rawCapabilities), &state.capabilities); err != nil {
 		return projectAccessState{}, &corruptDataError{boundary: "agents.capabilities_json", cause: err}
@@ -1675,6 +1699,54 @@ func validManagedPath(path string) bool {
 		return strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")
 	}
 	return strings.HasPrefix(path, "compose.") && strings.HasSuffix(path, ".yaml") && len(path) > len("compose..yaml")
+}
+
+func validProjectRelativePath(value string) bool {
+	if value == "" || len(value) > 1024 || !utf8.ValidString(value) ||
+		strings.ContainsRune(value, 0) || filepath.IsAbs(value) {
+		return false
+	}
+	clean := filepath.Clean(value)
+	return clean == value && clean != "." && clean != ".." &&
+		!strings.HasPrefix(clean, ".."+string(filepath.Separator))
+}
+
+func projectFileReadable(relativePath string, access projectAccessState) bool {
+	if validManagedPath(relativePath) {
+		return true
+	}
+	for _, composeFile := range access.flags.ComposeFiles {
+		if composeFile == relativePath {
+			return true
+		}
+	}
+	for _, envFile := range access.flags.EnvFiles {
+		if envFile.Readable && envFile.Path == relativePath {
+			return true
+		}
+	}
+	for _, reference := range access.flags.SourceReferences {
+		if !reference.Accessible || !reference.ReadOnly {
+			continue
+		}
+		relative, err := filepath.Rel(access.workingDir, reference.Path)
+		if err == nil && filepath.Clean(relative) == relativePath {
+			return true
+		}
+	}
+	return false
+}
+
+func projectFileSensitive(relativePath string, flags projectFlags) bool {
+	if isEnvironmentPath(relativePath) {
+		return true
+	}
+	for _, envFile := range flags.EnvFiles {
+		if envFile.Readable && envFile.Path == relativePath {
+			return true
+		}
+	}
+	return false
 }
 
 func validManagedPaths(paths []string) bool {
@@ -1825,7 +1897,7 @@ func (b *Backend) liveHost(ctx context.Context, agent agentRow) webui.Host {
 	// about it, which is exactly why the reason is written here rather than
 	// taken from the Agent: silence from an older build is the answer, and this
 	// is the sentence that states it.
-	host.Capabilities.Metrics = webCapability(capability.MetricsMatrix, "", "live metrics are not available on this Agent")
+	host.Capabilities.Metrics = webCapability(capability.MetricsMatrix, "", "container stats are not available on this Agent")
 	fsRead, fsReadReason := agent.capabilities.FSRead, agent.capabilities.FSReadReason
 	fsWrite, fsWriteReason := agent.capabilities.FSWrite, agent.capabilities.FSWriteReason
 	if capability.FSRead || capability.FSWrite || capability.FSReadReason != "" || capability.FSWriteReason != "" {

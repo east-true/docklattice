@@ -17,9 +17,12 @@ const state = {
   metricsTopOrder: [],
   inspectorRoute: false,
   inspectorRequest: 0,
+  operationToastControllers: new Map(),
   operationsIndex: [],
   loadedFile: undefined,
   loadedSource: undefined,
+  serviceActionsTrigger: undefined,
+  containerActionsTrigger: undefined,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -82,17 +85,78 @@ async function jsonRequest(url, options = {}) {
   return value;
 }
 
-function showToast(message) {
+const TOAST_ICONS = {
+  info: "●",
+  success: "✓",
+  warning: "!",
+  error: "×",
+};
+
+function dismissToast(toast) {
+  toast.dispatchEvent(new CustomEvent("toastdismiss"));
+  toast.remove();
+}
+
+function updateToast(toast, options) {
+  const tone = ["info", "success", "warning", "error"].includes(options.tone)
+    ? options.tone
+    : "info";
+  toast.className = `toast toast-${tone}`;
+  toast.dataset.tone = tone;
+  toast.setAttribute("role", tone === "error" ? "alert" : "status");
+  toast.setAttribute("aria-live", tone === "error" ? "assertive" : "polite");
+  toast.setAttribute("aria-atomic", "true");
+  toast.replaceChildren();
+
+  const icon = document.createElement("span");
+  icon.className = "toast-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = TOAST_ICONS[tone];
+
+  const content = document.createElement("div");
+  content.className = "toast-content";
+  const title = document.createElement("p");
+  title.className = "toast-title";
+  title.textContent = String(options.title || "Notification");
+  content.append(title);
+  if (options.message) {
+    const message = document.createElement("p");
+    message.className = "toast-message";
+    message.textContent = String(options.message);
+    content.append(message);
+  }
+  if (options.operationID) {
+    const action = document.createElement("a");
+    action.className = "toast-action";
+    action.href = `#/operations?inspect=${encodeURIComponent(options.operationID)}`;
+    action.textContent = "View operation";
+    action.addEventListener("click", () => dismissToast(toast));
+    content.append(action);
+  }
+
+  const close = document.createElement("button");
+  close.className = "toast-close";
+  close.type = "button";
+  close.setAttribute(
+    "aria-label",
+    `Dismiss ${String(options.title || "notification")}`,
+  );
+  close.textContent = "×";
+  close.addEventListener("click", () => dismissToast(toast));
+
+  toast.append(icon, content, close);
+  return toast;
+}
+
+function showToast(options) {
+  const normalized =
+    typeof options === "string"
+      ? { tone: "info", title: "Notice", message: options }
+      : options;
   const toast = document.createElement("div");
-  toast.className = "toast";
-  toast.textContent = String(message);
-  toast.tabIndex = 0;
-  toast.title = "Activate to dismiss";
-  toast.addEventListener("click", () => toast.remove());
-  toast.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") toast.remove();
-  });
+  updateToast(toast, normalized);
   $("#toast-region").prepend(toast);
+  return toast;
 }
 
 function showLoading(
@@ -132,9 +196,107 @@ function stateBadge(value) {
 function emptyRow(columns, message) {
   return `<tr><td class="empty-cell" colspan="${columns}">${text(message)}</td></tr>`;
 }
+
+const TABLE_WIDTH_STORAGE_PREFIX = "dockpilot.table-widths.v2:";
+const TABLE_COLUMN_ABSOLUTE_MIN_WIDTH = 24;
+const TABLE_COLUMN_MIN_WIDTH = 72;
+const TABLE_COLUMN_MAX_WIDTH = 1200;
+const TABLE_COLUMN_KEYBOARD_STEP = 16;
+const INSPECTOR_WIDTH_STORAGE_KEY = "dockpilot.inspector-width.v1";
+const INSPECTOR_DEFAULT_WIDTH = 520;
+const INSPECTOR_MIN_WIDTH = 420;
+const INSPECTOR_MAX_VIEWPORT_RATIO = 0.7;
+const INSPECTOR_MAIN_MIN_WIDTH = 420;
+const INSPECTOR_DESKTOP_SIDEBAR_WIDTH = 252;
+const INSPECTOR_PUSH_BREAKPOINT = 1280;
+const INSPECTOR_FULL_PAGE_BREAKPOINT = 800;
+const INSPECTOR_KEYBOARD_STEP = 16;
+const OPERATION_POLL_INTERVAL = 1000;
+const OPERATION_POLL_MAX_INTERVAL = 10000;
+const OPERATION_POLL_MAX_DURATION = 10 * 60 * 1000;
+const CAPABILITY_LABELS = {
+  connection: "Agent connection",
+  docker: "Docker Engine",
+  compose: "Docker Compose",
+  discovery: "Compose discovery",
+  metrics: "Container stats",
+  operation_recovery: "Operation recovery",
+  fs_read: "File read",
+  fs_write: "File write",
+};
+
+function tableWidthStorageKey(headers) {
+  return `${TABLE_WIDTH_STORAGE_PREFIX}${headers.join("|")}`;
+}
+
+function storedTableRatios(storageKey, columnCount) {
+  try {
+    const ratios = JSON.parse(localStorage.getItem(storageKey) || "null");
+    if (
+      !Array.isArray(ratios) ||
+      ratios.length !== columnCount ||
+      ratios.some((ratio) => !Number.isFinite(ratio) || ratio <= 0) ||
+      Math.abs(ratios.reduce((total, ratio) => total + ratio, 0) - 100) > 0.1
+    ) {
+      return [];
+    }
+    return ratios;
+  } catch {
+    return [];
+  }
+}
+
 function table(headers, rows, emptyMessage = "No rows to show") {
   const rendered = rows.slice(0, MAX_RENDERED_ROWS).join("");
-  return `<div class="table-wrap"><table><thead><tr>${headers.map((header) => `<th scope="col">${text(header)}</th>`).join("")}</tr></thead><tbody>${rendered || emptyRow(headers.length, emptyMessage)}</tbody></table></div>`;
+  const storageKey = tableWidthStorageKey(headers);
+  const ratios = storedTableRatios(storageKey, headers.length);
+  const resized = ratios.length === headers.length;
+  const columns = headers
+    .map((_, index) => {
+      const width = resized ? ` style="width: ${ratios[index]}%"` : "";
+      return `<col data-column-index="${index}"${width}>`;
+    })
+    .join("");
+  const headingCells = headers
+    .map((header, index) => {
+      const resizeHandle =
+        index < headers.length - 1
+          ? `
+            <span
+              class="column-resize-handle"
+              role="separator"
+              tabindex="0"
+              aria-label="Resize ${text(header)} column"
+              aria-orientation="vertical"
+              aria-valuemin="${TABLE_COLUMN_ABSOLUTE_MIN_WIDTH}"
+              aria-valuemax="${TABLE_COLUMN_MAX_WIDTH}"
+              data-column-index="${index}"
+              title="Drag or use Left and Right Arrow keys to resize"
+            ></span>
+          `
+          : "";
+      return `
+        <th scope="col" aria-label="${text(header)}">
+          <span class="column-heading-label">${text(header)}</span>
+          ${resizeHandle}
+        </th>
+      `;
+    })
+    .join("");
+
+  return `
+    <div class="table-wrap">
+      <table
+        class="resizable-table"
+        data-table-width-key="${text(storageKey)}"
+        ${resized ? 'data-columns-resized="true"' : ""}
+      >
+        <colgroup>${columns}</colgroup>
+        <thead><tr>${headingCells}</tr></thead>
+        <tbody>${rendered || emptyRow(headers.length, emptyMessage)}</tbody>
+      </table>
+    </div>
+  `;
 }
 
 function capabilityButton(
@@ -202,7 +364,11 @@ function parsedRoute() {
       key: `${parts.join("/")}?${query}`,
     };
   if (parts[0] === "operations")
-    return { kind: "operations", key: "operations" };
+    return {
+      kind: "operations",
+      inspect: params.get("inspect") || "",
+      key: `operations?${query}`,
+    };
   return { kind: "home", key: "home" };
 }
 
@@ -255,12 +421,13 @@ const hostTabs = (id, active) =>
     ["images", "Images"],
     ["networks", "Networks"],
     ["volumes", "Volumes"],
-    ["metrics", "Live Metrics"],
+    ["metrics", "Container stats"],
     ["audit", "Audit"],
   ]);
 const projectTabs = (id, active) =>
   tabs("projects", id, active, [
     ["summary", "Summary"],
+    ["services", "Services"],
     ["containers", "Containers"],
     ["files", "Files"],
     ["logs", "Logs"],
@@ -442,6 +609,7 @@ function renderSearch() {
         ? "No indexed host or Compose project matches"
         : "No indexed objects",
     );
+    restoreStoredTableWidths($("#search-results"));
   };
   input.addEventListener("input", update);
   update();
@@ -484,8 +652,13 @@ async function renderHost(route, signal) {
     },
     { label: route.tab },
   ]);
-  const shell = () =>
-    `${pageHeader("Docker host", host.display_name || host.id, `Agent ${host.id} · ${connectionAvailable(host) ? "connected" : "offline"}`)}${hostTabs(host.id, route.tab)}`;
+  const shell = (actions = "") =>
+    `${pageHeader(
+      "Docker host",
+      host.display_name || host.id,
+      `Agent ${host.id} · ${connectionAvailable(host) ? "connected" : "offline"}`,
+      actions,
+    )}${hostTabs(host.id, route.tab)}`;
   if (route.tab === "summary") {
     const detail = await jsonRequest(
       `/api/v1/hosts/${encodeURIComponent(host.id)}`,
@@ -511,23 +684,129 @@ async function renderHost(route, signal) {
           !project.present ||
           (project.drift && project.drift !== "in-sync")),
     );
-    view.innerHTML = `${shell()}${unavailable}<div class="split-grid"><section class="panel"><div class="panel-header"><div><h2>Docker Engine</h2><p>Engine-reported capacity and inventory counts, not Host OS utilization.</p></div></div>${definitionList({ "Engine version": engine?.version, Containers: engine ? `${engine.containers_total} total · ${engine.containers_running} running · ${stopped} stopped` : "—", Images: engine?.images, "CPU capacity": engine?.cpu_capacity, "Memory capacity": engine ? formatBytes(engine.memory_capacity_bytes) : "—", "Storage driver": engine?.storage_driver })}</section><section class="panel"><div class="panel-header"><div><h2>Dockpilot management</h2><p>Current session and capability facts.</p></div></div>${Object.entries(
-      detail.capabilities || {},
-    )
+    const usageAvailable = Boolean(host.capabilities?.metrics?.enabled);
+    const cpuCapacity = engine?.cpu_capacity;
+    const memoryCapacity = engine?.memory_capacity_bytes;
+    const engineOverview = definitionList(
+      {
+        "Engine version": engine?.version,
+        Containers: engine
+          ? `${engine.containers_total} total · ${engine.containers_running} running · ${stopped} stopped`
+          : "—",
+        Images: engine?.images,
+        "CPU used / total": engine
+          ? `${usageAvailable ? "Loading" : "Unavailable"} / ${cpuCapacity} logical CPUs`
+          : "—",
+        "Memory used / total": engine
+          ? `${usageAvailable ? "Loading" : "Unavailable"} / ${formatBytes(memoryCapacity)}`
+          : "—",
+        "Stats observed": usageAvailable ? "Loading" : "Unavailable",
+        "Storage driver": engine?.storage_driver,
+      },
+      {
+        "CPU used / total": "engine-cpu-usage",
+        "Memory used / total": "engine-memory-usage",
+        "Stats observed": "engine-usage-observed",
+      },
+    );
+    const engineTechnicalDetails = definitionList({
+      "Engine API version": detail.docker_api_version,
+      "Docker Compose version": detail.docker_compose_version,
+      "Logging driver": engine?.logging_driver,
+      "Cgroup driver / version": engine
+        ? [engine.cgroup_driver, engine.cgroup_version]
+            .filter(Boolean)
+            .join(" · ")
+        : "",
+      "Default runtime": engine?.default_runtime,
+      "Operating system": engine
+        ? [engine.operating_system, engine.os_version]
+            .filter(Boolean)
+            .join(" · ")
+        : "",
+      "OS type": engine?.os_type,
+      Architecture: engine?.architecture,
+      Kernel: engine?.kernel_version,
+      "Docker root directory": engine?.docker_root_dir,
+    });
+    const managementCapabilities = Object.entries(detail.capabilities || {})
       .map(
-        ([name, cap]) =>
-          `<div class="capability-row"><span class="primary">${text(name)}</span> · ${cap.enabled ? "Available" : "Unavailable"}<div class="secondary">${text(cap.reason || "")}</div></div>`,
+        ([name, cap]) => `
+          <div class="capability-row">
+            <span class="primary">${text(CAPABILITY_LABELS[name] || name)}</span> ·
+            ${cap.enabled ? "Available" : "Unavailable"}
+            <div class="secondary">${text(cap.reason || "")}</div>
+          </div>
+        `,
       )
-      .join(
-        "",
-      )}${definitionList({ "Session source IP": detail.session_source_ip, Observed: formatTime(detail.session_observed_at), "Last discovery": formatTime(detail.project_scan?.scanned_at) })}</section></div><section class="panel"><div class="panel-header"><div><h2>Engine details</h2><p>Progressive one-shot Docker Engine inspection; Live Metrics is not opened.</p></div></div>${definitionList({ "Docker Engine version": engine?.version, "Engine API version": detail.docker_api_version, "Docker Compose version": detail.docker_compose_version, "Storage driver": engine?.storage_driver, "Logging driver": engine?.logging_driver, "Cgroup driver / version": engine ? [engine.cgroup_driver, engine.cgroup_version].filter(Boolean).join(" · ") : "", "Default runtime": engine?.default_runtime, "Operating system": engine ? [engine.operating_system, engine.os_version].filter(Boolean).join(" · ") : "", "OS type": engine?.os_type, Architecture: engine?.architecture, Kernel: engine?.kernel_version, "Docker root directory": engine?.docker_root_dir })}</section><section class="panel flush"><div class="panel-header inset"><div><h2>Compose exceptions</h2><p>Only projects with deterministic known exceptions are shown.</p></div><a href="#/hosts/${encodeURIComponent(host.id)}/compose">Open Compose</a></div>${table(
-      ["Project", "State", "Configuration"],
-      exceptions.map(
-        (project) =>
-          `<tr><td><a class="primary" href="#/projects/${encodeURIComponent(project.uid)}/summary">${text(project.name)}</a><div class="secondary mono">${text(project.working_dir)}</div></td><td>${projectStatus(project)}</td><td>${text(project.drift || "unknown")}</td></tr>`,
-      ),
-      "No Compose project exceptions",
-    )}</section>`;
+      .join("");
+    const managementFacts = definitionList({
+      "Session source IP": detail.session_source_ip,
+      "Session observed": formatTime(detail.session_observed_at),
+      "Compose discovery": formatTime(detail.project_scan?.scanned_at),
+    });
+
+    view.innerHTML = `
+      ${shell()}
+      ${unavailable}
+      <section class="panel host-summary-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Host</h2>
+            <p>Current Agent session, discovery, and Dockpilot capability state.</p>
+          </div>
+        </div>
+        ${managementFacts}
+        <section class="management-capabilities" aria-labelledby="capabilities-heading">
+          <h3 id="capabilities-heading">Capabilities</h3>
+          <div class="capability-grid">
+              ${managementCapabilities}
+          </div>
+        </section>
+      </section>
+      <section class="panel engine-summary-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Docker Engine</h2>
+            <p>
+              Resource usage by running Containers against Engine-reported
+              capacity; Host processes outside Docker are excluded.
+            </p>
+          </div>
+        </div>
+        ${engineOverview}
+        <section class="engine-technical-section" aria-labelledby="engine-technical-heading">
+          <h3 id="engine-technical-heading">Engine technical details</h3>
+          <p class="secondary">
+            Engine-reported technical configuration from the same one-shot
+            inspection.
+          </p>
+          ${engineTechnicalDetails}
+        </section>
+      </section>
+      <section class="panel flush">
+        <div class="panel-header inset">
+          <div>
+            <h2>Compose projects</h2>
+            <p>Only projects with deterministic known exceptions are shown.</p>
+          </div>
+          <a href="#/hosts/${encodeURIComponent(host.id)}/compose">
+            Open Compose
+          </a>
+        </div>
+        ${table(
+          ["Project", "State", "Compose config"],
+          exceptions.map(
+            (project) =>
+              `<tr><td><a class="primary" href="#/projects/${encodeURIComponent(project.uid)}/summary">${text(project.name)}</a><div class="secondary mono">${text(project.working_dir)}</div></td><td>${projectStatus(project)}</td><td>${text(composeConfigState(project.drift))}</td></tr>`,
+          ),
+          "No Compose project exceptions",
+        )}
+      </section>
+    `;
+    if (engine && usageAvailable) {
+      loadSummaryWorkloadSnapshot(host, engine, signal);
+    }
     return;
   }
   if (route.tab === "compose") {
@@ -535,24 +814,67 @@ async function renderHost(route, signal) {
       (project) => project.agent_id === host.id,
     );
     const rows = projects.map((project) => {
-      const observed =
+      const attachmentsCurrent =
         project.present && !project.stale && project.last_observed_at;
-      const containers = observed
+      const containers = attachmentsCurrent
         ? String((project.container_ids || []).length)
-        : `Last known · ${project.last_observed_at ? formatTime(project.last_observed_at) : "not observed"}`;
+        : "Unavailable";
+      const lastObserved = project.last_observed_at
+        ? `<time datetime="${text(project.last_observed_at)}">${text(formatTime(project.last_observed_at))}</time>`
+        : "Never";
       const attention =
         [
           project.restore_recovery_required && "Recovery required",
           project.collision && "Collision",
           project.stale && "Stale",
           !project.present && "Missing",
-          project.drift && project.drift !== "in-sync" && project.drift,
+          project.drift &&
+            project.drift !== "in-sync" &&
+            composeConfigState(project.drift),
         ]
           .filter(Boolean)
           .join(" · ") || "—";
-      return `<tr><td><a class="primary" href="#/projects/${encodeURIComponent(project.uid)}/summary">${text(project.name)}</a><div class="secondary mono">${text(project.working_dir)}</div></td><td>${text((project.defined_services || []).length)}</td><td>${text(containers)}</td><td>${text(project.drift || "unknown")}</td><td>${text(attention)}</td></tr>`;
+      return `
+        <tr>
+          <td>
+            <a class="primary" href="#/projects/${encodeURIComponent(project.uid)}/summary">
+              ${text(project.name)}
+            </a>
+            <div class="secondary mono">${text(project.working_dir)}</div>
+          </td>
+          <td>${text((project.defined_services || []).length)}</td>
+          <td>${text(containers)}</td>
+          <td>${lastObserved}</td>
+          <td>${text(composeConfigState(project.drift))}</td>
+          <td>${text(attention)}</td>
+        </tr>
+      `;
     });
-    view.innerHTML = `${pageHeader("Docker Compose", "Compose", `Compose projects discovered on ${host.display_name || host.id}.`, `<button class="primary-button" data-action="project-operation" data-kind="discovery.rescan" data-agent="${text(host.id)}">Rescan projects</button>`)}${hostTabs(host.id, route.tab)}<section class="panel flush">${table(["Project", "Services", "Containers", "Configuration", "Needs attention"], rows, "No Compose projects discovered on this Docker host")}</section>`;
+    view.innerHTML = `
+      ${shell(
+        `<button class="primary-button" data-action="project-operation" data-kind="discovery.rescan" data-agent="${text(host.id)}">Rescan Compose projects</button>`,
+      )}
+      <section class="panel flush">
+        <div class="panel-header inset">
+          <div>
+            <h2>Compose projects</h2>
+            <p>Compose projects discovered on this Docker host.</p>
+          </div>
+        </div>
+        ${table(
+          [
+            "Project",
+            "Services",
+            "Containers",
+            "Last observed",
+            "Compose config",
+            "Needs attention",
+          ],
+          rows,
+          "No Compose projects discovered on this Docker host",
+        )}
+      </section>
+    `;
     return;
   }
   if (["containers", "images", "networks", "volumes"].includes(route.tab)) {
@@ -590,6 +912,28 @@ async function renderHost(route, signal) {
 function portsCell(ports) {
   return `<div class="ports">${(ports || []).map((port) => badge(`${port.host_ip ? `${port.host_ip}:` : ""}${port.published_port} → ${port.target_port}/${port.protocol}`)).join("") || "—"}</div>`;
 }
+function containerActionsButton(agentID, projectUID, container) {
+  const name = (container.names || []).join(", ") || shortID(container.id);
+  return `
+    <button
+      class="row-menu-trigger"
+      type="button"
+      data-action="open-container-actions"
+      data-agent="${text(agentID)}"
+      data-project="${text(projectUID || "")}"
+      data-container="${text(container.id)}"
+      data-container-name="${text(name)}"
+      data-container-state="${text(container.state || "unknown")}"
+      data-protected="${container.protected ? "true" : "false"}"
+      data-protection-reason="${text(container.protection_reason || "")}"
+      aria-label="Actions for ${text(name)}"
+      aria-controls="container-actions-menu"
+      aria-expanded="false"
+      aria-haspopup="menu"
+      title="Container actions"
+    >…</button>
+  `;
+}
 function renderInventory(kind, items, agentID) {
   const headers = {
     containers: [
@@ -601,22 +945,17 @@ function renderInventory(kind, items, agentID) {
       "Image",
       "Published ports",
       "Protection",
+      "",
     ],
-    images: [
-      "Repository / tags",
-      "Image ID",
-      "Created",
-      "Virtual size",
-      "References",
-    ],
+    images: ["Repository / tags", "Image ID", "Created", "Size", "Containers"],
     networks: ["Network", "Driver", "Scope", "Flags"],
     volumes: ["Volume", "Driver", "Scope", "Created"],
   }[kind];
   const rows = (items || []).map((item) => {
     if (kind === "containers")
-      return `<tr><td>${text(item.compose_project || "—")}</td><td>${text(item.compose_service || "—")}${item.one_off ? `<div class="secondary">One-off</div>` : ""}${item.orphan ? `<div class="secondary">Orphan</div>` : ""}</td><td><a class="row-button" href="#/hosts/${encodeURIComponent(agentID)}/containers?inspect=${encodeURIComponent(item.id)}"><span class="primary">${text((item.names || []).join(", ") || shortID(item.id))}</span><div class="secondary mono">${text(shortID(item.id))}</div></a></td><td>${stateBadge(item.state)}</td><td>${item.health ? stateBadge(item.health) : "—"}</td><td>${text(item.image || "—")}</td><td>${portsCell(item.ports)}</td><td>${item.protected ? `${badge("Protected", "warn")}<div class="secondary">${text(item.protection_reason)}</div>` : "—"}</td></tr>`;
+      return `<tr><td>${text(item.compose_project || "—")}</td><td>${text(item.compose_service || "—")}${item.one_off ? `<div class="secondary">One-off</div>` : ""}${item.orphan ? `<div class="secondary">Orphan</div>` : ""}</td><td><a class="row-button" href="#/hosts/${encodeURIComponent(agentID)}/containers?inspect=${encodeURIComponent(item.id)}"><span class="primary">${text((item.names || []).join(", ") || shortID(item.id))}</span><div class="secondary mono">${text(shortID(item.id))}</div></a></td><td>${stateBadge(item.state)}</td><td>${item.health ? stateBadge(item.health) : "—"}</td><td>${text(item.image || "—")}</td><td>${portsCell(item.ports)}</td><td>${item.protected ? `${badge("Protected", "warn")}<div class="secondary">${text(item.protection_reason)}</div>` : "—"}</td><td>${containerActionsButton(agentID, "", item)}</td></tr>`;
     if (kind === "images")
-      return `<tr><td><a class="row-button" href="#/hosts/${encodeURIComponent(agentID)}/images?inspect=${encodeURIComponent(item.id)}"><span class="primary">${text((item.repo_tags || []).join(", ") || "Untagged")}</span><div class="secondary">${text((item.repo_digests || []).join(", ") || "No digest references")}</div></a></td><td class="mono">${text(shortID(item.id))}</td><td>${text(item.created_unix ? formatTime(item.created_unix * 1000) : "—")}</td><td>${text(formatBytes(item.size_bytes))}</td><td>${item.containers === 0 ? "Unused" : item.containers < 0 ? "Unknown" : `Referenced by ${text(item.containers)} Container(s)`}</td></tr>`;
+      return `<tr><td><a class="row-button" href="#/hosts/${encodeURIComponent(agentID)}/images?inspect=${encodeURIComponent(item.id)}"><span class="primary">${text((item.repo_tags || []).join(", ") || "Untagged")}</span><div class="secondary">${text((item.repo_digests || []).join(", ") || "No digest references")}</div></a></td><td class="mono">${text(shortID(item.id))}</td><td>${text(item.created_unix ? formatTime(item.created_unix * 1000) : "—")}</td><td>${text(formatBytes(item.size_bytes))}</td><td>${item.containers === 0 ? "Unused" : item.containers < 0 ? "Unknown" : `Used by ${text(item.containers)} ${item.containers === 1 ? "Container" : "Containers"}`}</td></tr>`;
     if (kind === "networks")
       return `<tr><td><a class="row-button" href="#/hosts/${encodeURIComponent(agentID)}/networks?inspect=${encodeURIComponent(item.id)}"><span class="primary">${text(item.name)}</span><div class="secondary mono">${text(shortID(item.id))}</div></a></td><td>${text(item.driver)}</td><td>${text(item.scope)}</td><td>${[item.internal && badge("Internal"), item.attachable && badge("Attachable"), item.ingress && badge("Ingress")].filter(Boolean).join(" ") || "—"}</td></tr>`;
     return `<tr><td><a class="row-button" href="#/hosts/${encodeURIComponent(agentID)}/volumes?inspect=${encodeURIComponent(item.name)}"><span class="primary">${text(item.name)}</span></a></td><td>${text(item.driver)}</td><td>${text(item.scope)}</td><td>${text(item.created_at || "—")}</td></tr>`;
@@ -624,7 +963,7 @@ function renderInventory(kind, items, agentID) {
   return `<section class="panel flush"><div class="panel-header inset"><div><h2>${text(kind[0].toUpperCase() + kind.slice(1))}</h2><p>${items.length} current Docker objects. This list is not stored by the Server.</p></div></div>${table(headers, rows, `No ${kind} reported by Docker Engine`)}</section>`;
 }
 
-function definitionList(values) {
+function definitionList(values, valueIDs = {}) {
   return `<dl class="definition-list">${Object.entries(values)
     .map(([key, value]) => {
       const display =
@@ -635,9 +974,79 @@ function definitionList(values) {
             : value === undefined || value === null || value === ""
               ? "—"
               : value;
-      return `<div class="definition-row"><dt class="muted">${text(key)}</dt><dd>${text(display)}</dd></div>`;
+      const valueID = valueIDs[key] ? ` id="${text(valueIDs[key])}"` : "";
+      return `<div class="definition-row"><dt class="muted">${text(key)}</dt><dd${valueID}>${text(display)}</dd></div>`;
     })
     .join("")}</dl>`;
+}
+
+function renderSummaryWorkloadSnapshot(frame, engine) {
+  const cpuUsage = $("#engine-cpu-usage");
+  const memoryUsage = $("#engine-memory-usage");
+  const observed = $("#engine-usage-observed");
+  if (!cpuUsage || !memoryUsage || !observed) return;
+
+  const totals = frame.host?.totals || {};
+  const pending = Number(totals.pending_count || 0);
+  const qualifier = pending > 0 ? "Partial · " : "";
+  const cpuCapacity = Number(
+    frame.host?.cpu_capacity || engine.cpu_capacity || 0,
+  );
+  const memoryCapacity = Number(
+    frame.host?.memory_capacity || engine.memory_capacity_bytes || 0,
+  );
+  const usedCPUs = Number(totals.cpu_percent || 0) / 100;
+  const usedMemory = Number(totals.memory_usage || 0);
+  const memoryPercent = memoryCapacity
+    ? ` (${((usedMemory / memoryCapacity) * 100).toFixed(1)}%)`
+    : "";
+
+  cpuUsage.textContent = `${qualifier}${usedCPUs.toFixed(2)} / ${cpuCapacity} logical CPUs`;
+  memoryUsage.textContent = `${qualifier}${formatBytes(usedMemory)} / ${formatBytes(memoryCapacity)}${memoryPercent}`;
+  observed.textContent = formatTime(frame.observed_at);
+}
+
+function markSummaryWorkloadUnavailable(engine) {
+  const cpuUsage = $("#engine-cpu-usage");
+  const memoryUsage = $("#engine-memory-usage");
+  const observed = $("#engine-usage-observed");
+  if (cpuUsage) {
+    cpuUsage.textContent = `Unavailable / ${engine.cpu_capacity} logical CPUs`;
+  }
+  if (memoryUsage) {
+    memoryUsage.textContent = `Unavailable / ${formatBytes(engine.memory_capacity_bytes)}`;
+  }
+  if (observed) observed.textContent = "Unavailable";
+}
+
+function loadSummaryWorkloadSnapshot(host, engine, routeSignal) {
+  state.streamController?.abort();
+  const controller = new AbortController();
+  state.streamController = controller;
+  let receivedFrame = false;
+  routeSignal.addEventListener("abort", () => controller.abort(), {
+    once: true,
+  });
+  const timeout = window.setTimeout(() => controller.abort(), 8000);
+
+  streamSSE(
+    `/api/v1/live/matrix?agent_id=${encodeURIComponent(host.id)}`,
+    controller.signal,
+    (kind, frame) => {
+      if (kind !== "matrix") return;
+      receivedFrame = true;
+      renderSummaryWorkloadSnapshot(frame, engine);
+      if (!Number(frame.host?.totals?.pending_count || 0)) {
+        controller.abort();
+      }
+    },
+  )
+    .catch((error) => {
+      if (error.name !== "AbortError" || !receivedFrame) {
+        markSummaryWorkloadUnavailable(engine);
+      }
+    })
+    .finally(() => window.clearTimeout(timeout));
 }
 
 function projectStatus(project) {
@@ -648,6 +1057,296 @@ function projectStatus(project) {
   if (!project.present) return badge("Missing", "warn");
   if (project.read_only) return badge("Read-only", "warn");
   return badge("Managed", "good");
+}
+
+function composeConfigState(value) {
+  return (
+    {
+      "in-sync": "In sync",
+      changed: "Changed",
+      "no-baseline": "No baseline",
+    }[String(value || "").toLowerCase()] || "Unknown"
+  );
+}
+
+function serviceContainerState(runtimeService) {
+  const states = [
+    ...new Set(
+      (runtimeService?.containers || [])
+        .filter((container) => !container.one_off)
+        .map((container) => String(container.state || "").toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+  if (states.length === 1) return states[0];
+  if (states.length > 1) return "Mixed";
+  if (runtimeService?.profile_inactive) return "Excluded by profile";
+  return runtimeService?.status || "No container";
+}
+
+function serviceActionsButton(
+  project,
+  service,
+  runtimeService,
+  pullAvailable,
+  upAvailable,
+  runtimeAvailable,
+  buildUnavailableReason,
+  runtimeUnavailableReason,
+) {
+  const containerState = serviceContainerState(runtimeService);
+  return `
+    <button
+      class="row-menu-trigger"
+      type="button"
+      data-action="open-service-actions"
+      data-project="${text(project.uid)}"
+      data-agent="${text(project.agent_id)}"
+      data-target="${text(service.name)}"
+      data-service-status="${text(containerState)}"
+      data-pull-available="${pullAvailable ? "true" : "false"}"
+      data-up-available="${upAvailable ? "true" : "false"}"
+      data-runtime-available="${runtimeAvailable ? "true" : "false"}"
+      data-build-reason="${text(buildUnavailableReason)}"
+      data-runtime-reason="${text(runtimeUnavailableReason)}"
+      aria-label="Actions for ${text(service.name)} Service"
+      aria-controls="service-actions-menu"
+      aria-expanded="false"
+      aria-haspopup="menu"
+      title="Service actions"
+    >…</button>
+  `;
+}
+
+function renderProjectServicesPanel(
+  project,
+  runtime,
+  mutable,
+  actionState,
+  host,
+) {
+  const runtimeServices = runtime?.services || [];
+  const runtimeServiceByName = new Map(
+    runtimeServices.map((service) => [service.name, service]),
+  );
+  const mutationUnavailableReason = !actionState
+    ? host?.capabilities?.compose?.reason || "Compose operations unavailable"
+    : !project.compose_executable
+      ? "Docker Compose unavailable"
+      : project.read_only
+        ? "Project is read-only"
+        : project.restore_recovery_required
+          ? "Restore recovery is required"
+          : "Operation unavailable";
+
+  const rows = (project.defined_services || []).map((service) => {
+    const runtimeService = runtimeServiceByName.get(service.name);
+    const existingContainers = (runtimeService?.containers || []).filter(
+      (container) => !container.one_off,
+    );
+    const containerHealth = [
+      ...new Set(existingContainers.map((container) => container.health)),
+    ].filter(Boolean);
+    const publishedPorts = [
+      ...new Map(
+        existingContainers
+          .flatMap((container) => container.ports || [])
+          .map((port) => [
+            [
+              port.host_ip,
+              port.published_port,
+              port.target_port,
+              port.protocol,
+            ].join(":"),
+            port,
+          ]),
+      ).values(),
+    ];
+    const runtimeAvailable = mutable && existingContainers.length > 0;
+    const runtimeUnavailableReason = !mutable
+      ? mutationUnavailableReason
+      : !runtime
+        ? "Compose container state unavailable"
+        : "No existing Container for this Service";
+    const pullAvailable = mutable && service.pull_available;
+    const upAvailable = mutable && service.up_available;
+    const buildUnavailableReason = !mutable
+      ? mutationUnavailableReason
+      : service.unavailable_reason || "Unavailable under the no-build policy";
+    const buildState = service.build_required
+      ? badge("Required", "bad")
+      : service.has_build
+        ? badge("Configured", "info")
+        : badge("Not set");
+    const containerState = runtime
+      ? serviceContainerState(runtimeService)
+      : "Container state unavailable";
+    const health = containerHealth.join(", ") || "—";
+    const profiles = (service.profiles || []).join(", ") || "Default";
+    const ports = publishedPorts.length ? portsCell(publishedPorts) : "—";
+    const actions = serviceActionsButton(
+      project,
+      service,
+      runtimeService,
+      pullAvailable,
+      upAvailable,
+      runtimeAvailable,
+      buildUnavailableReason,
+      runtimeUnavailableReason,
+    );
+
+    return `
+      <tr>
+        <td data-label="Service" title="${text(service.name)}"><span class="primary">${text(service.name)}</span></td>
+        <td data-label="Status" title="${text(containerState)}">${runtime ? stateBadge(containerState) : "—"}</td>
+        <td data-label="Containers" title="${text(runtime ? existingContainers.length : "Unavailable")}">${runtime ? text(existingContainers.length) : "—"}</td>
+        <td data-label="Health" title="${text(health)}">${text(health)}</td>
+        <td data-label="Image" title="${text(service.image || "No declared Image")}">${text(service.image || "—")}</td>
+        <td data-label="Build" title="${text(service.build_required ? buildUnavailableReason : service.has_build ? "Compose build configuration is present" : "No Compose build configuration")}">${buildState}</td>
+        <td data-label="Pull policy" title="${text(service.pull_policy || "Not declared")}">${text(service.pull_policy || "—")}</td>
+        <td data-label="Profiles" title="${text(profiles)}">${text(profiles)}</td>
+        <td data-label="Depends on" title="${text((service.depends_on || []).join(", ") || "None")}">${text((service.depends_on || []).join(", ") || "None")}</td>
+        <td data-label="Ports" title="${text(publishedPorts.length ? "Published ports" : "None")}">${ports}</td>
+        <td class="service-actions-cell" data-label="">${actions}</td>
+      </tr>
+    `;
+  });
+
+  return `
+    <section class="panel flush project-services-panel">
+      <div class="panel-header inset">
+        <div>
+          <h2>Services</h2>
+          <p>
+            One fact per column from the effective Compose model and current
+            Docker state. Open <strong>…</strong> for Service-level operations.
+            Pull never builds and Up always uses
+            <code>--no-build</code>; Down remains project-wide.
+          </p>
+        </div>
+      </div>
+      ${table(
+        [
+          "Service",
+          "Status",
+          "Containers",
+          "Health",
+          "Image",
+          "Build",
+          "Pull policy",
+          "Profiles",
+          "Depends on",
+          "Ports",
+          "",
+        ],
+        rows,
+        "No Services in the effective Compose model",
+      )}
+    </section>
+  `;
+}
+
+function renderProjectServiceAttention(project, runtime) {
+  const runtimeByService = new Map(
+    (runtime?.services || []).map((service) => [service.name, service]),
+  );
+  const abnormalStates = new Set([
+    "created",
+    "dead",
+    "exited",
+    "paused",
+    "removing",
+    "restarting",
+  ]);
+  const rows = [];
+
+  for (const service of project.defined_services || []) {
+    const runtimeService = runtimeByService.get(service.name);
+    const containers = (runtimeService?.containers || []).filter(
+      (container) => !container.one_off,
+    );
+    const findings = [];
+
+    if (service.build_required) {
+      findings.push({
+        label: "Build required",
+        tone: "bad",
+        evidence:
+          service.unavailable_reason ||
+          "Dockpilot v1 cannot satisfy this Service without an Image build",
+      });
+    }
+    if (runtime && service.active !== false && containers.length === 0) {
+      findings.push({
+        label: "No container",
+        tone: "warn",
+        evidence: "No Container currently exists for this Service",
+      });
+    }
+    const unhealthy = containers.filter(
+      (container) => String(container.health).toLowerCase() === "unhealthy",
+    );
+    if (unhealthy.length) {
+      findings.push({
+        label: "Unhealthy",
+        tone: "bad",
+        evidence: `${unhealthy.length} Container${unhealthy.length === 1 ? " is" : "s are"} unhealthy`,
+      });
+    }
+    const stateExceptions = [
+      ...new Set(
+        containers
+          .map((container) => String(container.state || "").toLowerCase())
+          .filter((containerState) => abnormalStates.has(containerState)),
+      ),
+    ];
+    if (stateExceptions.length) {
+      findings.push({
+        label: "Container state",
+        tone: stateExceptions.some((containerState) =>
+          ["dead", "exited", "removing"].includes(containerState),
+        )
+          ? "bad"
+          : "warn",
+        evidence: `Container state: ${stateExceptions.join(", ")}`,
+      });
+    }
+    if (!findings.length) continue;
+
+    rows.push(`
+      <tr>
+        <td><a class="primary" href="#/projects/${encodeURIComponent(project.uid)}/services">${text(service.name)}</a></td>
+        <td>${findings.map((finding) => badge(finding.label, finding.tone)).join(" ")}</td>
+        <td>${text(findings.map((finding) => finding.evidence).join(" · "))}</td>
+      </tr>
+    `);
+  }
+
+  const runtimeUnavailable = runtime
+    ? ""
+    : `<div class="notice warning">Compose container state is unavailable. Only Compose model exceptions can be shown.</div>`;
+
+  return `
+    <section class="panel flush project-service-attention-panel">
+      <div class="panel-header inset">
+        <div>
+          <h2>Services needing attention</h2>
+          <p>
+            Container-state exceptions and no-build policy blockers for active
+            Services. Services excluded by inactive profiles are not treated
+            as failures.
+          </p>
+        </div>
+        <a class="quiet-button" href="#/projects/${encodeURIComponent(project.uid)}/services">View Services</a>
+      </div>
+      ${runtimeUnavailable}
+      ${table(
+        ["Service", "Condition", "Evidence"],
+        rows,
+        "No Service exceptions reported",
+      )}
+    </section>
+  `;
 }
 
 async function renderProject(route, signal) {
@@ -681,8 +1380,44 @@ async function renderProject(route, signal) {
     disabled = !mutable,
   ) =>
     `<button class="${className}" data-action="project-operation" data-kind="${kind}" data-project="${text(project.uid)}" data-agent="${text(project.agent_id)}" ${disabled ? "disabled" : ""}>${label}</button>`;
-  const shell = () =>
-    `${pageHeader("Compose project", project.name, project.working_dir, `<span>${projectStatus(project)}</span>${projectAction("Pull", "compose.pull", "quiet-button", !mutable || !(project.pull_services || []).length)}${projectAction("Up", "compose.up", "primary-button", !mutable || !project.project_up_available)}${projectAction("Restart", "compose.restart")}${projectAction("Start", "compose.start")}${projectAction("Stop", "compose.stop")}${projectAction("Down", "compose.down", "danger-button")}`)}${projectTabs(project.uid, route.tab)}`;
+  const shell = () => {
+    const projectLifecycleActions = [
+      projectAction(
+        "Pull",
+        "compose.pull",
+        "quiet-button",
+        !mutable || !(project.pull_services || []).length,
+      ),
+      projectAction(
+        "Up",
+        "compose.up",
+        "primary-button",
+        !mutable || !project.project_up_available,
+      ),
+      projectAction("Down", "compose.down", "danger-button"),
+    ].join("");
+    const runtimeActions = [
+      projectAction("Start", "compose.start"),
+      projectAction("Stop", "compose.stop"),
+      projectAction("Restart", "compose.restart"),
+    ].join("");
+    const actions = `
+      <span>${projectStatus(project)}</span>
+      <span class="project-action-group" role="group" aria-label="Apply or remove Compose project">
+        ${projectLifecycleActions}
+      </span>
+      <span class="project-action-group" role="group" aria-label="Control existing Containers">
+        ${runtimeActions}
+      </span>
+    `;
+
+    return `${pageHeader(
+      "Compose project",
+      project.name,
+      project.working_dir,
+      actions,
+    )}${projectTabs(project.uid, route.tab)}`;
+  };
   if (route.tab === "summary") {
     let runtime;
     try {
@@ -693,10 +1428,6 @@ async function renderProject(route, signal) {
     } catch (_) {
       runtime = undefined;
     }
-    const serviceRows = (project.defined_services || []).map(
-      (service) =>
-        `<tr><td><span class="primary">${text(service.name)}</span><div class="secondary">${service.active ? "Default model" : `Profiles: ${(service.profiles || []).join(", ")}`}</div></td><td>${service.build_required ? badge("Build required", "bad") : service.has_build ? badge("Image + build metadata", "info") : badge("Image-backed", "good")}</td><td>${text(service.image || "—")}</td><td>${service.pull_available && actionState ? `<button class="quiet-button" data-action="project-operation" data-kind="compose.pull" data-project="${text(project.uid)}" data-agent="${text(project.agent_id)}" data-target="${text(service.name)}">Pull</button>` : `<span class="secondary" title="${text(service.unavailable_reason || "Unavailable")}">Unavailable</span>`}</td><td>${service.up_available && actionState ? `<button class="quiet-button" data-action="project-operation" data-kind="compose.up" data-project="${text(project.uid)}" data-agent="${text(project.agent_id)}" data-target="${text(service.name)}">Up</button>` : `<span class="secondary" title="${text(service.unavailable_reason || "Unavailable")}">Unavailable</span>`}</td></tr>`,
-    );
     const runtimeServices = runtime?.services || [];
     const noContainer = runtimeServices.filter(
       (service) => service.status === "No container",
@@ -719,9 +1450,101 @@ async function renderProject(route, signal) {
       0,
     );
     const orphans = (runtime?.orphans || []).length;
-    view.innerHTML = `${shell()}${project.project_up_available ? "" : `<div class="notice warning"><strong>Project Up unavailable.</strong> ${text(project.project_up_reason || "The effective model requires a build.")}</div>`}
-      <div class="split-grid"><section class="panel"><div class="panel-header"><div><h2>Runtime summary</h2><p>${runtime ? `Observed ${text(formatTime(runtime.observed_at))}` : "Current runtime view unavailable"}</p></div></div>${definitionList({ "Defined Services": (project.defined_services || []).length, "Existing Containers": runtime ? ordinary : "—", "Services without Container": runtime ? noContainer : "—", "Profile inactive Services": runtime ? inactive : "—", "One-off Containers": runtime ? oneOff : "—", "Orphan Containers": runtime ? orphans : "—" })}</section><section class="panel"><div class="panel-header"><div><h2>Effective Compose context</h2><p>Content-free authoritative model metadata.</p></div></div>${definitionList({ "Project name": project.name, "Project directory": project.working_dir, "Compose files — merge order": (project.compose_files || []).join(" → "), "Included applications": (project.included_by || []).join(", "), "Active profiles": (project.active_profiles || []).join(", ") || "Default model", "Source graph": project.source_graph_complete ? "Complete" : "Incomplete", Configuration: project.drift, "Last verified": formatTime(project.last_verified_at), Management: project.managed ? "Managed" : "Unmanaged" })}</section></div>
-      <section class="panel flush"><div class="panel-header inset"><div><h2>Services and v1 build policy</h2><p>Dockpilot never builds Images and every Up includes <span class="mono">--no-build</span>.</p></div><div class="page-actions"><button class="quiet-button" data-action="project-operation" data-kind="compose.pull" data-project="${text(project.uid)}" data-agent="${text(project.agent_id)}" ${!actionState || !(project.pull_services || []).length ? "disabled" : ""}>Pull Images</button><button class="primary-button" data-action="project-operation" data-kind="compose.up" data-project="${text(project.uid)}" data-agent="${text(project.agent_id)}" ${!actionState || !project.project_up_available ? "disabled" : ""}>Up Project</button></div></div>${table(["Service", "Classification", "Declared Image", "Pull", "Service Up"], serviceRows, "No Services in the effective Compose model")}</section>`;
+    const composeOperations = actionState ? "Available" : "Unavailable";
+    const fileAccess = !host?.capabilities?.fs_read?.enabled
+      ? "Unavailable"
+      : project.read_only || !host?.capabilities?.fs_write?.enabled
+        ? "Read-only"
+        : "Read and write";
+    const projectRecord = !project.present
+      ? "Missing"
+      : project.stale
+        ? "Stale"
+        : project.last_observed_at
+          ? `Current · ${formatTime(project.last_observed_at)}`
+          : "Current · observation time unavailable";
+    const projectOverview = definitionList({
+      "Project directory": project.working_dir,
+      "Compose files — merge order":
+        (project.compose_files || []).join(" → ") || "None reported",
+      "Included applications":
+        (project.included_by || []).join(", ") || "None reported",
+      "Active profiles":
+        (project.active_profiles || []).join(", ") || "Default model",
+      "Compose file graph": project.source_graph_complete
+        ? "Complete"
+        : "Incomplete",
+    });
+    const managementFacts = definitionList({
+      Management: project.managed ? "Managed" : "Unmanaged",
+      "Dockpilot discovery": projectRecord,
+      "Compose operations": composeOperations,
+      "File access": fileAccess,
+      "Compose config": composeConfigState(project.drift),
+      "Last verified": formatTime(project.last_verified_at),
+    });
+    const runtimeSummary = definitionList({
+      "Services in model": (project.defined_services || []).length,
+      Containers: runtime ? ordinary : "—",
+      "Services with no container": runtime ? noContainer : "—",
+      "Services excluded by profiles": runtime ? inactive : "—",
+      "One-off containers": runtime ? oneOff : "—",
+      "Orphan containers": runtime ? orphans : "—",
+    });
+    const upUnavailable = project.project_up_available
+      ? ""
+      : `<div class="notice warning"><strong>Project Up unavailable.</strong> ${text(project.project_up_reason || "The effective model requires a build.")}</div>`;
+
+    view.innerHTML = `
+      ${shell()}
+      ${upUnavailable}
+      <section class="panel project-summary-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Project</h2>
+            <p>Effective Compose metadata and source relationships.</p>
+          </div>
+        </div>
+        ${projectOverview}
+        <section class="project-management-section" aria-labelledby="project-management-heading">
+          <h3 id="project-management-heading">Dockpilot management</h3>
+          ${managementFacts}
+        </section>
+      </section>
+      <section class="panel project-runtime-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Containers</h2>
+            <p>
+              ${runtime ? `Compose containers observed ${text(formatTime(runtime.observed_at))}.` : "Compose container state unavailable."}
+            </p>
+          </div>
+        </div>
+        ${runtimeSummary}
+      </section>
+      ${renderProjectServiceAttention(project, runtime)}
+    `;
+    return;
+  }
+  if (route.tab === "services") {
+    let runtime;
+    try {
+      runtime = await jsonRequest(
+        `/api/v1/projects/${encodeURIComponent(project.uid)}/runtime`,
+        { signal },
+      );
+    } catch (_) {
+      runtime = undefined;
+    }
+    const upUnavailable = project.project_up_available
+      ? ""
+      : `<div class="notice warning"><strong>Project Up unavailable.</strong> ${text(project.project_up_reason || "The effective model requires a build.")}</div>`;
+
+    view.innerHTML = `
+      ${shell()}
+      ${upUnavailable}
+      ${renderProjectServicesPanel(project, runtime, mutable, actionState, host)}
+    `;
     return;
   }
   if (route.tab === "containers") {
@@ -733,20 +1556,28 @@ async function renderProject(route, signal) {
     for (const service of runtime.services || []) {
       if (!(service.containers || []).length)
         rows.push(
-          `<tr><td class="primary">${text(service.name)}</td><td>—</td><td>${stateBadge(service.status)}</td><td>—</td><td>—</td><td>—</td></tr>`,
+          `<tr><td class="primary">${text(service.name)}</td><td>—</td><td>${stateBadge(service.status)}</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`,
         );
       for (const container of service.containers || [])
-        rows.push(projectContainerRow(project.uid, service.name, container));
+        rows.push(
+          projectContainerRow(
+            project.uid,
+            project.agent_id,
+            service.name,
+            container,
+          ),
+        );
     }
     for (const orphan of runtime.orphans || [])
       rows.push(
         projectContainerRow(
           project.uid,
+          project.agent_id,
           orphan.compose_service || "Unknown",
           orphan,
         ),
       );
-    view.innerHTML = `${shell()}${runtime.observed_at ? `<div class="notice">Container attachments were last qualified at ${text(formatTime(runtime.observed_at))}.</div>` : `<div class="notice warning">Attachment freshness is unavailable.</div>`}<section class="panel flush">${table(["Service", "Container", "State", "Health", "Image", "Published ports"], rows, "No defined Services or observed Containers")}</section>`;
+    view.innerHTML = `${shell()}${runtime.observed_at ? `<div class="notice">Compose containers observed ${text(formatTime(runtime.observed_at))}.</div>` : `<div class="notice warning">Compose container observation time is unavailable.</div>`}<section class="panel flush">${table(["Service", "Container", "State", "Health", "Image", "Published ports", ""], rows, "No Services in the Compose model or observed Containers")}</section>`;
     if (route.inspect) {
       state.inspectorRoute = true;
       inspectContainer(project.agent_id, route.inspect);
@@ -776,14 +1607,14 @@ async function renderProject(route, signal) {
   throw new Error("Unknown project section.");
 }
 
-function projectContainerRow(projectUID, service, container) {
+function projectContainerRow(projectUID, agentID, service, container) {
   const markers = [
     container.one_off && badge("One-off", "info"),
     container.orphan && badge("Orphan", "warn"),
   ]
     .filter(Boolean)
     .join(" ");
-  return `<tr><td><span class="primary">${text(service)}</span>${markers ? `<div class="secondary">${markers}</div>` : ""}</td><td><a class="row-button" href="#/projects/${encodeURIComponent(projectUID)}/containers?inspect=${encodeURIComponent(container.id)}"><span class="primary">${text((container.names || []).join(", ") || shortID(container.id))}</span><div class="secondary mono">${text(shortID(container.id))}</div></a></td><td>${stateBadge(container.state)}</td><td>${container.health ? stateBadge(container.health) : "—"}</td><td>${text(container.image)}</td><td>${portsCell(container.ports)}</td></tr>`;
+  return `<tr><td><span class="primary">${text(service)}</span>${markers ? `<div class="secondary">${markers}</div>` : ""}</td><td><a class="row-button" href="#/projects/${encodeURIComponent(projectUID)}/containers?inspect=${encodeURIComponent(container.id)}"><span class="primary">${text((container.names || []).join(", ") || shortID(container.id))}</span><div class="secondary mono">${text(shortID(container.id))}</div></a></td><td>${stateBadge(container.state)}</td><td>${container.health ? stateBadge(container.health) : "—"}</td><td>${text(container.image)}</td><td>${portsCell(container.ports)}</td><td>${containerActionsButton(agentID, projectUID, container)}</td></tr>`;
 }
 
 function sourceButton(kind, path, readable = true) {
@@ -802,7 +1633,7 @@ function renderFileWorkspace(project) {
     <div class="source-group"><h3>Extends references</h3>${extendsRefs.map((item) => sourceButton("file", item.path, item.accessible)).join("") || `<p class="nav-empty">None reported</p>`}</div>
     <div class="source-group"><h3>Interpolation environment</h3>${sourceButton("file", ".env")}</div>
     <div class="source-group"><h3>Service environment files</h3>${(project.env_files || []).map((item) => sourceButton("file", item.path, item.readable)).join("") || `<p class="nav-empty">None reported</p>`}</div>
-    <div class="source-group"><h3>Compose model</h3>${sourceButton("config", "Resolved config (masked)")}</div>
+    <div class="source-group"><h3>Compose model</h3>${sourceButton("config", "docker compose config (masked)")}</div>
     <div class="source-group"><h3>Compose secrets</h3>${(project.secrets || []).map((item) => `<div class="source-link" title="${text(item.source || item.source_type)}">${text(item.name)} <span class="secondary">${text(item.source_type || (item.external ? "external" : ""))}</span></div>`).join("") || `<p class="nav-empty">None reported</p>`}</div>
     <div class="source-group"><h3>Compose configs</h3>${(project.configs || []).map((item) => `<div class="source-link" title="${text(item.source || item.source_type)}">${text(item.name)} <span class="secondary">${text(item.source_type || (item.external ? "external" : ""))}</span></div>`).join("") || `<p class="nav-empty">None reported</p>`}</div>
   </nav><div class="editor-pane"><div class="panel-header"><div><h2 id="editor-title">Choose a source</h2><p id="file-status">File content is live and never stored by the Server.</p></div><div class="form-actions"><button id="reveal-file" class="quiet-button" type="button" hidden>Reveal sensitive file</button><button id="reveal-config" class="quiet-button" type="button" hidden>Reveal resolved values</button><button id="save-file" class="primary-button" type="button" disabled>Save</button></div></div><textarea id="file-editor" aria-label="Compose file editor" spellcheck="false" disabled></textarea></div></div></section>`;
@@ -825,12 +1656,12 @@ function bindFiles(project) {
     if (
       !(await confirmAction(
         "Reveal resolved Compose values?",
-        "Resolved configuration may contain sensitive environment values. It remains transient in this browser.",
+        "docker compose config output may contain resolved sensitive values. It remains transient in this browser.",
         "Reveal",
       ))
     )
       return;
-    loadSource(project, "config", "Resolved config", true);
+    loadSource(project, "config", "docker compose config", true);
   });
   $("#reveal-file").addEventListener("click", async () => {
     const loaded = state.loadedSource;
@@ -865,8 +1696,8 @@ async function loadSource(project, kind, path, reveal) {
         `/api/v1/projects/${encodeURIComponent(project.uid)}/compose/config?reveal=${reveal}`,
       );
       title.textContent = reveal
-        ? "Resolved config — revealed"
-        : "Resolved config — masked";
+        ? "docker compose config — revealed"
+        : "docker compose config — masked";
       editor.value = result.output || "";
       status.textContent = "Transient Compose output; editing is disabled.";
       state.loadedFile = undefined;
@@ -921,11 +1752,15 @@ async function saveFile(project) {
         }),
       },
     );
-    showToast(`Write operation ${operation.operation_id} accepted.`);
+    void trackOperationToast(operation, "Write");
     $("#save-file").disabled = true;
     state.loadedFile = undefined;
   } catch (error) {
-    showToast(error.message);
+    showToast({
+      tone: "error",
+      title: "Write failed to start",
+      message: error.message,
+    });
   }
 }
 
@@ -1148,18 +1983,22 @@ async function loadAudit(context, append) {
   }
 }
 
-async function renderOperations(signal) {
+async function renderOperations(signal, inspectID = "") {
   breadcrumbs([{ label: "Home", href: "#/home" }, { label: "Operations" }]);
   const page = await jsonRequest("/api/v1/operations?limit=200", { signal });
   state.operationsIndex = page.operations || [];
   view.innerHTML = `${pageHeader("Dockpilot control", "Operations", "Bounded Server index with request context and Agent-authoritative execution facts.")}<section class="panel flush">${operationTable(state.operationsIndex)}</section>`;
+  if (inspectID) {
+    state.inspectorRoute = true;
+    inspectOperation(inspectID);
+  }
 }
 
 function renderMetrics(host) {
   view.append($("#metrics-template").content.cloneNode(true));
   if (!host.capabilities?.metrics?.enabled) {
     $("#metrics-status").textContent =
-      host.capabilities?.metrics?.reason || "Live Metrics unavailable";
+      host.capabilities?.metrics?.reason || "Container stats unavailable";
     return;
   }
   state.streamController?.abort();
@@ -1183,11 +2022,19 @@ function renderMetrics(host) {
       if (kind === "matrix") renderMatrix(frame);
     },
   ).catch((error) => {
-    $("#metrics-status").textContent =
-      error.name === "AbortError" ? "Metrics stopped." : error.message;
+    const status = $("#metrics-status");
+    if (status) {
+      status.textContent =
+        error.name === "AbortError"
+          ? "Container stats stopped."
+          : error.message;
+    }
   });
 }
 function renderMatrix(frame) {
+  const status = $("#metrics-status");
+  if (!status) return;
+
   const stale = [
     [frame.membership_stale, frame.membership_reason],
     [frame.workload_stale, frame.workload_reason],
@@ -1195,7 +2042,7 @@ function renderMatrix(frame) {
   ]
     .filter(([value]) => value)
     .map(([, reason]) => reason);
-  $("#metrics-status").textContent = stale.length
+  status.textContent = stale.length
     ? `Partial stale frame: ${stale.join(" · ")}`
     : `Observed ${formatTime(frame.observed_at)} · Agent drops ${frame.agent_dropped_frames || 0} · Server drops ${frame.server_dropped_frames || 0}`;
   state.metricsFrame = frame;
@@ -1217,12 +2064,14 @@ function renderMatrix(frame) {
 }
 function metricsValues(values, pending = false) {
   if (pending) return ["Waiting", "—", "—", "—", "Waiting"];
-  const memory = values.memory_percent_known
-    ? `${Number(values.memory_percent || 0).toFixed(1)}% · ${formatBytes(values.memory_usage || values.sample?.memory_usage)}`
-    : values.memory_limit_unbounded
-      ? `Unbounded · ${formatBytes(values.memory_usage || values.sample?.memory_usage)}`
-      : formatBytes(values.memory_usage || values.sample?.memory_usage);
   const source = values.sample || values;
+  const memoryUsage = values.memory_usage || source.memory_usage;
+  const memoryLimit = values.memory_limit || source.memory_limit;
+  const memory = values.memory_percent_known
+    ? `${formatBytes(memoryUsage)} / ${formatBytes(memoryLimit)} · ${Number(values.memory_percent || 0).toFixed(1)}%`
+    : values.memory_limit_unbounded
+      ? `No container memory limit · ${formatBytes(memoryUsage)} used`
+      : formatBytes(memoryUsage);
   return [
     `${Number(source.cpu_percent || 0).toFixed(1)}%`,
     memory,
@@ -1237,21 +2086,22 @@ function matrixRow(name, depth, values, pending = false, detail = "") {
 }
 function renderMatrixTable() {
   const frame = state.metricsFrame;
-  if (!frame) return;
-  $("#metrics-hierarchy").classList.toggle(
-    "active",
-    state.metricsMode === "hierarchy",
-  );
-  $("#metrics-top").classList.toggle("active", state.metricsMode === "top");
+  const hierarchyButton = $("#metrics-hierarchy");
+  const topButton = $("#metrics-top");
+  const metricsTable = $("#metrics-table");
+  if (!frame || !hierarchyButton || !topButton || !metricsTable) return;
+
+  hierarchyButton.classList.toggle("active", state.metricsMode === "hierarchy");
+  topButton.classList.toggle("active", state.metricsMode === "top");
   const rows = [];
   if (state.metricsMode === "hierarchy") {
     rows.push(
       matrixRow(
-        "Docker workload",
+        "All containers",
         0,
         frame.host?.totals || {},
         false,
-        "Managed Container aggregate; shared network namespaces may be double-counted",
+        "Container aggregate; shared network namespaces may be double-counted",
       ),
     );
     for (const project of frame.projects || []) {
@@ -1312,13 +2162,13 @@ function renderMatrixTable() {
         );
     }
   }
-  $("#metrics-table").innerHTML = table(
+  metricsTable.innerHTML = table(
     [
       "Name",
-      "CPU",
-      "Memory",
-      "Network RX / TX cumulative",
-      "Block R / W cumulative",
+      "CPU %",
+      "Memory usage / limit",
+      "Net I/O (RX / TX)",
+      "Block I/O (read / write)",
       "State",
     ],
     rows,
@@ -1380,21 +2230,421 @@ function appendLog(output, event) {
 function newOperationID(prefix) {
   return `${prefix}-${crypto.randomUUID()}`;
 }
-async function startProjectOperation(button) {
-  const kind = button.dataset.kind,
-    target = button.dataset.target || "",
-    project = button.dataset.project,
-    agent = button.dataset.agent;
-  const destructive = kind === "compose.down";
+
+function operationDisplayLabel(kind) {
+  const action = String(kind || "operation")
+    .split(".")
+    .pop();
+  return `${action.slice(0, 1).toUpperCase()}${action.slice(1)}`;
+}
+
+function operationToastContext(operation) {
+  const project = projectByUID(operation.project_uid);
+  const host = hostByID(operation.agent_id);
+  return (
+    project?.name ||
+    operation.project_uid ||
+    host?.display_name ||
+    operation.agent_id ||
+    "Dockpilot"
+  );
+}
+
+function operationToastOptions(operation, label, context) {
+  const status = String(operation.status || "").toLowerCase();
+  const detail = operation.error || "";
+  const partial = operation.partial_effects_possible
+    ? "Partial effects may be possible."
+    : "";
+  const message = [
+    context,
+    detail || partial || (!operationTerminal(operation) && operation.phase),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const base = {
+    message,
+    operationID: operation.operation_id,
+  };
+
+  if (status === "success" && operation.partial_effects_possible) {
+    return {
+      ...base,
+      tone: "warning",
+      title: `${label} completed with attention`,
+    };
+  }
+  if (status === "success") {
+    return { ...base, tone: "success", title: `${label} completed` };
+  }
+  if (status === "canceled") {
+    return { ...base, tone: "warning", title: `${label} canceled` };
+  }
+  if (status === "interrupted") {
+    return { ...base, tone: "warning", title: `${label} interrupted` };
+  }
+  if (status === "rejected") {
+    return { ...base, tone: "error", title: `${label} rejected` };
+  }
+  if (status === "failed") {
+    return { ...base, tone: "error", title: `${label} failed` };
+  }
+  return { ...base, tone: "info", title: `${label} started` };
+}
+
+function operationPollDelay(milliseconds, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException("Operation tracking stopped", "AbortError"));
+      return;
+    }
+    const aborted = () => {
+      window.clearTimeout(timeout);
+      reject(new DOMException("Operation tracking stopped", "AbortError"));
+    };
+    const timeout = window.setTimeout(() => {
+      signal.removeEventListener("abort", aborted);
+      resolve();
+    }, milliseconds);
+    signal.addEventListener("abort", aborted, { once: true });
+  });
+}
+
+async function trackOperationToast(operation, explicitLabel = "") {
+  const label = explicitLabel || operationDisplayLabel(operation.kind);
+  const context = operationToastContext(operation);
+  const toast = showToast(operationToastOptions(operation, label, context));
+  if (!operation.operation_id || !operation.agent_id) return toast;
+
+  state.operationToastControllers.get(operation.operation_id)?.abort();
+  const controller = new AbortController();
+  state.operationToastControllers.set(operation.operation_id, controller);
+  toast.addEventListener("toastdismiss", () => controller.abort(), {
+    once: true,
+  });
+  if (operationTerminal(operation)) {
+    state.operationToastControllers.delete(operation.operation_id);
+    return toast;
+  }
+
+  const startedAt = Date.now();
+  let failures = 0;
+  let current = operation;
+  try {
+    while (Date.now() - startedAt < OPERATION_POLL_MAX_DURATION) {
+      const delay = Math.min(
+        OPERATION_POLL_MAX_INTERVAL,
+        OPERATION_POLL_INTERVAL * 2 ** Math.min(failures, 3),
+      );
+      await operationPollDelay(delay, controller.signal);
+      try {
+        current = await jsonRequest(
+          `/api/v1/agents/${encodeURIComponent(operation.agent_id)}/operations/${encodeURIComponent(operation.operation_id)}`,
+          { signal: controller.signal },
+        );
+        failures = 0;
+        updateToast(toast, operationToastOptions(current, label, context));
+        if (operationTerminal(current)) return toast;
+      } catch (error) {
+        if (error.name === "AbortError") throw error;
+        failures += 1;
+        if (failures >= 3) {
+          updateToast(toast, {
+            tone: "warning",
+            title: `${label} status unavailable`,
+            message: `${context} · ${error.message}`,
+            operationID: operation.operation_id,
+          });
+        }
+      }
+    }
+    updateToast(toast, {
+      tone: "warning",
+      title: `${label} still running`,
+      message: `${context} · Automatic status tracking ended`,
+      operationID: operation.operation_id,
+    });
+    return toast;
+  } catch (error) {
+    if (error.name !== "AbortError") {
+      updateToast(toast, {
+        tone: "warning",
+        title: `${label} status unavailable`,
+        message: `${context} · ${error.message}`,
+        operationID: operation.operation_id,
+      });
+    }
+    return toast;
+  } finally {
+    if (
+      state.operationToastControllers.get(operation.operation_id) === controller
+    ) {
+      state.operationToastControllers.delete(operation.operation_id);
+    }
+  }
+}
+
+function closeServiceActionsMenu({ restoreFocus = false } = {}) {
+  const menu = $("#service-actions-menu");
+  const trigger = state.serviceActionsTrigger;
+
+  menu.hidden = true;
+  menu.style.removeProperty("left");
+  menu.style.removeProperty("top");
+  menu.style.removeProperty("visibility");
+  trigger?.setAttribute("aria-expanded", "false");
+  state.serviceActionsTrigger = undefined;
+  if (restoreFocus && trigger?.isConnected) trigger.focus();
+}
+
+function positionRowActionsMenu(menu, button) {
+  const triggerBounds = button.getBoundingClientRect();
+  const viewportGap = 8;
+  const menuGap = 4;
+
+  menu.style.visibility = "hidden";
+  menu.hidden = false;
+  const menuBounds = menu.getBoundingClientRect();
+  const left = Math.min(
+    Math.max(viewportGap, triggerBounds.right - menuBounds.width),
+    window.innerWidth - menuBounds.width - viewportGap,
+  );
+  const spaceBelow = window.innerHeight - triggerBounds.bottom - viewportGap;
+  const top =
+    spaceBelow >= menuBounds.height
+      ? triggerBounds.bottom + menuGap
+      : Math.max(viewportGap, triggerBounds.top - menuBounds.height - menuGap);
+
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  menu.style.removeProperty("visibility");
+}
+
+function openServiceActions(button) {
+  const menu = $("#service-actions-menu");
+  if (state.serviceActionsTrigger === button && !menu.hidden) {
+    closeServiceActionsMenu({ restoreFocus: true });
+    return;
+  }
+  closeContainerActionsMenu();
+  closeServiceActionsMenu();
+  const pullAvailable = button.dataset.pullAvailable === "true";
+  const upAvailable = button.dataset.upAvailable === "true";
+  const runtimeAvailable = button.dataset.runtimeAvailable === "true";
+  const availability = {
+    "compose.pull": pullAvailable,
+    "compose.up": upAvailable,
+    "compose.start": runtimeAvailable,
+    "compose.stop": runtimeAvailable,
+    "compose.restart": runtimeAvailable,
+  };
+  const reasons = [
+    !pullAvailable && !upAvailable ? button.dataset.buildReason : "",
+    !runtimeAvailable ? button.dataset.runtimeReason : "",
+  ].filter((reason, index, values) => {
+    return reason && values.indexOf(reason) === index;
+  });
+
+  menu.setAttribute(
+    "aria-label",
+    `Actions for ${button.dataset.target} Service`,
+  );
+  $("#service-actions-menu-reason").textContent =
+    reasons.join(" · ") ||
+    "Pull never builds. Every Service Up includes --no-build.";
+  menu
+    .querySelectorAll("[data-action=service-operation]")
+    .forEach((actionButton) => {
+      actionButton.dataset.agent = button.dataset.agent;
+      actionButton.dataset.project = button.dataset.project;
+      actionButton.dataset.target = button.dataset.target;
+      actionButton.disabled = !availability[actionButton.dataset.kind];
+      actionButton.title = actionButton.disabled
+        ? actionButton.dataset.kind === "compose.pull" ||
+          actionButton.dataset.kind === "compose.up"
+          ? button.dataset.buildReason
+          : button.dataset.runtimeReason
+        : "";
+    });
+  state.serviceActionsTrigger = button;
+  button.setAttribute("aria-expanded", "true");
+  positionRowActionsMenu(menu, button);
+  const firstAvailable = menu.querySelector(
+    "[data-action=service-operation]:not(:disabled)",
+  );
+  (
+    firstAvailable || menu.querySelector("[data-action=service-operation]")
+  ).focus({ preventScroll: true });
+}
+
+function closeContainerActionsMenu({ restoreFocus = false } = {}) {
+  const menu = $("#container-actions-menu");
+  const trigger = state.containerActionsTrigger;
+
+  menu.hidden = true;
+  menu.style.removeProperty("left");
+  menu.style.removeProperty("top");
+  menu.style.removeProperty("visibility");
+  trigger?.setAttribute("aria-expanded", "false");
+  state.containerActionsTrigger = undefined;
+  if (restoreFocus && trigger?.isConnected) trigger.focus();
+}
+
+function openContainerActions(button) {
+  const menu = $("#container-actions-menu");
+  if (state.containerActionsTrigger === button && !menu.hidden) {
+    closeContainerActionsMenu({ restoreFocus: true });
+    return;
+  }
+  closeServiceActionsMenu();
+  closeContainerActionsMenu();
+  const stateName = String(button.dataset.containerState || "unknown");
+  const normalizedState = stateName.toLowerCase();
+  const protectedContainer = button.dataset.protected === "true";
+  const startAvailable = ["created", "exited"].includes(normalizedState);
+  const stopAvailable = ["running", "paused", "restarting"].includes(
+    normalizedState,
+  );
+  const restartAvailable = [
+    "running",
+    "paused",
+    "restarting",
+    "exited",
+  ].includes(normalizedState);
+  const removeAvailable = ["created", "exited", "dead"].includes(
+    normalizedState,
+  );
+  const availability = {
+    "container.start": startAvailable,
+    "container.stop": stopAvailable && !protectedContainer,
+    "container.restart": restartAvailable && !protectedContainer,
+    "container.remove": removeAvailable && !protectedContainer,
+  };
+
+  menu.setAttribute(
+    "aria-label",
+    `Actions for ${button.dataset.containerName}`,
+  );
+  $("#container-actions-menu-reason").textContent = protectedContainer
+    ? `${stateName} · Direct Docker actions target only this Container. ${button.dataset.protectionReason || "This Container is protected from Stop, Restart, and Remove."}`
+    : `${stateName} · Direct Docker actions target only this Container. Start is for created or exited Containers. Remove requires a stopped Container and retains Volumes.`;
+
+  menu
+    .querySelectorAll("[data-action=container-operation]")
+    .forEach((actionButton) => {
+      actionButton.dataset.agent = button.dataset.agent;
+      actionButton.dataset.project = button.dataset.project || "";
+      actionButton.dataset.container = button.dataset.container;
+      actionButton.dataset.containerName = button.dataset.containerName;
+      actionButton.disabled = !availability[actionButton.dataset.kind];
+      actionButton.title = actionButton.disabled
+        ? protectedContainer && actionButton.dataset.kind !== "container.start"
+          ? button.dataset.protectionReason || "Protected Container"
+          : `Unavailable while Container is ${stateName}`
+        : "";
+    });
+  state.containerActionsTrigger = button;
+  button.setAttribute("aria-expanded", "true");
+  positionRowActionsMenu(menu, button);
+  const firstAvailable = menu.querySelector(
+    "[data-action=container-operation]:not(:disabled)",
+  );
+  (
+    firstAvailable || menu.querySelector("[data-action=container-operation]")
+  ).focus({ preventScroll: true });
+}
+
+async function startContainerOperation(button) {
+  const kind = button.dataset.kind;
+  const name = button.dataset.containerName;
+  closeContainerActionsMenu();
+
   if (
-    destructive &&
+    kind === "container.restart" &&
+    !(await confirmAction(
+      `Restart ${name}?`,
+      "This interrupts only the selected Container. Restart does not apply Compose configuration or environment changes.",
+      "Restart",
+    ))
+  ) {
+    return;
+  }
+  if (
+    kind === "container.remove" &&
+    !(await confirmAction(
+      `Remove ${name}?`,
+      "The stopped Container and its writable layer will be removed. Dockpilot does not force-stop it and does not remove attached Volumes.",
+      "Remove",
+    ))
+  ) {
+    return;
+  }
+
+  button.disabled = true;
+  try {
+    const routeKey = state.routeKey;
+    const operation = await jsonRequest("/api/v1/operations", {
+      method: "POST",
+      body: JSON.stringify({
+        operation_id: newOperationID(kind.replace(".", "-")),
+        agent_id: button.dataset.agent,
+        project_uid: button.dataset.project || "",
+        kind,
+        target: button.dataset.container,
+      }),
+    });
+    void trackOperationToast(operation, operationDisplayLabel(kind)).then(
+      () => {
+        if (state.routeKey === routeKey) renderRoute();
+      },
+    );
+  } catch (error) {
+    showToast({
+      tone: "error",
+      title: `${operationDisplayLabel(kind)} failed to start`,
+      message: error.message,
+    });
+  }
+}
+
+async function startProjectOperation(button) {
+  const kind = button.dataset.kind;
+  const target = button.dataset.target || "";
+  const project = button.dataset.project;
+  const agent = button.dataset.agent;
+
+  if (
+    !target &&
+    kind === "compose.pull" &&
+    !(await confirmAction(
+      "Pull declared Images for this project?",
+      "Dockpilot will download Images declared by eligible Services. It will not start Containers, build Images, or fall back to a build.",
+      "Pull",
+    ))
+  ) {
+    return;
+  }
+  if (
+    !target &&
+    kind === "compose.up" &&
+    !(await confirmAction(
+      "Apply this Compose project?",
+      "Dockpilot may create, recreate, and start Containers from declared Images. It always uses --no-build and never builds Images.",
+      "Up",
+    ))
+  ) {
+    return;
+  }
+  if (
+    kind === "compose.down" &&
     !(await confirmAction(
       "Run Compose Down?",
-      "Service Containers and Compose-created Networks will be removed. Named Volumes and external Networks or Volumes will be retained.",
+      "Containers for Services in the current Compose model and unused Compose-created Networks will be removed. Observed one-off and orphan Containers may remain. Named Volumes and external Networks or Volumes will be retained.",
       "Down",
     ))
-  )
+  ) {
     return;
+  }
   if (
     kind === "compose.restart" &&
     !(await confirmAction(
@@ -1402,8 +2652,10 @@ async function startProjectOperation(button) {
       "Restart does not apply Compose configuration or environment changes. Use Up to apply configuration.",
       "Restart",
     ))
-  )
+  ) {
     return;
+  }
+
   button.disabled = true;
   try {
     const operation = await jsonRequest("/api/v1/operations", {
@@ -1416,9 +2668,13 @@ async function startProjectOperation(button) {
         target,
       }),
     });
-    showToast(`${kind} operation ${operation.operation_id} accepted.`);
+    void trackOperationToast(operation, operationDisplayLabel(kind));
   } catch (error) {
-    showToast(error.message);
+    showToast({
+      tone: "error",
+      title: `${operationDisplayLabel(kind)} failed to start`,
+      message: error.message,
+    });
   } finally {
     button.disabled = false;
   }
@@ -1437,10 +2693,21 @@ async function cancelOperation(button) {
       `/api/v1/agents/${encodeURIComponent(button.dataset.agent)}/operations/${encodeURIComponent(button.dataset.operation)}/cancel`,
       { method: "POST", body: "{}" },
     );
-    showToast(`Cancellation outcome: ${result.outcome}`);
+    const accepted = result.outcome === "ACCEPTED";
+    showToast({
+      tone: accepted ? "info" : "warning",
+      title: accepted ? "Cancellation requested" : "Cancellation not applied",
+      message: result.outcome,
+      operationID: button.dataset.operation,
+    });
     renderRoute();
   } catch (error) {
-    showToast(error.message);
+    showToast({
+      tone: "error",
+      title: "Cancellation failed",
+      message: error.message,
+      operationID: button.dataset.operation,
+    });
   }
 }
 async function restoreBackup(button) {
@@ -1462,13 +2729,151 @@ async function restoreBackup(button) {
         }),
       },
     );
-    showToast(`Restore operation ${operation.operation_id} accepted.`);
+    void trackOperationToast(operation, "Restore");
   } catch (error) {
-    showToast(error.message);
+    showToast({
+      tone: "error",
+      title: "Restore failed to start",
+      message: error.message,
+    });
   }
 }
 
+let activeInspectorResize;
+
+function inspectorWidthBounds() {
+  const viewportWidth = window.innerWidth;
+  if (viewportWidth <= INSPECTOR_FULL_PAGE_BREAKPOINT) {
+    return {
+      minimum: viewportWidth,
+      maximum: viewportWidth,
+      resizable: false,
+    };
+  }
+
+  let maximum = Math.floor(viewportWidth * INSPECTOR_MAX_VIEWPORT_RATIO);
+  if (viewportWidth >= INSPECTOR_PUSH_BREAKPOINT) {
+    maximum = Math.min(
+      maximum,
+      viewportWidth -
+        INSPECTOR_DESKTOP_SIDEBAR_WIDTH -
+        INSPECTOR_MAIN_MIN_WIDTH,
+    );
+  }
+  const minimum = Math.min(INSPECTOR_MIN_WIDTH, maximum);
+  return {
+    minimum,
+    maximum: Math.max(minimum, maximum),
+    resizable: true,
+  };
+}
+
+function storedInspectorWidth() {
+  try {
+    const width = Number(localStorage.getItem(INSPECTOR_WIDTH_STORAGE_KEY));
+    return Number.isFinite(width) && width > 0
+      ? width
+      : INSPECTOR_DEFAULT_WIDTH;
+  } catch {
+    return INSPECTOR_DEFAULT_WIDTH;
+  }
+}
+
+function applyInspectorWidth(requestedWidth, persist = false) {
+  const bounds = inspectorWidthBounds();
+  const width = bounds.resizable
+    ? Math.round(
+        Math.min(bounds.maximum, Math.max(bounds.minimum, requestedWidth)),
+      )
+    : bounds.maximum;
+  document.documentElement.style.setProperty("--inspector-width", `${width}px`);
+
+  const handle = $("#inspector-resize-handle");
+  handle.tabIndex = bounds.resizable ? 0 : -1;
+  if (bounds.resizable) handle.removeAttribute("aria-hidden");
+  else handle.setAttribute("aria-hidden", "true");
+  handle.setAttribute("aria-valuemin", String(bounds.minimum));
+  handle.setAttribute("aria-valuemax", String(bounds.maximum));
+  handle.setAttribute("aria-valuenow", String(width));
+  handle.setAttribute("aria-valuetext", `${width} pixels wide`);
+
+  if (persist && bounds.resizable) {
+    try {
+      localStorage.setItem(INSPECTOR_WIDTH_STORAGE_KEY, String(width));
+    } catch {
+      // Inspector resizing remains usable when browser storage is disabled.
+    }
+  }
+  return width;
+}
+
+function restoreInspectorWidth() {
+  applyInspectorWidth(storedInspectorWidth());
+}
+
+function beginInspectorResize(event) {
+  if (event.button !== 0) return;
+  const bounds = inspectorWidthBounds();
+  if (!bounds.resizable) return;
+
+  const handle = event.currentTarget;
+  handle.setPointerCapture?.(event.pointerId);
+  activeInspectorResize = {
+    handle,
+    pointerID: event.pointerId,
+    startWidth: $("#inspector").getBoundingClientRect().width,
+    startX: event.clientX,
+  };
+  document.body.classList.add("inspector-resizing");
+  event.preventDefault();
+}
+
+function moveInspectorResize(event) {
+  if (
+    !activeInspectorResize ||
+    event.pointerId !== activeInspectorResize.pointerID
+  ) {
+    return;
+  }
+  const requestedWidth =
+    activeInspectorResize.startWidth +
+    activeInspectorResize.startX -
+    event.clientX;
+  applyInspectorWidth(requestedWidth);
+  event.preventDefault();
+}
+
+function finishInspectorResize(event) {
+  if (
+    !activeInspectorResize ||
+    event.pointerId !== activeInspectorResize.pointerID
+  ) {
+    return;
+  }
+  const width = $("#inspector").getBoundingClientRect().width;
+  applyInspectorWidth(width, true);
+  if (activeInspectorResize.handle.hasPointerCapture?.(event.pointerId)) {
+    activeInspectorResize.handle.releasePointerCapture(event.pointerId);
+  }
+  activeInspectorResize = undefined;
+  document.body.classList.remove("inspector-resizing");
+}
+
+function resizeInspectorWithKeyboard(event) {
+  if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  const bounds = inspectorWidthBounds();
+  if (!bounds.resizable) return;
+  const direction = event.key === "ArrowLeft" ? 1 : -1;
+  const step = event.shiftKey
+    ? INSPECTOR_KEYBOARD_STEP * 4
+    : INSPECTOR_KEYBOARD_STEP;
+  const width = $("#inspector").getBoundingClientRect().width;
+  applyInspectorWidth(width + direction * step, true);
+  event.preventDefault();
+}
+
 function openInspectorHTML(title, html) {
+  restoreInspectorWidth();
   $("#inspector-title").textContent = title;
   $("#inspector-body").innerHTML = html;
   $("#inspector").hidden = false;
@@ -1570,13 +2975,21 @@ async function inspectOperation(id) {
         operationInspector(operation, "live");
     } catch (error) {
       if (inspectorRequestCurrent(request) && error.name !== "AbortError")
-        showToast(
-          `Showing last synchronized operation detail: ${error.message}`,
-        );
+        showToast({
+          tone: "warning",
+          title: "Current operation detail unavailable",
+          message: `Showing the synchronized index · ${error.message}`,
+          operationID: id,
+        });
     }
   } catch (error) {
     if (inspectorRequestCurrent(request) && error.name !== "AbortError")
-      showToast(error.message);
+      showToast({
+        tone: "error",
+        title: "Operation unavailable",
+        message: error.message,
+        operationID: id,
+      });
   }
 }
 function inspectorSection(title, content) {
@@ -1592,7 +3005,7 @@ function mapDetails(values, emptyMessage = "None reported") {
 }
 function referenceDetails(values, emptyMessage = "No Container references") {
   return table(
-    ["Container", "State", "Compose context", "Destination"],
+    ["Container", "State", "Compose project / service", "Mount destination"],
     (values || []).map(
       (item) =>
         `<tr><td><span class="primary">${text(item.container_name || shortID(item.container_id))}</span><div class="secondary mono">${text(shortID(item.container_id))}</div></td><td>${item.state ? stateBadge(item.state) : "—"}</td><td>${text(item.compose_project || "—")}<div class="secondary">${text(item.compose_service || "")}</div></td><td class="mono">${text(item.destination || "—")}</td></tr>`,
@@ -1602,12 +3015,12 @@ function referenceDetails(values, emptyMessage = "No Container references") {
 }
 function networkAttachmentDetails(values) {
   return table(
-    ["Container", "Compose context", "Docker addresses", "MAC"],
+    ["Container", "Compose project / service", "IP addresses", "MAC address"],
     (values || []).map(
       (item) =>
         `<tr><td><span class="primary">${text(item.container_name || shortID(item.container_id))}</span><div class="secondary mono">${text(shortID(item.container_id))}</div></td><td>${text(item.compose_project || "—")}<div class="secondary">${text(item.compose_service || "")}</div></td><td class="mono">${text([item.ipv4, item.ipv6].filter(Boolean).join(" · ") || "—")}</td><td class="mono">${text(item.mac || "—")}</td></tr>`,
     ),
-    "No attached Containers",
+    "No connected Containers",
   );
 }
 async function inspectContainer(agentID, id) {
@@ -1639,7 +3052,7 @@ async function inspectContainer(agentID, id) {
         (network) =>
           `<tr><td><span class="primary">${text(network.name)}</span><div class="secondary mono">${text(shortID(network.network_id))}</div></td><td class="mono">${text([network.ipv4, network.ipv6].filter(Boolean).join(" · ") || "—")}</td><td class="mono">${text(network.mac || "—")}</td><td>${text((network.aliases || []).join(", ") || "—")}</td></tr>`,
       ),
-      "No network attachments",
+      "No connected Networks",
     );
     openInspectorHTML(
       (item.names || []).join(", ") || "Container",
@@ -1671,7 +3084,7 @@ async function inspectContainer(agentID, id) {
               `${port.host_ip ? `${port.host_ip}:` : ""}${port.published_port} → ${port.target_port}/${port.protocol}`,
           )
           .join(", "),
-        "Image exposed ports": (item.exposed_ports || []).join(", "),
+        "Exposed ports (image config)": (item.exposed_ports || []).join(", "),
         "Compose project": item.compose_project,
         "Compose service": item.compose_service,
         "One-off": item.one_off,
@@ -1714,7 +3127,7 @@ async function inspectImage(agentID, id) {
         Platform: [item.os, item.os_version, item.architecture, item.variant]
           .filter(Boolean)
           .join(" · "),
-        "Virtual size": formatBytes(item.size_bytes),
+        Size: formatBytes(item.size_bytes),
         Layers: item.layer_count,
         User: item.user,
         "Working directory": item.working_dir,
@@ -1723,7 +3136,7 @@ async function inspectImage(agentID, id) {
         "Exposed ports": (item.exposed_ports || []).join(", "),
       }) +
         inspectorSection(
-          "Container usage",
+          "Containers using this Image",
           referenceDetails(
             item.used_by,
             "Unused — no Containers reference this Image",
@@ -1783,7 +3196,7 @@ async function inspectNetwork(agentID, id) {
       }) +
         inspectorSection("IPAM", ipam) +
         inspectorSection(
-          "Container attachments",
+          "Containers",
           networkAttachmentDetails(item.attachments),
         ) +
         inspectorSection("Driver options", mapDetails(item.options)) +
@@ -1820,7 +3233,7 @@ async function inspectVolume(agentID, name) {
         "Compose volume": item.compose_volume,
       }) +
         inspectorSection(
-          "Container references",
+          "Containers using this Volume",
           referenceDetails(
             item.references,
             "No Containers reference this Volume",
@@ -1853,7 +3266,181 @@ function confirmAction(title, copy, label) {
   });
 }
 
+let activeColumnResize;
+
+function currentTableColumnWidths(tableElement) {
+  return Array.from(tableElement.querySelectorAll("thead th"), (heading) => {
+    return Math.round(heading.getBoundingClientRect().width);
+  });
+}
+
+function minimumTableColumnWidth(tableElement) {
+  const columnCount = tableElement.querySelectorAll("thead th").length;
+  return Math.min(
+    TABLE_COLUMN_MIN_WIDTH,
+    Math.max(
+      TABLE_COLUMN_ABSOLUTE_MIN_WIDTH,
+      tableElement.getBoundingClientRect().width / columnCount / 2,
+    ),
+  );
+}
+
+function tableColumnRatios(widths) {
+  const totalWidth = widths.reduce((total, width) => total + width, 0);
+  return widths.map((width) => (width / totalWidth) * 100);
+}
+
+function updateTableResizeHandles(tableElement) {
+  const minimumWidth = Math.round(minimumTableColumnWidth(tableElement));
+  tableElement.querySelectorAll(".column-resize-handle").forEach((handle) => {
+    const heading = handle.closest("th");
+    handle.setAttribute(
+      "aria-valuenow",
+      String(Math.round(heading.getBoundingClientRect().width)),
+    );
+    handle.setAttribute("aria-valuemin", String(minimumWidth));
+    handle.setAttribute(
+      "aria-valuemax",
+      String(
+        Math.round(tableElement.getBoundingClientRect().width - minimumWidth),
+      ),
+    );
+  });
+}
+
+function applyTableColumnRatios(tableElement, ratios) {
+  const columns = tableElement.querySelectorAll("colgroup col");
+  if (columns.length !== ratios.length) return;
+
+  ratios.forEach((ratio, index) => {
+    columns[index].style.width = `${ratio}%`;
+  });
+  tableElement.style.width = "100%";
+  tableElement.dataset.columnsResized = "true";
+  tableElement.closest(".table-wrap").scrollLeft = 0;
+  updateTableResizeHandles(tableElement);
+}
+
+function applyTableColumnWidths(tableElement, widths) {
+  applyTableColumnRatios(tableElement, tableColumnRatios(widths));
+}
+
+function persistTableColumnWidths(tableElement, widths) {
+  try {
+    localStorage.setItem(
+      tableElement.dataset.tableWidthKey,
+      JSON.stringify(
+        tableColumnRatios(widths).map((ratio) => Number(ratio.toFixed(4))),
+      ),
+    );
+  } catch {
+    // Column resizing remains usable for this page when browser storage is off.
+  }
+}
+
+function restoreStoredTableWidths(rootElement = view) {
+  rootElement
+    .querySelectorAll("table.resizable-table")
+    .forEach((tableElement) => {
+      const ratios = storedTableRatios(
+        tableElement.dataset.tableWidthKey,
+        tableElement.querySelectorAll("colgroup col").length,
+      );
+      if (ratios.length) applyTableColumnRatios(tableElement, ratios);
+    });
+}
+
+function beginColumnResize(event, handle) {
+  if (event.button !== 0) return;
+  const tableElement = handle.closest("table.resizable-table");
+  if (!tableElement) return;
+
+  const index = Number(handle.dataset.columnIndex);
+  if (index >= tableElement.querySelectorAll("thead th").length - 1) return;
+
+  handle.setPointerCapture?.(event.pointerId);
+  applyTableColumnWidths(tableElement, currentTableColumnWidths(tableElement));
+  const widths = currentTableColumnWidths(tableElement);
+  activeColumnResize = {
+    handle,
+    index,
+    pointerID: event.pointerId,
+    startX: event.clientX,
+    tableElement,
+    widths,
+  };
+  document.body.classList.add("column-resizing");
+  event.preventDefault();
+}
+
+function moveColumnResize(event) {
+  if (!activeColumnResize || event.pointerId !== activeColumnResize.pointerID)
+    return;
+
+  const widths = [...activeColumnResize.widths];
+  const index = activeColumnResize.index;
+  const nextIndex = index + 1;
+  const minimumWidth = minimumTableColumnWidth(activeColumnResize.tableElement);
+  const requestedDelta = event.clientX - activeColumnResize.startX;
+  const delta = Math.min(
+    activeColumnResize.widths[nextIndex] - minimumWidth,
+    Math.max(minimumWidth - activeColumnResize.widths[index], requestedDelta),
+  );
+  widths[index] = activeColumnResize.widths[index] + delta;
+  widths[nextIndex] = activeColumnResize.widths[nextIndex] - delta;
+  applyTableColumnWidths(activeColumnResize.tableElement, widths);
+  event.preventDefault();
+}
+
+function finishColumnResize(event) {
+  if (!activeColumnResize || event.pointerId !== activeColumnResize.pointerID)
+    return;
+
+  const widths = currentTableColumnWidths(activeColumnResize.tableElement);
+  persistTableColumnWidths(activeColumnResize.tableElement, widths);
+  if (activeColumnResize.handle.hasPointerCapture?.(event.pointerId)) {
+    activeColumnResize.handle.releasePointerCapture(event.pointerId);
+  }
+  activeColumnResize = undefined;
+  document.body.classList.remove("column-resizing");
+}
+
+function resizeColumnWithKeyboard(event, handle) {
+  if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  const tableElement = handle.closest("table.resizable-table");
+  if (!tableElement) return;
+
+  const widths = currentTableColumnWidths(tableElement);
+  const index = Number(handle.dataset.columnIndex);
+  const nextIndex = index + 1;
+  if (nextIndex >= widths.length) return;
+  const direction = event.key === "ArrowLeft" ? -1 : 1;
+  const step = event.shiftKey
+    ? TABLE_COLUMN_KEYBOARD_STEP * 4
+    : TABLE_COLUMN_KEYBOARD_STEP;
+  const minimumWidth = minimumTableColumnWidth(tableElement);
+  const delta = Math.min(
+    widths[nextIndex] - minimumWidth,
+    Math.max(minimumWidth - widths[index], direction * step),
+  );
+  widths[index] += delta;
+  widths[nextIndex] -= delta;
+  applyTableColumnWidths(tableElement, widths);
+  persistTableColumnWidths(
+    tableElement,
+    currentTableColumnWidths(tableElement),
+  );
+  event.preventDefault();
+}
+
+function updateColumnResizeHandle(handle) {
+  const tableElement = handle.closest("table.resizable-table");
+  if (tableElement) updateTableResizeHandles(tableElement);
+}
+
 async function renderRoute() {
+  closeServiceActionsMenu();
+  closeContainerActionsMenu();
   state.routeController?.abort();
   state.streamController?.abort();
   state.inspectorRequest += 1;
@@ -1876,8 +3463,11 @@ async function renderRoute() {
       await renderHost(route, state.routeController.signal);
     else if (route.kind === "project")
       await renderProject(route, state.routeController.signal);
-    else await renderOperations(state.routeController.signal);
-    if (state.routeKey === route.key) $("#main").focus({ preventScroll: true });
+    else await renderOperations(state.routeController.signal, route.inspect);
+    if (state.routeKey === route.key) {
+      restoreStoredTableWidths();
+      $("#main").focus({ preventScroll: true });
+    }
   } catch (error) {
     if (error.name !== "AbortError") showError(error);
   }
@@ -1902,6 +3492,8 @@ $("#view").addEventListener("click", (event) => {
         });
     },
     "project-operation": () => startProjectOperation(button),
+    "open-service-actions": () => openServiceActions(button),
+    "open-container-actions": () => openContainerActions(button),
     "cancel-operation": () => cancelOperation(button),
     "restore-backup": () => restoreBackup(button),
     "inspect-operation": () => inspectOperation(button.dataset.operation),
@@ -1916,6 +3508,86 @@ $("#view").addEventListener("click", (event) => {
   };
   actions[button.dataset.action]?.();
 });
+$("#service-actions-menu").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-action=service-operation]");
+  if (!button) return;
+  closeServiceActionsMenu();
+  startProjectOperation(button);
+});
+document.addEventListener("click", (event) => {
+  if (
+    !event.target.closest("#service-actions-menu") &&
+    !event.target.closest("[data-action=open-service-actions]")
+  ) {
+    closeServiceActionsMenu();
+  }
+  if (
+    !event.target.closest("#container-actions-menu") &&
+    !event.target.closest("[data-action=open-container-actions]")
+  ) {
+    closeContainerActionsMenu();
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !$("#service-actions-menu").hidden) {
+    event.preventDefault();
+    closeServiceActionsMenu({ restoreFocus: true });
+  }
+  if (event.key === "Escape" && !$("#container-actions-menu").hidden) {
+    event.preventDefault();
+    closeContainerActionsMenu({ restoreFocus: true });
+  }
+});
+$("#container-actions-menu").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-action=container-operation]");
+  if (!button) return;
+  closeContainerActionsMenu();
+  startContainerOperation(button);
+});
+$("#view").addEventListener("pointerdown", (event) => {
+  const handle = event.target.closest(".column-resize-handle");
+  if (handle) beginColumnResize(event, handle);
+});
+$("#view").addEventListener("keydown", (event) => {
+  const handle = event.target.closest(".column-resize-handle");
+  if (handle) resizeColumnWithKeyboard(event, handle);
+});
+$("#view").addEventListener("focusin", (event) => {
+  const handle = event.target.closest(".column-resize-handle");
+  if (handle) updateColumnResizeHandle(handle);
+});
+window.addEventListener("pointermove", moveColumnResize);
+window.addEventListener("pointerup", finishColumnResize);
+window.addEventListener("pointercancel", finishColumnResize);
+const inspectorResizeHandle = $("#inspector-resize-handle");
+inspectorResizeHandle.addEventListener("pointerdown", beginInspectorResize);
+inspectorResizeHandle.addEventListener("keydown", resizeInspectorWithKeyboard);
+window.addEventListener("pointermove", moveInspectorResize);
+window.addEventListener("pointerup", finishInspectorResize);
+window.addEventListener("pointercancel", finishInspectorResize);
+window.addEventListener("resize", () => {
+  closeServiceActionsMenu();
+  closeContainerActionsMenu();
+  if (!activeInspectorResize) restoreInspectorWidth();
+});
+window.addEventListener(
+  "scroll",
+  () => {
+    if (state.serviceActionsTrigger && !$("#service-actions-menu").hidden) {
+      positionRowActionsMenu(
+        $("#service-actions-menu"),
+        state.serviceActionsTrigger,
+      );
+    }
+    if (state.containerActionsTrigger && !$("#container-actions-menu").hidden) {
+      positionRowActionsMenu(
+        $("#container-actions-menu"),
+        state.containerActionsTrigger,
+      );
+    }
+  },
+  true,
+);
 $("#refresh").addEventListener("click", async () => {
   state.dashboard = undefined;
   showLoading("Refreshing Dockpilot");
@@ -1942,6 +3614,7 @@ window.addEventListener("hashchange", () => {
 window.addEventListener("beforeunload", () => {
   state.routeController?.abort();
   state.streamController?.abort();
+  state.operationToastControllers.forEach((controller) => controller.abort());
 });
 
 loadDashboard().then(renderRoute).catch(showError);

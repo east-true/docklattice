@@ -532,7 +532,7 @@ func TestComposeQueriesAreProjectScopedStrictAndBounded(t *testing.T) {
 }
 
 func TestFileReadUsesProjectRelativeTypedPayloadAndMarksEnvSecret(t *testing.T) {
-	service, _, _, files, _ := newTestService(t)
+	service, _, projects, files, _ := newTestService(t)
 	at := time.Date(2026, 8, 15, 2, 3, 4, 0, time.UTC)
 	files.files[".env.local"] = safefile.File{
 		RelativePath: ".env.local", Content: []byte("TOKEN=secret\n"), SHA256: testManifestHash,
@@ -545,6 +545,21 @@ func TestFileReadUsesProjectRelativeTypedPayloadAndMarksEnvSecret(t *testing.T) 
 	}
 	if files.project != testProjectUID || files.path != ".env.local" || !result.Secret || result.Content != "TOKEN=secret\n" || result.Mode != 0o640 {
 		t.Fatalf("file response = %+v read=%s/%s", result, files.project, files.path)
+	}
+	projects.projects = []agentprojects.Project{{
+		UID: testProjectUID, WorkingDir: "/srv/project",
+		EnvFiles: []agentprojects.EnvFileReference{{Path: "/srv/project/service.env", Readable: true}},
+	}}
+	files.files["service.env"] = safefile.File{
+		RelativePath: "service.env", Content: []byte("PASSWORD=secret\n"), SHA256: testManifestHash,
+		MTime: at, Mode: 0o600, LineEndings: safefile.LineEndingsLF,
+	}
+	request.Payload = []byte(`{"relative_path":"service.env"}`)
+	if err := query(t, service, request, &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.Secret || result.Content != "PASSWORD=secret\n" {
+		t.Fatalf("service env response = %+v", result)
 	}
 	for _, payload := range []string{
 		``, `{"relative_path":".env","extra":true}`, `{"relative_path":".env"} trailing`, `{"relative_path":""}`,
