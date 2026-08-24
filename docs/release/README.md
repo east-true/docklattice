@@ -12,6 +12,13 @@ This directory exists because "the tests pass" is not evidence. Each gate here
 records what it ran, on which images, on which kernel, and what it deliberately
 did *not* measure.
 
+## Planned version
+
+`v0.0.0` is planned as the first source-only pre-release. After the tag and its
+CI pass, GitHub will provide source archives for the release; it will not claim
+signed Server/Agent images or prebuilt binaries. Image placeholders in the
+installation guide remain placeholders.
+
 ## Gates
 
 | Gate | Status | What it proves |
