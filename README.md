@@ -141,6 +141,16 @@ disconnect does not cancel an operation already accepted by an Agent.
 > tunnel, or put every browser-facing route behind an authenticating reverse
 > proxy. Publishing `8080` on all host interfaces is not a safe deployment.
 
+The safe host-side publication shape is intentionally explicit:
+
+```sh
+docker run ... -p 127.0.0.1:8080:8080 <signed-server-image-reference>
+```
+
+The ellipsis and image reference are placeholders, not a complete install
+command. The [installation guide](docs/operations/install.md) supplies the
+required state, TLS, registration, and Agent arguments.
+
 The Agent necessarily has powerful Docker access. Dockpilot reduces that risk
 with self-protection, fixed operation kinds, identical-path validation, safe
 file allowlists, project locks, bounded storage, and fail-closed capability
