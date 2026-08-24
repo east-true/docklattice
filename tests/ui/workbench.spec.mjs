@@ -874,7 +874,11 @@ test("Compose build policy is visible and blocks whole-project Up", async ({
     hasText: "worker",
   });
   await expect(workerAttention.getByText("Build required")).toBeVisible();
-  await expect(workerAttention.getByText("No container")).toBeVisible();
+  await expect(
+    workerAttention.getByText("No container", {
+      exact: true,
+    }),
+  ).toBeVisible();
   await expect(attentionPanel).toContainText(
     "Services excluded by inactive profiles are not treated as failures",
   );
