@@ -593,7 +593,9 @@ func TestMembershipAndWorkloadFailIndependently(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer viewer.Close()
-	waitFor(t, "first reconcile", func() bool { return h.membership.callCount() >= 1 })
+	waitFor(t, "initial membership and workload refresh", func() bool {
+		return h.membership.callCount() >= 1 && h.workload.callCount() >= 1
+	})
 
 	// Engine info fails; the container listing does not.
 	h.workload.fail(errors.New("engine info unavailable"))
