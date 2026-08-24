@@ -9,7 +9,12 @@ port on any host, no agent-side firewall rules, no SSH loop.
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)](go.mod)
 [![Platforms](https://img.shields.io/badge/platforms-linux%2Famd64%20%7C%20linux%2Farm64-lightgrey.svg)](docs/operations/supported-environments.md)
-[![Status](https://img.shields.io/badge/v1-complete-brightgreen.svg)](docs/release/README.md)
+[![Status](https://img.shields.io/badge/v1-implementation%20complete-2f74c0.svg)](docs/release/README.md)
+
+![Dockpilot Home showing fleet health, exceptions, and Docker host availability](docs/assets/dockpilot-home.png)
+
+_The current Home screen, captured in Chromium against the disposable
+acceptance VM. The names and identifiers belong to test fixtures._
 
 ```
                                     ┌──────────────────┐
@@ -63,6 +68,12 @@ firewall, or on a changing IP need no special handling at all.
 | **Configuration backup and restore** | Per-project archives with a per-file SHA-256 manifest, stored on the Agent so `.env` secrets never cross the network. |
 | **Live logs and stats** | Streamed as Server-Sent Events, rate-capped, with dropped bytes reported rather than hidden. |
 | **Durable audit** | Everything done through Dockpilot, plus changes made outside it, in one archive with explicit gap accounting. |
+
+Dockpilot v1 never builds images. Compose `up` always uses `--no-build`, Pull
+targets only services with a declared image, and a project containing a
+build-required service cannot be started as a whole. The UI explains the reason
+instead of silently skipping a service or changing Compose semantics. See the
+[Web UI contract](docs/design/web-ui.md#compose-build-policy--v1).
 
 And the things it deliberately refuses to do, because they are the reason
 tools like this become unreliable:
@@ -160,13 +171,15 @@ Full procedure, including the privilege boundary and host-driven Agent upgrades:
 | [HTTP API](docs/operations/api.md) | Endpoints, error shape, secret handling. |
 | [Identity recovery](docs/operations/recovery.md) | Recovering from Server identity, database, or Agent state loss. |
 | [Degraded storage](docs/operations/degraded-storage.md) | The `DEGRADED_STORAGE` operator procedure. |
+| [Product and UI contracts](docs/design/README.md) | Maintainer-facing screen, interaction, and live-metrics contracts. |
 | [Release evidence](docs/release/README.md) | Which gates ran, on what, and what each proves. |
 
 ## Status
 
-**v1 is complete.** Every phase of
-[the implementation plan](docs/implementation-plan.md) has passed, at revision
-`f1d4087`.
+**The v1 implementation is complete.** The historical
+[implementation plan](docs/release/v1-implementation-plan.md) is retained with
+the release evidence, while the current code and required checks remain the
+source of truth for every new revision.
 
 Unit, race, and static checks pass. Six gates ran against the release images:
 the production cgroup resource matrix over three trials, clean-host container
@@ -175,7 +188,8 @@ loss outcomes, an adversarial failure-injection matrix, an abuse matrix of
 inputs the API must refuse, and a reproducible two-architecture release build
 whose independent runs produced byte-identical archives.
 
-What is *not* done is recorded just as plainly: only the memory row of
+Release-candidate readiness is a separate claim. What is *not* done is recorded
+just as plainly: only the memory row of
 [defaults validation](docs/release/defaults-validation.md) is promoted to
 `validated`, and the one-hour and overnight soaks required before signing a
 release candidate have not been run. Details and the two known non-blockers are

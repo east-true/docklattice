@@ -1,9 +1,16 @@
 # Dockpilot v1 implementation plan
 
-Status: active  
-Authority: `docs/architecture.md`  
+Status: completed 2026-08-19; retained as historical release context
+
+Authority: [`../architecture.md`](../architecture.md)
+
 Scope: v1 `CORE` only; `OPTIONAL`, `FUTURE`, and `DO NOT BUILD` are not release
 requirements.
+
+This file records the gates used to complete the original v1 implementation.
+It is not an active backlog. Current behavior is defined by the architecture,
+interface, and product contracts; current verification is recorded in this
+directory's [release evidence index](README.md).
 
 ## Completion rule
 
@@ -35,7 +42,7 @@ Evidence: Appendix A.14, the official final report and decision memo, and
 
 ## Phase 1 — Product foundation and configuration
 
-Status: implementation complete; release evidence pending
+Status: complete; final evidence is indexed in [release evidence](README.md)
 
 - Define one product binary with `server` and `agent` modes; the Container
   Agent is the only documented v1 Agent deployment.
@@ -57,7 +64,7 @@ Status: complete. Package recovery matrix
 the clean-host install E2E (Agent container removed and recreated with no Join
 Token, reconnecting with an identical Agent ID, project UID, and backup
 metadata); real-container recovery matrix for all three Server-side loss
-outcomes ([`docs/release/recovery-matrix-e2e.md`](release/recovery-matrix-e2e.md)).
+outcomes ([`recovery-matrix-e2e.md`](recovery-matrix-e2e.md)).
 
 - Implement Server identity, signing keys, archive generation, join tokens,
   Agent credentials, and the durable revocation ledger.
@@ -76,9 +83,8 @@ message rejection, and transport conformance.
 
 ## Phase 3 — Agent boot safety and Docker discovery
 
-Status: Server Tier-1 drift reconciliation complete
-(`internal/projectmodel`, `internal/serverapi`); real-Docker/Compose fixture
-matrix pending
+Status: complete; real-Docker/Compose coverage is recorded in the release
+matrices
 
 - Implement identical-path bind-mount self-check and safe capability downgrade.
 - Support explicitly configured read-only discovery roots as a v1 deployment
@@ -99,9 +105,8 @@ roots must remain distinguishable in capability reasons.
 
 ## Phase 4 — Operation and cancellation engine
 
-Status: package operation-engine matrix complete (project lock, idempotency,
-result ring, cancel/disconnect separation); browser/network/process recovery
-E2E matrix pending
+Status: complete; project lock, idempotency, result ring,
+cancel/disconnect separation, and recovery paths are covered
 
 - Implement the full operation state machine, phase/revision, Agent-owned
   project lock, idempotency, timeout, result ring, and 64 KiB output tail.
@@ -118,8 +123,8 @@ and output truncation evidence.
 
 ## Phase 5 — Safe files and configuration backup
 
-Status: package crash matrix complete for both restore journal phases
-(`PREPARING`, `COMMITTING`); release-gate crash evidence pending
+Status: complete; both restore journal phases (`PREPARING`, `COMMITTING`) and
+release-gate crash recovery are covered
 
 - Accept only `project_uid + relative_path`; enforce file/location allowlists,
   traversal and symlink/TOCTOU defenses, size/UTF-8 limits, and SHA conflicts.
@@ -160,10 +165,9 @@ every unavailable range has an allowed source.
 
 ## Phase 7 — Live logs, metrics, API, and Web UI
 
-Status: package relay/stats matrix complete (slow-consumer isolation, stream
-cancellation, bounded rings); browser E2E and accessibility pending. The
-bounded-memory soak passed its one-hour stage
-([`release/soak.md`](release/soak.md)); the longer stages are outstanding.
+Status: implementation and browser acceptance complete. The bounded-memory
+soak passed its one-hour stage ([`soak.md`](soak.md)); longer soak stages remain
+release-candidate work rather than missing product scope.
 
 - Connect project/service Compose operations and bounded per-stream log relay.
 - Implement viewer-scoped Docker stats, latest-wins delivery, one Server sample,
@@ -184,7 +188,7 @@ per-trial resource summaries, and the Appendix A A.9 bounds measured).
 `operation_progress_event_latency_ms` and the Appendix A prototype acceptance
 items 1/4/5/6 are not measured by this gate. The one-hour soak has since passed
 and the overnight soak remains outstanding; both are run with the harness in
-[`release/soak.md`](release/soak.md).
+[`soak.md`](soak.md).
 
 Run production Agent and Server together under real cgroup limits with:
 
@@ -205,7 +209,7 @@ memory limits, timeouts, retention, disk budget, scan budget, and sampling
 interval. In particular it must validate Agent 512 MiB and Server 1 GiB hard
 limits rather than inheriting the prototype result.
 
-Harness and current execution status: [`docs/release/resource-gate.md`](release/resource-gate.md).
+Harness and current execution status: [`resource-gate.md`](resource-gate.md).
 
 ## Phase 9 — v1 release gate
 
@@ -225,26 +229,26 @@ complete.
   `scripts/build-release-images.sh` produced byte-identical `linux/amd64` +
   `linux/arm64` OCI archives for both targets, with no target-architecture
   emulation required on the build host
-  ([`docs/release/distribution.md`](release/distribution.md)).
+  ([`distribution.md`](distribution.md)).
 - Clean-host container installation E2E
-  ([`docs/release/clean-host-install-e2e.md`](release/clean-host-install-e2e.md)).
+  ([`clean-host-install-e2e.md`](clean-host-install-e2e.md)).
 - Real-container recovery matrix for all three Server-side loss outcomes
-  ([`docs/release/recovery-matrix-e2e.md`](release/recovery-matrix-e2e.md)).
+  ([`recovery-matrix-e2e.md`](recovery-matrix-e2e.md)).
 - Adversarial hardening matrix: Agent and Server `SIGKILL`, an operation killed
   mid-flight, a network partition, a cancelled Compose run, concurrent and
   racing project writes, a rolled-back Server database, and an Agent filesystem
   too small to hold its WAL
-  ([`docs/release/hardening-matrix-e2e.md`](release/hardening-matrix-e2e.md)).
+  ([`hardening-matrix-e2e.md`](hardening-matrix-e2e.md)).
 - Abuse matrix over the untrusted surface: path escapes, secret exposure,
   operation ID rebinding, a replayed Join Token, a foreign CA, a tampered backup
   archive, a discovery root at a non-identical path, the project lock and result
   ring bounds, self-directed container and Compose operations, malformed and
   oversized requests, and a Compose project name collision
-  ([`docs/release/abuse-matrix-e2e.md`](release/abuse-matrix-e2e.md)).
+  ([`abuse-matrix-e2e.md`](abuse-matrix-e2e.md)).
 - Operator documentation: install, backup/restore, identity-state recovery,
   Agent upgrade, degraded-storage recovery
-  ([`docs/operations/degraded-storage.md`](operations/degraded-storage.md)), and
+  ([`../operations/degraded-storage.md`](../operations/degraded-storage.md)), and
   supported/unsupported environments
-  ([`docs/operations/supported-environments.md`](operations/supported-environments.md)).
+  ([`../operations/supported-environments.md`](../operations/supported-environments.md)).
 
 Only this gate changes the project status to v1 complete.

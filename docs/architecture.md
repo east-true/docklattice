@@ -2354,35 +2354,31 @@ Integration Resource Test (별도 단계):
 
 ---
 
-## 부록 B. 남은 작업과 미확정 항목
+## 부록 B. 구현 종료 기록과 운영 기본값
 
-### B.1 남은 작업
+### B.1 v1 구현 종료 기록
 
 Transport Prototype, 동시성/Memory/Audit non-starvation 검증, 조건부 후퇴점 판정, 전송 기술 확정은 2026-08-15 완료했다. Reverse gRPC 단일 연결이 합격했으므로 두 연결 후퇴점 검증은 실행 대상이 아니었다.
 
-```
-완료:
-  구현 계획 수립 → docs/implementation-plan.md
-  §19 및 B.2 값을 provisional v1 defaults로 코드화
-
-남음:
-  구현 계획 Phase 1~7 제품 구현
-  A.15 Integration Resource Gate에서 운영 기본값 실제 튜닝·확정
-  구현 계획 Phase 9 v1 release gate
-```
+이후 구현 계획 Phase 1~9와 Integration Resource Gate도 완료되었다. 당시의
+완료 기준과 단계는 `docs/release/v1-implementation-plan.md`, 재현 가능한 실행
+증거와 아직 남은 release-candidate 검증은 `docs/release/README.md`에 보존한다.
+이 부록은 활성 작업 목록이 아니다.
 
 기본값의 수치와 상호관계 검증은 `internal/config`가 담당하고, 검증 상태와
-실제 자원 행렬은 `docs/defaults-validation.md`에 기록한다. 단위 테스트에서
+실제 자원 행렬은 `docs/release/defaults-validation.md`에 기록한다. 단위 테스트에서
 숫자가 일치한다는 사실만으로 `validated`라 부르지 않으며, 실제 WAL·Backup·
 Compose·Discovery를 함께 실행하는 A.15를 통과해야 최종 운영 기본값으로 승격한다.
 
 프로토타입 이후 변경 가능한 것은 전송 기술, Memory Limit 수치, Timeout, Retention, Disk Budget, Scan Budget, Sampling Interval뿐이다.
 
-### B.2 미확정 (권고안만 있음)
+### B.2 채택된 provisional 기본값
 
 **Credential lifetime과 갱신 임계** — Credential lifetime은 Agent가 offline으로 버티도록 설계한 기간보다 충분히 길어야 한다. WAL retention 14일은 "그 정도 끊겨 있어도 audit을 잃지 않는다"는 의미인데, credential lifetime이 짧으면 그 offline 내구성이 인증 만료로 무효화된다(WAL은 멀쩡한데 붙지를 못한다).
 
-권고: lifetime 90일 이상, 잔여 수명 50% 지점부터 갱신 시도. 만료된 채 복귀하면 join token 재등록이라는 규칙은 그대로 유지.
+v1은 lifetime 90일, 잔여 수명 50% 지점부터 갱신 시도를 채택했다. 만료된 채
+복귀하면 Join Token으로 재등록한다. 실제 환경별 기본값의 검증 상태는
+`docs/release/defaults-validation.md`가 관리한다.
 
 ### B.3 프로토타입 단계 코드 작성 범위 (완료)
 
