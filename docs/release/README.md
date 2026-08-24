@@ -12,12 +12,13 @@ This directory exists because "the tests pass" is not evidence. Each gate here
 records what it ran, on which images, on which kernel, and what it deliberately
 did *not* measure.
 
-## Planned version
+## Published version
 
-`v0.0.0` is planned as the first source-only pre-release. After the tag and its
-CI pass, GitHub will provide source archives for the release; it will not claim
-signed Server/Agent images or prebuilt binaries. Image placeholders in the
-installation guide remain placeholders.
+[`v0.0.0`](https://github.com/east-true/dockpilot/releases/tag/v0.0.0) is the
+first source-only pre-release. Its tag CI passed before publication. GitHub
+provides source archives for the release; it does not include signed
+Server/Agent Images or prebuilt binaries. Image references in the installation
+guide remain explicit placeholders.
 
 ## Gates
 
