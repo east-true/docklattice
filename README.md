@@ -175,10 +175,11 @@ The resulting binary contains both `server` and `agent` modes and embeds the
 production web UI.
 
 > [!IMPORTANT]
-> `v0.0.0` is the first source-only pre-release. GitHub provides source archives
-> for the tag, but the release does not publish signed Server/Agent images or
-> prebuilt binaries. The installation guide deliberately keeps image references
-> as placeholders; do not copy them into production unchanged.
+> `v0.0.0` is planned as the first source-only pre-release. Once published,
+> GitHub will provide source archives for the tag; the release will not publish
+> signed Server/Agent images or prebuilt binaries. The installation guide
+> deliberately keeps image references as placeholders; do not copy them into
+> production unchanged.
 
 For image construction and reproducibility evidence, see
 [v1 distribution](docs/release/distribution.md). For the complete container
