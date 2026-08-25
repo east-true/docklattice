@@ -136,7 +136,7 @@ no adjacent-limit comparison was needed.
 |---|---|---|
 | Agent/Server memory | validated | none; production cgroup matrix, three repetitions |
 | Retention/disk/reserve | partial | Phase 6 quota fault matrix passed on a disposable size-limited tmpfs; full storage-pressure matrix outstanding |
-| Exact values and relationships | implemented; current-revision evidence pending | `dockpilot defaults` and `distribution/v1-defaults.json` now define a byte-for-byte release contract; clean-host Image execution pending |
+| Exact values and relationships | validated | the exact release Server Image emitted `dockpilot defaults` byte-for-byte equal to `distribution/v1-defaults.json` in the current-revision clean-host E2E |
 | Credential lifetime/renewal | provisional | reconnect/offline E2E |
 | Operation result/tail limits | partial | real 525-operation/500-entry eviction passed; output-tail truncation remains unit-only and needs real process output plus reconnect evidence |
 | WAL size/age/fsync | provisional | production disk-WAL matrix |
@@ -161,7 +161,9 @@ from what still has no final observation; no row is promoted by inference.
 The release binary now exposes a read-only `dockpilot defaults` command. Its
 complete JSON output is pinned by `distribution/v1-defaults.json`, checked by a
 unit test, and required by the clean-host harness from inside the exact Server
-Image. A current-revision clean-host PASS will promote the exact-values row.
+Image. The 2026-08-25 clean-host run at revision
+`818c534f0852fccfea243e10533e3e6fa8a4ed47` recorded
+`defaults_config_dump=PASS`, so the exact-values row is validated.
 
 The operation result count is no longer merely a deterministic unit claim. The
 abuse matrix submitted 525 real operations against the 500-entry Agent result
