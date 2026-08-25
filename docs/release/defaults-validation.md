@@ -161,8 +161,8 @@ from what still has no final observation; no row is promoted by inference.
 The release binary now exposes a read-only `dockpilot defaults` command. Its
 complete JSON output is pinned by `distribution/v1-defaults.json`, checked by a
 unit test, and required by the clean-host harness from inside the exact Server
-Image. The 2026-08-25 clean-host run at revision
-`818c534f0852fccfea243e10533e3e6fa8a4ed47` recorded
+Image. The latest 2026-08-25 clean-host run at revision
+`299ac64d30c9ce3761f2690c7c51ae468502d947` recorded
 `defaults_config_dump=PASS`, so the exact-values row is validated.
 
 The operation result count is no longer merely a deterministic unit claim. The
