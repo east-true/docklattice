@@ -100,6 +100,7 @@ func newAgentProcess(cfg app.Config) (app.Runtime, error) {
 		BundledComposeVersion: "5.3.1",
 		DiscoveryInterval:     cfg.Defaults.DiscoveryInterval,
 		PeerSilenceTimeout:    cfg.Defaults.OfflineAfter,
+		Diagnostics:           os.Stderr,
 	}}, nil
 }
 

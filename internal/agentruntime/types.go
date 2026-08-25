@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"io"
 	"sync"
 	"time"
 
@@ -84,6 +85,10 @@ type Config struct {
 	ProjectRoots          []string
 	DiscoveryInterval     time.Duration
 	Now                   func() time.Time
+	// Diagnostics receives bounded, structured lifecycle and failure records.
+	// Production writes them to stderr so an operator can use docker logs even
+	// when the Server and browser UI are unavailable.
+	Diagnostics io.Writer
 
 	// Test seams for deterministic pressure/fault matrices. Production leaves
 	// both zero-valued and uses the real observer and v1 defaults.
@@ -124,6 +129,7 @@ type Runtime struct {
 	metricsMatrixInstalled bool
 	discoveryCancel        context.CancelFunc
 	discoveryDone          chan struct{}
+	diagnostics            *agentDiagnostics
 }
 
 type runtimeCloseAttempt struct {

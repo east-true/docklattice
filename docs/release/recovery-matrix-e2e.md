@@ -58,10 +58,11 @@ Identity State and database are snapshotted together while it is stopped, the
 Agent is moved past that generation, and then the consistent old backup is
 restored.
 
-The refusal is observed where it has an effect rather than in a log line - the
-Agent process writes no diagnostics at all, only the Server has a diagnostics
-writer - so what is checked is that the restored archive's cursor does not move
-however much the Agent goes on observing.
+The refusal is observed in two independent places. The restored archive's
+cursor must not move however much the Agent goes on observing, and the Agent's
+own bounded stderr diagnostics must emit `event=audit_archive_refused` with
+`ARCHIVE_ROLLBACK_DETECTED`. This keeps the failure diagnosable through
+`docker logs` even when the Server and browser UI are unavailable.
 
 Recovering afterwards takes two generation advances rather than one. The Agent
 holds generation N; losing the restored database once mints generation N again
@@ -144,6 +145,11 @@ root, or Join Token behind.
 | every case 1, 2 and 3 assertion above | PASS |
 
 `STATUS` recorded `status=PASS`.
+
+That recorded execution predates the local Agent diagnostic assertion. The
+next execution must additionally record
+`archive_rollback_local_diagnostic=PASS`; until then, the historical cursor
+refusal remains valid but is not evidence for the new diagnostic channel.
 
 Validate the checked-in static contract without Docker:
 
