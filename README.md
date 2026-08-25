@@ -144,12 +144,13 @@ disconnect does not cancel an operation already accepted by an Agent.
 The safe host-side publication shape is intentionally explicit:
 
 ```sh
-docker run ... -p 127.0.0.1:8080:8080 <signed-server-image-reference>
+docker run ... -p 127.0.0.1:8080:8080 "$server_image"
 ```
 
-The ellipsis and image reference are placeholders, not a complete install
-command. The [installation guide](docs/operations/install.md) supplies the
-required state, TLS, registration, and Agent arguments.
+The ellipsis is not a complete install command. The
+[installation guide](docs/operations/install.md) verifies the signed release,
+sets `$server_image` to its exact digest from `release-images.json`, and
+supplies the required state, TLS, registration, and Agent arguments.
 
 The Agent necessarily has powerful Docker access. Dockpilot reduces that risk
 with self-protection, fixed operation kinds, identical-path validation, safe
@@ -178,8 +179,8 @@ production web UI.
 > [`v0.0.0`](https://github.com/east-true/dockpilot/releases/tag/v0.0.0) is the
 > first source-only pre-release. GitHub provides source archives for the tag;
 > the release does not publish signed Server/Agent images or prebuilt binaries.
-> Installation documentation deliberately keeps Image references as
-> placeholders; do not copy them into production unchanged.
+> The Image-bearing release workflow is prepared for a later SemVer tag; it
+> does not retroactively add Images to `v0.0.0`.
 
 For image construction and reproducibility evidence, see
 [v1 distribution](docs/release/distribution.md). For the complete container

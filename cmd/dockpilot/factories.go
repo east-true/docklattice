@@ -97,7 +97,7 @@ func newAgentProcess(cfg app.Config) (app.Runtime, error) {
 		ServerAddress: cfg.Agent.ServerAddress, TLSConfig: tlsConfig,
 		Self:                  agentsafety.SelfConfig{ContainerID: cfg.Agent.SelfContainerID, ContainerName: cfg.Agent.SelfContainerName},
 		ProjectRoots:          append([]string(nil), cfg.Agent.ProjectRoots...),
-		BundledComposeVersion: "5.3.1",
+		BundledComposeVersion: "5.5.0",
 		DiscoveryInterval:     cfg.Defaults.DiscoveryInterval,
 		PeerSilenceTimeout:    cfg.Defaults.OfflineAfter,
 		Diagnostics:           os.Stderr,
