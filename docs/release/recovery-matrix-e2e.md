@@ -58,10 +58,11 @@ Identity State and database are snapshotted together while it is stopped, the
 Agent is moved past that generation, and then the consistent old backup is
 restored.
 
-The refusal is observed where it has an effect rather than in a log line - the
-Agent process writes no diagnostics at all, only the Server has a diagnostics
-writer - so what is checked is that the restored archive's cursor does not move
-however much the Agent goes on observing.
+The refusal is observed in two independent places. The restored archive's
+cursor must not move however much the Agent goes on observing, and the Agent's
+own bounded stderr diagnostics must emit `event=audit_archive_refused` with
+`ARCHIVE_ROLLBACK_DETECTED`. This keeps the failure diagnosable through
+`docker logs` even when the Server and browser UI are unavailable.
 
 Recovering afterwards takes two generation advances rather than one. The Agent
 holds generation N; losing the restored database once mints generation N again
@@ -116,7 +117,7 @@ Recorded assertion results:
 `STATUS` recorded `status=PASS`, and the run left no container, network, runtime
 root, or Join Token behind.
 
-## Second recorded execution: with case 1b, at the current revision
+## Second recorded execution: with case 1b
 
     started_at              2026-08-20T10:43:22Z
     finished_at             2026-08-20T10:55:43Z
@@ -144,6 +145,35 @@ root, or Join Token behind.
 | every case 1, 2 and 3 assertion above | PASS |
 
 `STATUS` recorded `status=PASS`.
+
+## Current-revision execution: local Agent diagnostics
+
+The matrix was rerun on the `dp-vm-scaling` Ubuntu 24.04 libvirt guest using
+exact non-development Image IDs built from one committed revision.
+
+    started_at              2026-08-25T02:26:49Z
+    finished_at             2026-08-25T02:39:09Z
+    docker_server_version   29.1.3
+    release_version         0.0.0-validation.20260825
+    release_revision        818c534f0852fccfea243e10533e3e6fa8a4ed47
+    server_image_id         sha256:df1b4374ae7a5b2a2766045f7fef54f787da1db52a0fefb2254eeb4c60bc19ad
+    agent_image_id          sha256:628e6ed867004a1f1ee9eb988a13fbb1d81d48d3006bda38f3fb5dfbd5d837e0
+
+The rollback held the restored archive at cursor 63, moved the Agent from
+generation 2 to 3, presented generation 2, and required two advances to recover
+at generation 4. All control, database-loss, Archive rebind, rollback,
+identity-loss, and manual re-registration assertions recorded `PASS`.
+
+The new `archive_rollback_local_diagnostic=PASS` assertion was satisfied by
+the real Agent stderr log:
+
+```text
+level=WARN component=agent event=audit_archive_refused presented_generation="2" bound_generation="3" error="ARCHIVE_ROLLBACK_DETECTED: bound generation 3, presented generation 2"
+```
+
+The longest captured Agent diagnostic line was 214 bytes, no credential or
+Join Token material was present, the evidence checksum manifest verified, and
+the run left no Container or recovery network behind.
 
 Validate the checked-in static contract without Docker:
 

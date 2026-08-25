@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/east-true/dockpilot/internal/app"
+	productconfig "github.com/east-true/dockpilot/internal/config"
 	"github.com/east-true/dockpilot/internal/registration"
 	"github.com/east-true/dockpilot/internal/serverbootstrap"
 )
@@ -34,6 +36,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, factories
 	case "help", "-h", "--help":
 		printRootUsage(stdout)
 		return 0
+	case "defaults":
+		return runDefaults(args[1:], stdout, stderr)
 	case string(app.ModeServer):
 		return runServer(ctx, args[1:], stdout, stderr, factories)
 	case string(app.ModeAgent):
@@ -43,6 +47,26 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, factories
 		printRootUsage(stderr)
 		return 2
 	}
+}
+
+func runDefaults(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 0 {
+		fmt.Fprintf(stderr, "error: unexpected defaults argument %q\n", args[0])
+		return 2
+	}
+	defaults := productconfig.V1Defaults()
+	if err := defaults.Validate(); err != nil {
+		fmt.Fprintf(stderr, "defaults validation failed: %v\n", err)
+		return 1
+	}
+	encoder := json.NewEncoder(stdout)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(defaults.Report()); err != nil {
+		fmt.Fprintf(stderr, "write defaults report: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 func runServer(ctx context.Context, args []string, stdout, stderr io.Writer, factories app.Factories) int {
@@ -172,11 +196,12 @@ func runConfigured(ctx context.Context, cfg app.Config, _, stderr io.Writer, fac
 }
 
 func printRootUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage: dockpilot <server|agent> [options]")
+	fmt.Fprintln(w, "Usage: dockpilot <server|agent|defaults> [options]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Modes:")
 	fmt.Fprintln(w, "  server  run the Dockpilot control plane")
 	fmt.Fprintln(w, "  agent   run the Docker host controller")
+	fmt.Fprintln(w, "  defaults  print the machine-readable v1 operational defaults")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Use 'dockpilot <mode> --help' for mode options.")
 }

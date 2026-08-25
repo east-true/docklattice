@@ -127,7 +127,9 @@ private keys, file contents, or other secrets.
 
 The workload driver is implemented, statically verified, and executed. The
 matrix ran three trials against the production images and every trial returned
-`status=PASS`, so `defaults-validation.md` is no longer provisional.
+`status=PASS`, so the Agent/Server memory row in `defaults-validation.md` is no
+longer provisional. Other ownership rows require their own named evidence and
+are not promoted by this resource result.
 
 ```text
 started_at             2026-08-19T11:46:15Z

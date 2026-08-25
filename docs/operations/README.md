@@ -12,6 +12,7 @@ refuses several deployment shapes that it cannot manage safely.
 | Integrate with the HTTP interface | [HTTP API](api.md) |
 | Recover Server or Agent identity | [Identity recovery](recovery.md) |
 | Recover from storage pressure | [Degraded storage](degraded-storage.md) |
+| Diagnose an offline or stuck Agent | [Agent diagnostics](agent-diagnostics.md) |
 
 The security boundary is documented separately in
 [`SECURITY.md`](../../SECURITY.md). Dockpilot v1 has no browser authentication;

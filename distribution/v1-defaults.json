@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "wal": {
+    "max_bytes": 268435456,
+    "retention": "336h0m0s",
+    "fsync_interval": "1s",
+    "fsync_bytes": 65536
+  },
+  "operations": {
+    "result_retention": "24h0m0s",
+    "result_max": 500,
+    "output_tail_bytes": 65536,
+    "cancel_grace": "10s",
+    "stalled_warning": "5m0s",
+    "timeouts": {
+      "container": "1m0s",
+      "compose_up": "15m0s",
+      "compose_restart": "10m0s",
+      "compose_down": "5m0s",
+      "compose_pull": "45m0s",
+      "file_write": "30s",
+      "backup_create": "5m0s",
+      "backup_restore": "5m0s",
+      "discovery_rescan": "10m0s"
+    }
+  },
+  "storage": {
+    "agent_state_max_bytes": 2147483648,
+    "filesystem_free_min_bytes": 1073741824,
+    "filesystem_free_min_percent": 5,
+    "emergency_reserve_bytes": 67108864,
+    "automatic_snapshots_per_project": 20,
+    "editable_file_max_bytes": 1048576
+  },
+  "discovery": {
+    "interval": "5m0s",
+    "max_directories": 200000,
+    "max_duration": "1m0s",
+    "directories_per_second": 1000
+  },
+  "live_metrics": {
+    "stats_sample_interval": "2s",
+    "frame_interval": "2s",
+    "browser_sparkline_samples": 120
+  },
+  "connectivity": {
+    "heartbeat_interval": "30s",
+    "offline_after": "1m30s"
+  },
+  "audit": {
+    "event_coalescing_window": "5s",
+    "observed_max_per_second": 20,
+    "server_operation_retention": "2160h0m0s",
+    "server_retention": "8760h0m0s",
+    "server_max_bytes": 10737418240,
+    "server_warn_percent": 80,
+    "server_aggressive_percent": 95,
+    "ack_stall_warning": "5m0s"
+  },
+  "memory": {
+    "agent_rss_target_bytes": 268435456,
+    "agent_memory_hard_limit_bytes": 536870912,
+    "server_rss_target_bytes": 536870912,
+    "server_memory_hard_limit_bytes": 1073741824
+  },
+  "credentials": {
+    "lifetime": "2160h0m0s",
+    "renewal_remaining_percent": 50
+  }
+}

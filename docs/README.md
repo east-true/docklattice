@@ -33,7 +33,7 @@ bug.
 
 | Collection | Contents |
 |---|---|
-| [Operations](operations/README.md) | Installation, configuration, API, supported environments, and recovery procedures. |
+| [Operations](operations/README.md) | Installation, configuration, API, supported environments, Agent diagnostics, and recovery procedures. |
 | [Product and UI contracts](design/README.md) | Current UI behavior, responsive acceptance, and live metrics design. |
 | [Release evidence](release/README.md) | Reproducible gates, environment records, known limits, and the historical v1 plan. |
 

@@ -23,6 +23,17 @@ the run records `status=SKIPPED_NOT_CLEAN` with the count, instead of reporting
 a product failure for something the product did correctly. A development
 machine that is running other stacks is a skip, not a pass and not a bug.
 
+## Effective defaults contract
+
+Before starting either product mode, the harness runs `dockpilot defaults`
+inside the exact release Server Image and compares the complete JSON output
+byte-for-byte with `distribution/v1-defaults.json`. This proves which defaults
+the shipped binary contains rather than inferring them from source or tests.
+
+The current-revision execution below records `defaults_config_dump=PASS` from
+the Image itself. Its captured `v1-defaults.json` is covered by the evidence
+checksum manifest.
+
 ## Recorded execution
 
     started_at              2026-08-19T12:15:53Z
@@ -137,6 +148,31 @@ with `docker save`/`docker load` and their IDs were preserved exactly, so the
 An earlier attempt on the same guest recorded `SKIPPED_NOT_CLEAN` because a
 previous gate had left one Compose project behind. That is the harness working:
 the gate refuses to claim a clean-host result on a host that is not clean.
+
+## Current-revision execution: effective defaults
+
+This execution ran on the clean `dp-vm-scaling` Ubuntu 24.04 libvirt guest.
+Both product Images were built from and labelled with the same committed
+revision, transferred with `docker save`/`docker load`, and invoked by exact
+Image ID.
+
+    started_at              2026-08-25T02:26:12Z
+    finished_at             2026-08-25T02:26:22Z
+    kernel                  Linux 6.8.0-137-generic x86_64
+    docker_server_version   29.1.3
+    cgroup                  v2, systemd driver
+    release_version         0.0.0-validation.20260825
+    release_revision        818c534f0852fccfea243e10533e3e6fa8a4ed47
+    compose_version         5.3.1
+    server_image_id         sha256:df1b4374ae7a5b2a2766045f7fef54f787da1db52a0fefb2254eeb4c60bc19ad
+    agent_image_id          sha256:628e6ed867004a1f1ee9eb988a13fbb1d81d48d3006bda38f3fb5dfbd5d837e0
+    fixture_image_id        sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
+
+`defaults_config_dump`, registration, project discovery, live dashboard,
+Compose operation, backup create/list, and identity reconnect all recorded
+`PASS`. Network downloads, Image builds, and Image pushes remained
+`FORBIDDEN`. The evidence checksum manifest verified after transfer, and the
+run left no Container or Compose project behind.
 
 ## Evidence and cleanup
 

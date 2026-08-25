@@ -37,6 +37,9 @@ for literal in \
     'rm -rf /state/identity' \
     'archive_generation did not advance after Audit database loss' \
     'the existing Agent did not reconnect automatically with its original identity' \
+	'event=audit_archive_refused' \
+	'ARCHIVE_ROLLBACK_DETECTED' \
+	'archive_rollback_local_diagnostic=PASS' \
     'the Server did not fail closed after losing only its Identity State' \
     'another Server Identity' \
     'server_identity_id was reused after both stores were lost' \

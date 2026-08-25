@@ -1,6 +1,6 @@
 # v1 operational defaults validation
 
-Status: memory defaults validated; remaining categories provisional  
+Status: validation campaign reopened; memory validated, remaining rows tracked below
 Source: architecture section 19 and Appendix B.2  
 Promotion gate: [v1 implementation plan](v1-implementation-plan.md) Phase 8
 (passed 2026-08-18; see `resource-gate.md`)
@@ -136,17 +136,51 @@ no adjacent-limit comparison was needed.
 |---|---|---|
 | Agent/Server memory | validated | none; production cgroup matrix, three repetitions |
 | Retention/disk/reserve | partial | Phase 6 quota fault matrix passed on a disposable size-limited tmpfs; full storage-pressure matrix outstanding |
-| Exact values and relationships | provisional | config dump in release E2E (Phase 9) |
+| Exact values and relationships | validated | the exact release Server Image emitted `dockpilot defaults` byte-for-byte equal to `distribution/v1-defaults.json` in the current-revision clean-host E2E |
 | Credential lifetime/renewal | provisional | reconnect/offline E2E |
-| Operation result/tail limits | provisional | crash/reconnect E2E |
+| Operation result/tail limits | partial | real 525-operation/500-entry eviction passed; output-tail truncation remains unit-only and needs real process output plus reconnect evidence |
 | WAL size/age/fsync | provisional | production disk-WAL matrix |
-| Operation timeouts | provisional | real normal/slow/hung Docker and Compose fixtures |
-| Discovery budget/interval | provisional | real 200,001-directory and slow-filesystem fixtures |
-| Stats interval/ring | provisional | real Docker viewer 0/1/N soak |
+| Operation timeouts | partial | real health-gated Compose cancellation passed; configured normal/slow/hung timeout boundaries remain unmeasured |
+| Discovery budget/interval | policy decision required | 200,000 directories is unreachable under the simultaneous 60-second and 1,000 directories/second defaults; interval and slow-filesystem evidence also remain |
+| Stats interval/ring | partial | the resource matrix measured real Docker collection with 0, 1, and 6 viewers; the 120-sample browser bound and current-revision soak remain |
 
 The one-hour soak required before the v1 release candidate is signed has now
 passed ([`soak.md`](soak.md), Stage 1); the overnight soak has not been run.
 No row above changes as a result. The soak owns direction over time, not the
-values in this table, so a passing soak promotes nothing here on its own - the
-`Stats interval/ring` row in particular still needs the real Docker viewer
-0/1/N evidence it names, which an active soak exercises but does not measure.
+values in this table, so a passing soak promotes nothing here on its own. The
+`Stats interval/ring` row retains separate browser-ring and current-revision
+evidence requirements even though the resource matrix now supplies its real
+Docker viewer 0/1/N observation.
+
+## Reopened validation campaign — 2026-08-25
+
+The previous table stayed provisional even after later gates supplied part of
+its requested evidence. This campaign separates what is already demonstrated
+from what still has no final observation; no row is promoted by inference.
+
+The release binary now exposes a read-only `dockpilot defaults` command. Its
+complete JSON output is pinned by `distribution/v1-defaults.json`, checked by a
+unit test, and required by the clean-host harness from inside the exact Server
+Image. The 2026-08-25 clean-host run at revision
+`818c534f0852fccfea243e10533e3e6fa8a4ed47` recorded
+`defaults_config_dump=PASS`, so the exact-values row is validated.
+
+The operation result count is no longer merely a deterministic unit claim. The
+abuse matrix submitted 525 real operations against the 500-entry Agent result
+ring and verified that the oldest result returned 404 while the newest reached
+a terminal state. The 64 KiB output tail still lacks equivalent real-process
+and reconnect evidence, so the combined row is partial rather than validated.
+
+The resource matrix already measured the viewer-scoped collection contract:
+zero viewers produced zero subscriptions and frames, one Matrix viewer produced
+frames, and six simultaneous per-Container stats viewers remained bounded. The
+browser's 120-sample ring is pinned in code tests but has not been observed over
+a complete real sampling window, so this row is also partial.
+
+The discovery row contains a policy contradiction that a larger fixture cannot
+resolve. At 1,000 directories/second, a 60-second scan can visit at most about
+60,000 directories before `max_duration` wins; `max_directories=200000` cannot
+become the stopping reason while all three defaults are active. A product
+decision must either lower the directory cap to a reachable value, raise the
+duration budget, or explicitly document the directory count as a secondary
+defence that is not independently reachable under v1 defaults.

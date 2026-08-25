@@ -464,10 +464,9 @@ generation_rolled_back=$(read_identity_field archive_generation)
 [ "$generation_rolled_back" = "$generation_case1" ] ||
     fail "case 1b: restoring the snapshot did not put the Server back at generation $generation_case1"
 
-# The Agent has to refuse. What that refusal looks like from outside is not a
-# log line: the Agent process writes no diagnostics at all - only the Server
-# has a diagnostics writer - so the refusal is observed where it has an effect,
-# in the audit stream that must not resume.
+# The Agent has to refuse both durably and observably. The archive cursor must
+# not resume, and the Agent's own bounded stderr diagnostics must name the
+# rollback so an operator can diagnose it even while the Server UI is unusable.
 #
 # The restored database holds the archive as it stood at the snapshot. If the
 # Agent adopted it, the events it produced since then would flow into it and
@@ -495,6 +494,10 @@ rolled_back_max_seq=$(jq '[.events[].cursor.seq] | max // 0' "$evidence_dir/case
 case "$rolled_back_max_seq" in ''|null|*[!0-9]*) rolled_back_max_seq=0 ;; esac
 capture_log "$server" "$evidence_dir/case1b.server.log"
 capture_log "$agent" "$evidence_dir/case1b.agent.log"
+grep -F 'event=audit_archive_refused' "$evidence_dir/case1b.agent.log" >/dev/null ||
+    fail "case 1b: the Agent log did not report the refused Archive"
+grep -F 'ARCHIVE_ROLLBACK_DETECTED' "$evidence_dir/case1b.agent.log" >/dev/null ||
+    fail "case 1b: the Agent log did not name the Archive rollback"
 {
     printf 'generation_case1=%s\n' "$generation_case1"
     printf 'generation_ahead=%s\n' "$generation_ahead"
@@ -624,6 +627,7 @@ docker run --pull never --rm --user 0:0 --entrypoint /bin/sh -v "$runtime/agent:
     printf 'archive_rebind_recorded=PASS\n'
     printf 'archive_rollback_not_adopted=PASS\n'
     printf 'archive_rollback_no_downward_rebind=PASS\n'
+    printf 'archive_rollback_local_diagnostic=PASS\n'
     printf 'archive_rollback_generations_to_recover=%s\n' "$attempts"
     printf 'database_loss_generation_advanced=PASS\n'
     printf 'database_loss_automatic_reconnect=PASS\n'

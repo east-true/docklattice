@@ -24,6 +24,13 @@ func Boot(ctx context.Context, config Config) (_ *Runtime, err error) {
 	if err := normalizeConfig(&config); err != nil {
 		return nil, err
 	}
+	diagnostics := newAgentDiagnostics(config.Diagnostics, config.Now)
+	diagnostics.info("boot_started")
+	defer func() {
+		if err != nil {
+			diagnostics.failure("boot_failed", err)
+		}
+	}()
 	inspection, err := agentstate.Inspect(config.StateDir)
 	if err != nil {
 		return nil, fmt.Errorf("agentruntime: inspect identity: %w", err)
@@ -59,7 +66,13 @@ func Boot(ctx context.Context, config Config) (_ *Runtime, err error) {
 		}
 	}()
 
-	runtime := &Runtime{config: config, state: state, wal: wal, startup: startup}
+	runtime := &Runtime{
+		config:      config,
+		state:       state,
+		wal:         wal,
+		startup:     startup,
+		diagnostics: diagnostics,
+	}
 	defer func() {
 		if err != nil {
 			runtime.stopDiscovery()
@@ -102,6 +115,12 @@ func Boot(ctx context.Context, config Config) (_ *Runtime, err error) {
 	if err := runtime.startObservedAudit(ctx); err != nil {
 		return nil, err
 	}
+	runtime.diagnostics.info(
+		"boot_ready",
+		diagnosticField{key: "agent_id", value: startup.AgentID},
+		diagnosticField{key: "incarnation", value: strconv.FormatUint(startup.CurrentIncarnation, 10)},
+		diagnosticField{key: "previous_unclean", value: strconv.FormatBool(startup.PreviousUnclean)},
+	)
 	return runtime, nil
 }
 
@@ -131,12 +150,20 @@ func (r *Runtime) Maintain(ctx context.Context) error {
 	done := make(chan struct{})
 	r.maintainCancel, r.maintainDone = cancel, done
 	r.mu.Unlock()
+	r.diagnostics.info(
+		"connection_maintenance_started",
+		diagnosticField{key: "agent_id", value: r.startup.AgentID},
+	)
 	defer func() {
 		cancel()
 		r.mu.Lock()
 		r.maintainCancel = nil
 		close(done)
 		r.mu.Unlock()
+		r.diagnostics.info(
+			"connection_maintenance_stopped",
+			diagnosticField{key: "agent_id", value: r.startup.AgentID},
+		)
 	}()
 	return producttransport.Maintain(maintainCtx, func(connectCtx context.Context) (producttransport.Session, error) {
 		if err := r.renewIfDue(connectCtx); err != nil {
@@ -155,8 +182,42 @@ func (r *Runtime) Maintain(ctx context.Context) error {
 			return nil, err
 		}
 		defer clear(payload)
-		return r.connect(connectCtx, payload, incarnation, r.handler)
-	}, r.config.ReconnectPolicy, r.config.Sleeper, r.config.Random, nil)
+		session, connectErr := r.connect(connectCtx, payload, incarnation, r.handler)
+		if connectErr != nil {
+			r.diagnostics.problem(
+				"connection_failed",
+				connectErr,
+				diagnosticField{key: "server", value: r.config.ServerAddress},
+			)
+		}
+		return session, connectErr
+	}, r.config.ReconnectPolicy, r.config.Sleeper, r.config.Random, r.observeConnectedSession)
+}
+
+func (r *Runtime) observeConnectedSession(session producttransport.Session) {
+	r.diagnostics.resolved("connection_failed")
+	info := session.Info()
+	r.diagnostics.info(
+		"connection_established",
+		diagnosticField{key: "server", value: r.config.ServerAddress},
+		diagnosticField{key: "session_id", value: string(info.SessionID)},
+		diagnosticField{key: "protocol_version", value: strconv.FormatUint(uint64(info.ProtocolVersion), 10)},
+	)
+	go func() {
+		<-session.Done()
+		if err := session.Err(); err != nil {
+			r.diagnostics.problem(
+				"connection_ended",
+				err,
+				diagnosticField{key: "session_id", value: string(info.SessionID)},
+			)
+			return
+		}
+		r.diagnostics.info(
+			"connection_ended",
+			diagnosticField{key: "session_id", value: string(info.SessionID)},
+		)
+	}()
 }
 
 func (r *Runtime) Close(ctx context.Context) error {
@@ -178,6 +239,10 @@ func (r *Runtime) Close(ctx context.Context) error {
 	r.closeAttempt = attempt
 	maintainCancel, maintainDone := r.maintainCancel, r.maintainDone
 	r.mu.Unlock()
+	r.diagnostics.info(
+		"shutdown_started",
+		diagnosticField{key: "agent_id", value: r.startup.AgentID},
+	)
 	if maintainCancel != nil {
 		maintainCancel()
 		<-maintainDone
@@ -225,6 +290,14 @@ func (r *Runtime) Close(ctx context.Context) error {
 		}
 	}
 	r.finishCloseAttempt(attempt, true, result)
+	if result != nil {
+		r.diagnostics.failure("shutdown_failed", result)
+	} else {
+		r.diagnostics.info(
+			"shutdown_complete",
+			diagnosticField{key: "agent_id", value: r.startup.AgentID},
+		)
+	}
 	return result
 }
 
@@ -342,6 +415,7 @@ func (r *Runtime) loadOrRegisterCredential(ctx context.Context) error {
 		}
 		r.credential, r.credentialState = credential, snapshot.Credential
 		r.heartbeat.setCredentialIdentity(credential.CredentialID, credential.ServerIdentityID)
+		r.diagnostics.info("credential_loaded")
 		// The credential is present, its identity matches, and it has not
 		// expired: this Agent is registered, and registered is the whole
 		// question. Nothing below this point may consult a bootstrap Join
@@ -363,6 +437,10 @@ func (r *Runtime) loadOrRegisterCredential(ctx context.Context) error {
 // authentication failure against a credential this Agent still holds, and
 // falling back to enrollment would let a Join Token walk around a revocation.
 func (r *Runtime) register(ctx context.Context, expired *identity.Credential) error {
+	r.diagnostics.info(
+		"registration_started",
+		diagnosticField{key: "reason", value: registrationReason(expired)},
+	)
 	token, err := r.bootstrapToken(ctx)
 	if err != nil {
 		return err
@@ -380,7 +458,18 @@ func (r *Runtime) register(ctx context.Context, expired *identity.Credential) er
 	if err != nil {
 		return fmt.Errorf("agentruntime: register: %w", err)
 	}
-	return r.installCredentialAndArchive(ctx, response)
+	if err := r.installCredentialAndArchive(ctx, response); err != nil {
+		return err
+	}
+	r.diagnostics.info("registration_complete")
+	return nil
+}
+
+func registrationReason(expired *identity.Credential) string {
+	if expired != nil {
+		return "credential_expired"
+	}
+	return "new_agent"
 }
 
 // bootstrapToken resolves the Join Token for an enrollment that is about to
@@ -438,6 +527,7 @@ func (r *Runtime) renewIfDue(ctx context.Context) error {
 	if !r.credential.RenewalDue(r.config.Now()) {
 		return nil
 	}
+	r.diagnostics.info("credential_renewal_started")
 	if r.config.Registration == nil {
 		return fmt.Errorf("agentruntime: credential renewal requires registration client")
 	}
@@ -473,6 +563,7 @@ func (r *Runtime) renewIfDue(ctx context.Context) error {
 	if err := r.state.CompleteCredentialActivation(ctx, response.Credential.CredentialID); err != nil {
 		return fmt.Errorf("agentruntime: clear credential activation journal: %w", err)
 	}
+	r.diagnostics.info("credential_renewal_complete")
 	return nil
 }
 
@@ -553,6 +644,17 @@ func (r *Runtime) bindAnnouncedArchive(ctx context.Context, descriptor producttr
 	result, err := r.state.BindArchive(ctx, descriptor.ServerIdentityID, descriptor.Generation,
 		descriptor.AuditArchiveID, coverage, r.config.Now())
 	if err != nil {
+		fields := []diagnosticField{
+			{key: "presented_generation", value: strconv.FormatUint(descriptor.Generation, 10)},
+		}
+		var rollback *agentstate.ArchiveRollbackError
+		if errors.As(err, &rollback) {
+			fields = append(fields, diagnosticField{
+				key:   "bound_generation",
+				value: strconv.FormatUint(rollback.BoundGeneration, 10),
+			})
+		}
+		r.diagnostics.problem("audit_archive_refused", err, fields...)
 		return "", fmt.Errorf("agentruntime: bind announced Archive: %w", err)
 	}
 	if !result.Changed {
@@ -568,6 +670,11 @@ func (r *Runtime) bindAnnouncedArchive(ctx context.Context, descriptor producttr
 	if err := r.appendArchiveRebound(ctx, previous.BoundArchive, result, walFloor); err != nil {
 		return "", err
 	}
+	r.diagnostics.resolved("audit_archive_refused")
+	r.diagnostics.info(
+		"audit_archive_rebound",
+		diagnosticField{key: "generation", value: strconv.FormatUint(result.Current.Generation, 10)},
+	)
 	return result.Current.ArchiveID, nil
 }
 
@@ -640,6 +747,7 @@ func (r *Runtime) startDocker(ctx context.Context) error {
 	docker, err := r.config.DockerOpen(identityState.get)
 	if err != nil {
 		r.heartbeat.setCapability(producttransport.Capability{ConnectionReady: true, Reason: "Docker unavailable"})
+		r.diagnostics.problem("docker_unavailable", err)
 		return nil
 	}
 	r.docker = docker
@@ -653,11 +761,15 @@ func (r *Runtime) startDocker(ctx context.Context) error {
 	if probeErr != nil && capability.Reason == "" {
 		capability.Reason = "Docker probe failed"
 	}
+	if probeErr != nil {
+		r.diagnostics.problem("docker_probe_failed", probeErr)
+	}
 	if probeErr == nil && probe.Available {
 		containers, listErr := docker.List(ctx)
 		if listErr != nil {
 			capability.DockerReady = false
 			capability.Reason = "Docker self-identification inventory unavailable"
+			r.diagnostics.problem("docker_inventory_failed", listErr)
 		} else {
 			identification := agentsafety.IdentifySelf(safetyContainers(containers), r.config.Self)
 			identityState.set(identification)
@@ -665,6 +777,7 @@ func (r *Runtime) startDocker(ctx context.Context) error {
 			if identification.FailClosed {
 				capability.DockerReady = false
 				capability.Reason = identification.Reason
+				r.diagnostics.problem("self_identification_failed", errors.New(identification.Reason))
 			}
 		}
 	}
@@ -673,6 +786,12 @@ func (r *Runtime) startDocker(ctx context.Context) error {
 	}
 	applyFilesystemCapability(&capability, r.rootAssessments)
 	r.heartbeat.setCapability(capability)
+	if capability.DockerReady {
+		r.diagnostics.info(
+			"docker_ready",
+			diagnosticField{key: "api_version", value: capability.DockerAPIVersion},
+		)
+	}
 	return nil
 }
 
@@ -770,6 +889,7 @@ func (r *Runtime) maintainObservedAudit(ctx context.Context, runner *auditevents
 	defer close(done)
 	for {
 		if err := r.reconcileDockerSnapshot(ctx); err != nil {
+			r.diagnostics.problem("docker_snapshot_failed", err)
 			timer := time.NewTimer(time.Second)
 			select {
 			case <-ctx.Done():
@@ -795,6 +915,9 @@ func (r *Runtime) maintainObservedAudit(ctx context.Context, runner *auditevents
 			}
 			done <- err
 			return
+		}
+		if err != nil {
+			r.diagnostics.problem("docker_event_stream_ended", err)
 		}
 		timer := time.NewTimer(time.Second)
 		select {
