@@ -29,6 +29,9 @@ for literal in \
     '/var/run/docker.sock' \
     '--pull never' \
     'server issue-token --state-dir /var/lib/dockpilot --ttl 15m' \
+	'docker run --pull never --rm "$server_image" defaults' \
+	'distribution/v1-defaults.json' \
+	'defaults_config_dump=PASS' \
     'chmod 0700 /clean-host/server /clean-host/agent' \
     'chmod 0600 /clean-host/server/tls/server.crt /clean-host/server/tls/server.key' \
     'capabilities.discovery.enabled == true' \

@@ -23,6 +23,17 @@ the run records `status=SKIPPED_NOT_CLEAN` with the count, instead of reporting
 a product failure for something the product did correctly. A development
 machine that is running other stacks is a skip, not a pass and not a bug.
 
+## Effective defaults contract
+
+Before starting either product mode, the harness runs `dockpilot defaults`
+inside the exact release Server Image and compares the complete JSON output
+byte-for-byte with `distribution/v1-defaults.json`. This proves which defaults
+the shipped binary contains rather than inferring them from source or tests.
+
+The recorded executions below predate this assertion. The next current-revision
+execution must record `defaults_config_dump=PASS`; until then, their existing
+installation results remain valid but are not evidence for the new config dump.
+
 ## Recorded execution
 
     started_at              2026-08-19T12:15:53Z

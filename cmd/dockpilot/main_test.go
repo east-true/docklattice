@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/east-true/dockpilot/internal/agentid"
 	"github.com/east-true/dockpilot/internal/app"
+	productconfig "github.com/east-true/dockpilot/internal/config"
 	"github.com/east-true/dockpilot/internal/registration"
 	"github.com/east-true/dockpilot/internal/serverbootstrap"
 )
@@ -32,7 +34,7 @@ func TestHelp(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"--help"}, "dockpilot <server|agent>"},
+		{[]string{"--help"}, "dockpilot <server|agent|defaults>"},
 		{[]string{"server", "--help"}, "--listen"},
 		{[]string{"server", "issue-token", "--help"}, "--rejoin-agent-id"},
 		{[]string{"agent", "--help"}, "--state-dir"},
@@ -45,6 +47,43 @@ func TestHelp(t *testing.T) {
 		if output := stdout.String() + stderr.String(); !strings.Contains(output, tt.want) {
 			t.Fatalf("run(%v) output = %q, want %q", tt.args, output, tt.want)
 		}
+	}
+}
+
+func TestDefaultsPrintsValidatedMachineReadableContract(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"defaults"}, &stdout, &stderr, app.Factories{}); code != 0 {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr=%q", stderr.String())
+	}
+	var report productconfig.DefaultsReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode defaults report: %v", err)
+	}
+	if report.SchemaVersion != 1 || report.WAL.FsyncInterval != "1s" ||
+		report.Operations.Timeouts.ComposeUp != "15m0s" ||
+		report.Discovery.MaxDirectories != 200_000 ||
+		report.Credentials.RenewalRemainingPercent != 50 {
+		t.Fatalf("defaults report=%+v", report)
+	}
+	contract, err := os.ReadFile(filepath.Join("..", "..", "distribution", "v1-defaults.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(stdout.Bytes(), contract) {
+		t.Fatalf("defaults output diverges from distribution/v1-defaults.json:\n%s", stdout.String())
+	}
+}
+
+func TestDefaultsRejectsArguments(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"defaults", "extra"}, &stdout, &stderr, app.Factories{}); code != 2 {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "unexpected defaults argument") {
+		t.Fatalf("stderr=%q", stderr.String())
 	}
 }
 

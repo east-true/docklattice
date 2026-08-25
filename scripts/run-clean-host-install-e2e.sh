@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
 usage() {
     printf 'usage: %s ABSOLUTE_EVIDENCE_DIR SERVER_IMAGE_ID AGENT_IMAGE_ID FIXTURE_IMAGE_ID\n' "$0" >&2
     printf 'all image arguments must be exact local sha256 image IDs\n' >&2
@@ -70,7 +72,7 @@ esac
 # Docker is intentionally the first external prerequisite. In particular, its
 # absence must fail before an evidence directory or runtime secret is created.
 command -v docker >/dev/null 2>&1 || fail "preflight: docker is required"
-for command_name in openssl curl jq awk grep date du df sha256sum stat mktemp head wc find chmod uname cat cp mv rm rmdir mkdir sleep tr; do
+for command_name in openssl curl jq awk grep date du df sha256sum stat mktemp head wc find chmod uname cat cp mv rm rmdir mkdir sleep tr cmp; do
     command -v "$command_name" >/dev/null 2>&1 || fail "preflight: required command not found: $command_name"
 done
 [ -z "${DOCKER_HOST:-}" ] || fail "preflight: DOCKER_HOST is not supported; use the local default Engine socket"
@@ -248,6 +250,11 @@ artifact_created=1
     printf 'server_image_id=%s\nagent_image_id=%s\nfixture_image_id=%s\n' "$server_image" "$agent_image" "$fixture_image"
     printf 'evidence_max_bytes=%s\nlog_max_bytes=%s\n' "$evidence_max_bytes" "$log_max_bytes"
 } >"$evidence_dir/environment.env"
+
+docker run --pull never --rm "$server_image" defaults >"$evidence_dir/v1-defaults.json" ||
+    fail "release Server image could not report its effective v1 defaults"
+cmp "$repo_dir/distribution/v1-defaults.json" "$evidence_dir/v1-defaults.json" >/dev/null ||
+    fail "release Server image defaults diverge from distribution/v1-defaults.json"
 
 check_evidence_cap() {
     used_kib=$(du -sk "$evidence_dir" | awk '{ print $1 }')
@@ -504,7 +511,7 @@ check_evidence_cap
     printf 'agent_id=%s\n' "$agent_id"
     printf 'project_uid=%s\n' "$project_uid"
     printf 'finished_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    printf 'registration=PASS\nproject_discovery=PASS\nlive_dashboard=PASS\ncompose_operation=PASS\nbackup_create_list=PASS\nidentity_reconnect=PASS\n'
+    printf 'defaults_config_dump=PASS\nregistration=PASS\nproject_discovery=PASS\nlive_dashboard=PASS\ncompose_operation=PASS\nbackup_create_list=PASS\nidentity_reconnect=PASS\n'
     printf 'network_downloads=FORBIDDEN\nimage_builds=FORBIDDEN\nimage_pushes=FORBIDDEN\n'
 } >"$evidence_dir/assertions.env"
 sha256sum "$evidence_dir"/*.json "$evidence_dir"/*.env >"$evidence_dir/SHA256SUMS"
