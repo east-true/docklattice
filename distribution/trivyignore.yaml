@@ -1,0 +1,59 @@
+vulnerabilities:
+  # Docker CLI 29.7.2 is the newest official CLI Image available while this
+  # release is being prepared. Dockpilot copies this binary byte-for-byte and
+  # cannot rebuild it with Go 1.26.6 without replacing an upstream artifact.
+  # Keep every exception path-scoped, short-lived, and visible in the complete
+  # release report. Remove them when Docker publishes a fixed CLI Image.
+  - id: CVE-2026-33818
+    paths:
+      - usr/local/bin/docker
+    expired_at: 2026-09-15
+    statement: Waiting for an official Docker CLI release built with fixed Go stdlib.
+  - id: CVE-2026-39821
+    paths:
+      - usr/local/bin/docker
+    expired_at: 2026-09-15
+    statement: Waiting for an official Docker CLI release built with fixed Go stdlib.
+  - id: CVE-2026-46600
+    paths:
+      - usr/local/bin/docker
+    expired_at: 2026-09-15
+    statement: Waiting for an official Docker CLI release built with fixed Go stdlib.
+  - id: CVE-2026-56853
+    paths:
+      - usr/local/bin/docker
+    expired_at: 2026-09-15
+    statement: Waiting for an official Docker CLI release built with fixed Go stdlib.
+  - id: CVE-2026-56858
+    paths:
+      - usr/local/bin/docker
+    expired_at: 2026-09-15
+    statement: Waiting for an official Docker CLI release built with fixed Go stdlib.
+  - id: CVE-2026-56859
+    paths:
+      - usr/local/bin/docker
+    expired_at: 2026-09-15
+    statement: Waiting for an official Docker CLI release built with fixed Go stdlib.
+  - id: CVE-2026-56860
+    paths:
+      - usr/local/bin/docker
+    expired_at: 2026-09-15
+    statement: Waiting for an official Docker CLI release built with fixed Go stdlib.
+  - id: CVE-2026-56862
+    paths:
+      - usr/local/bin/docker
+    expired_at: 2026-09-15
+    statement: Waiting for an official Docker CLI release built with fixed Go stdlib.
+
+  # Compose 5.5.0 is likewise the newest official release. These findings are
+  # scoped only to its bundled x/mod package and expire with the CLI exceptions.
+  - id: CVE-2026-56864
+    paths:
+      - usr/local/libexec/docker/cli-plugins/docker-compose
+    expired_at: 2026-09-15
+    statement: Waiting for an official Docker Compose release built with fixed x/mod.
+  - id: CVE-2026-56865
+    paths:
+      - usr/local/libexec/docker/cli-plugins/docker-compose
+    expired_at: 2026-09-15
+    statement: Waiting for an official Docker Compose release built with fixed x/mod.

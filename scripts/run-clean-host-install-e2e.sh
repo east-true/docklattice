@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 
 usage() {
     printf 'usage: %s ABSOLUTE_EVIDENCE_DIR SERVER_IMAGE_ID AGENT_IMAGE_ID FIXTURE_IMAGE_ID\n' "$0" >&2
@@ -332,34 +332,46 @@ docker run --pull never --rm --user 65532:65532 \
 [ "$(wc -l <"$runtime/bootstrap/join-token" | awk '{ print $1 }')" -eq 1 ] || fail "Join Token CLI did not emit exactly one line"
 token_size=$(wc -c <"$runtime/bootstrap/join-token" | awk '{ print $1 }')
 [ "$token_size" -gt 1 ] && [ "$token_size" -le 4096 ] || fail "Join Token CLI output size is invalid"
-# /agent is already 0700 and owned by 65532, so the bootstrap material has to
-# be placed and tightened by the same root helper rather than copied in from an
-# unprivileged host shell.
+# /agent is already 0700 and owned by 65532, so the CA has to be placed by the
+# same root helper rather than copied in from an unprivileged host shell. The
+# Join Token remains a separate bootstrap-only file bind, matching the
+# documented installation shape.
 docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
     -v "$runtime/agent:/agent" -v "$runtime/bootstrap:/bootstrap:ro" "$server_image" -c \
-    'cp /bootstrap/server-ca.crt /agent/server-ca.crt; cp /bootstrap/join-token /agent/join-token; chown -R 65532:65532 /agent; chmod 0700 /agent; chmod 0600 /agent/server-ca.crt /agent/join-token' >/dev/null
+    'cp /bootstrap/server-ca.crt /agent/server-ca.crt; chown -R 65532:65532 /agent; chmod 0700 /agent; chmod 0600 /agent/server-ca.crt' >/dev/null
+docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
+    -v "$runtime/bootstrap:/bootstrap" "$server_image" -c \
+    'chown 65532:65532 /bootstrap/join-token; chmod 0600 /bootstrap/join-token' >/dev/null
 
 socket_gid=$(stat -c '%g' /var/run/docker.sock)
 agent="$prefix-agent"
 start_agent() {
     with_token=$1
     if [ "$with_token" = true ]; then
-        token_args="--join-token-file /var/lib/dockpilot/join-token"
+        docker run --pull never -d --name "$agent" --network "$network" \
+            --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
+            --group-add "$socket_gid" --label io.dockpilot.role=agent \
+            -v /var/run/docker.sock:/var/run/docker.sock:rw \
+            -v "$runtime/agent:/var/lib/dockpilot:rw" \
+            -v "$runtime/bootstrap/join-token:/run/secrets/dockpilot-join-token:ro" \
+            -v "$runtime/projects:$runtime/projects:rw" "$agent_image" agent \
+            --server server:8443 --registration-url https://server:8080 \
+            --server-ca /var/lib/dockpilot/server-ca.crt \
+            --join-token-file /run/secrets/dockpilot-join-token \
+            --display-name clean-host-agent --self-container-name "$agent" \
+            --project-root "$runtime/projects"
     else
-        token_args=
+        docker run --pull never -d --name "$agent" --network "$network" \
+            --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
+            --group-add "$socket_gid" --label io.dockpilot.role=agent \
+            -v /var/run/docker.sock:/var/run/docker.sock:rw \
+            -v "$runtime/agent:/var/lib/dockpilot:rw" \
+            -v "$runtime/projects:$runtime/projects:rw" "$agent_image" agent \
+            --server server:8443 --registration-url https://server:8080 \
+            --server-ca /var/lib/dockpilot/server-ca.crt \
+            --display-name clean-host-agent --self-container-name "$agent" \
+            --project-root "$runtime/projects"
     fi
-    # token_args is a fixed harness-controlled option, never user input.
-    # shellcheck disable=SC2086
-    docker run --pull never -d --name "$agent" --network "$network" \
-        --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-        --group-add "$socket_gid" --label io.dockpilot.role=agent \
-        -v /var/run/docker.sock:/var/run/docker.sock:rw \
-        -v "$runtime/agent:/var/lib/dockpilot:rw" \
-        -v "$runtime/projects:$runtime/projects:rw" "$agent_image" agent \
-        --server server:8443 --registration-url https://server:8080 \
-        --server-ca /var/lib/dockpilot/server-ca.crt $token_args \
-        --display-name clean-host-agent --self-container-name "$agent" \
-        --project-root "$runtime/projects"
 }
 start_agent true >"$evidence_dir/agent.initial.container-id"
 
@@ -420,12 +432,16 @@ project_uid=$(jq -r '.projects[0].uid' "$evidence_dir/dashboard.initial.json")
 # the harness can prove the project it is about to drive is the one it created.
 [ "$project_uid" = "$(printf '%s\000%s' "$agent_id" "$runtime/projects" | sha256sum | awk '{ print $1 }')" ] ||
     fail "the discovered project uid does not match the uid derived from the fixture root"
-docker run --pull never --rm --user 0:0 --entrypoint /bin/sh -v "$runtime/agent:/agent" "$server_image" \
-    -c 'rm -f /agent/join-token' >/dev/null
+
+# Replace the bootstrap container before deleting its file-bind source. This
+# proves that a host/daemon restart never depends on a missing token path.
+capture_log "$agent" "$evidence_dir/agent.bootstrap.log"
+docker rm -f "$agent" >/dev/null
 rm -f "$runtime/bootstrap/join-token"
-agent_token_left=$(docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
-    -v "$runtime/agent:/agent" "$server_image" -c '[ -e /agent/join-token ] && echo present || echo absent')
-[ "$agent_token_left" = absent ] && [ ! -e "$runtime/bootstrap/join-token" ] || fail "Join Token cleanup failed"
+[ ! -e "$runtime/bootstrap/join-token" ] || fail "Join Token cleanup failed"
+start_agent false >"$evidence_dir/agent.steady.container-id"
+wait_dashboard "$agent_id" "$evidence_dir/dashboard.steady.json" ||
+    fail "Agent did not enter steady state without the Join Token bind"
 
 api_json() {
     method=$1
@@ -511,7 +527,7 @@ check_evidence_cap
     printf 'agent_id=%s\n' "$agent_id"
     printf 'project_uid=%s\n' "$project_uid"
     printf 'finished_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    printf 'defaults_config_dump=PASS\nregistration=PASS\nproject_discovery=PASS\nlive_dashboard=PASS\ncompose_operation=PASS\nbackup_create_list=PASS\nidentity_reconnect=PASS\n'
+    printf 'defaults_config_dump=PASS\nregistration=PASS\nbootstrap_to_steady_state=PASS\nproject_discovery=PASS\nlive_dashboard=PASS\ncompose_operation=PASS\nbackup_create_list=PASS\nidentity_reconnect=PASS\n'
     printf 'network_downloads=FORBIDDEN\nimage_builds=FORBIDDEN\nimage_pushes=FORBIDDEN\n'
 } >"$evidence_dir/assertions.env"
 sha256sum "$evidence_dir"/*.json "$evidence_dir"/*.env >"$evidence_dir/SHA256SUMS"

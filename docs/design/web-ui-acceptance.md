@@ -233,7 +233,7 @@ release-scope checks, and Docker Compose CLI option/model smoke check also pass.
 
 The opt-in `tests/ui/vm-acceptance.spec.mjs` suite runs against production
 Server and Agent images on an Ubuntu 24.04 VM with Docker Engine 29.1.3 (API
-1.52) and the Agent-bundled Docker Compose 5.3.1. It requires explicit
+1.52) and the Agent-bundled Docker Compose 5.5.0. It requires explicit
 `DOCKPILOT_VM_ACCEPTANCE=1`, HTTPS base URL, SSH host, and SSH key variables, so
 the destructive cases cannot run accidentally in the normal fixture suite.
 

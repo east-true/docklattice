@@ -1,0 +1,310 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Full release verification
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish signed Images and release evidence
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+      packages: write
+
+    env:
+      REGISTRY: ghcr.io
+      SERVER_IMAGE: ghcr.io/${{ github.repository_owner }}/dockpilot-server
+      AGENT_IMAGE: ghcr.io/${{ github.repository_owner }}/dockpilot-agent
+      RELEASE_ASSET_DIR: dist/release-assets
+
+    steps:
+      - name: Check out the tagged revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate immutable release inputs
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          version=$(./scripts/validate-release-tag.sh "$GITHUB_REF_NAME")
+
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            printf 'release tag must point to a revision reachable from main\n' >&2
+            exit 1
+          fi
+
+          if existing_is_draft=$(gh release view "$GITHUB_REF_NAME" \
+            --json isDraft --jq '.isDraft' 2>/dev/null); then
+            if [[ "$existing_is_draft" != true ]]; then
+              printf 'refusing to replace existing GitHub Release %s\n' "$GITHUB_REF_NAME" >&2
+              exit 1
+            fi
+          fi
+
+          source_date_epoch=$(git show -s --format=%ct "$GITHUB_SHA")
+
+          printf 'version=%s\n' "$version" >>"$GITHUB_OUTPUT"
+          printf 'source_date_epoch=%s\n' "$source_date_epoch" >>"$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Verify distribution metadata
+        run: ./scripts/verify-distribution.sh
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Build and push the Server Image
+        id: server
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          target: server
+          platforms: linux/amd64,linux/arm64
+          outputs: type=image,name=${{ env.SERVER_IMAGE }},push-by-digest=true,name-canonical=true,push=true,unpack=false,rewrite-timestamp=true
+          build-args: |
+            VERSION=${{ steps.release.outputs.version }}
+            REVISION=${{ github.sha }}
+            SOURCE_DATE_EPOCH=${{ steps.release.outputs.source_date_epoch }}
+          provenance: false
+          sbom: false
+
+      - name: Build and push the Agent Image
+        id: agent
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          target: agent
+          platforms: linux/amd64,linux/arm64
+          outputs: type=image,name=${{ env.AGENT_IMAGE }},push-by-digest=true,name-canonical=true,push=true,unpack=false,rewrite-timestamp=true
+          build-args: |
+            VERSION=${{ steps.release.outputs.version }}
+            REVISION=${{ github.sha }}
+            SOURCE_DATE_EPOCH=${{ steps.release.outputs.source_date_epoch }}
+          provenance: false
+          sbom: false
+
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.74.0
+          cache: true
+
+      - name: Generate SBOMs and vulnerability reports
+        env:
+          SERVER_DIGEST: ${{ steps.server.outputs.digest }}
+          AGENT_DIGEST: ${{ steps.agent.outputs.digest }}
+        run: |
+          ./scripts/scan-release-images.sh \
+            "$RELEASE_ASSET_DIR" \
+            "$SERVER_IMAGE" \
+            "$SERVER_DIGEST" \
+            "$AGENT_IMAGE" \
+            "$AGENT_DIGEST"
+
+      - name: Retain scan evidence when the release is refused
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-image-scans-${{ github.sha }}
+          path: ${{ env.RELEASE_ASSET_DIR }}
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Generate license and digest assets
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          SOURCE_DATE_EPOCH: ${{ steps.release.outputs.source_date_epoch }}
+          SERVER_DIGEST: ${{ steps.server.outputs.digest }}
+          AGENT_DIGEST: ${{ steps.agent.outputs.digest }}
+        run: |
+          go mod download
+          ./scripts/prepare-release-assets.sh \
+            "$RELEASE_ASSET_DIR" \
+            "$VERSION" \
+            "$GITHUB_SHA" \
+            "$SOURCE_DATE_EPOCH" \
+            "$SERVER_IMAGE" \
+            "$SERVER_DIGEST" \
+            "$AGENT_IMAGE" \
+            "$AGENT_DIGEST"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign immutable Image digests
+        shell: bash
+        env:
+          SERVER_DIGEST: ${{ steps.server.outputs.digest }}
+          AGENT_DIGEST: ${{ steps.agent.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          cosign sign --yes "$SERVER_IMAGE@$SERVER_DIGEST"
+          cosign sign --yes "$AGENT_IMAGE@$AGENT_DIGEST"
+
+      - name: Attest Server build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.SERVER_IMAGE }}
+          subject-digest: ${{ steps.server.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest Agent build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.AGENT_IMAGE }}
+          subject-digest: ${{ steps.agent.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Verify checksums and signatures before publication
+        shell: bash
+        env:
+          SERVER_DIGEST: ${{ steps.server.outputs.digest }}
+          AGENT_DIGEST: ${{ steps.agent.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          cd "$RELEASE_ASSET_DIR"
+          sha256sum --check SHA256SUMS
+          cd "$GITHUB_WORKSPACE"
+
+          certificate_identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${GITHUB_REF_NAME}"
+          certificate_issuer="https://token.actions.githubusercontent.com"
+
+          cosign verify \
+            --certificate-identity "$certificate_identity" \
+            --certificate-oidc-issuer "$certificate_issuer" \
+            "$SERVER_IMAGE@$SERVER_DIGEST"
+
+          cosign verify \
+            --certificate-identity "$certificate_identity" \
+            --certificate-oidc-issuer "$certificate_issuer" \
+            "$AGENT_IMAGE@$AGENT_DIGEST"
+
+      - name: Prepare complete GitHub Release draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          if release_json=$(gh release view "$GITHUB_REF_NAME" --json isDraft 2>/dev/null); then
+            if [[ "$(jq -r '.isDraft' <<<"$release_json")" != true ]]; then
+              printf 'refusing to replace existing GitHub Release %s\n' "$GITHUB_REF_NAME" >&2
+              exit 1
+            fi
+
+            printf 'removing incomplete draft from an earlier attempt: %s\n' "$GITHUB_REF_NAME"
+            gh release delete "$GITHUB_REF_NAME" --yes
+          fi
+
+          release_flags=(--draft)
+          if [[ "$VERSION" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
+
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "Dockpilot $GITHUB_REF_NAME" \
+            --generate-notes \
+            "${release_flags[@]}" \
+            "$RELEASE_ASSET_DIR"/*.json \
+            "$RELEASE_ASSET_DIR"/*.tar.gz \
+            "$RELEASE_ASSET_DIR"/*.yaml \
+            "$RELEASE_ASSET_DIR"/SHA256SUMS
+
+      - name: Publish immutable version tags
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          SERVER_DIGEST: ${{ steps.server.outputs.digest }}
+          AGENT_DIGEST: ${{ steps.agent.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          publish_version_tag() {
+            image=$1
+            digest=$2
+            tag="$image:$VERSION"
+
+            if manifest=$(docker buildx imagetools inspect "$tag" \
+              --format '{{json .Manifest}}' 2>/dev/null); then
+              existing_digest=$(jq -er '.digest' <<<"$manifest")
+              if [[ "$existing_digest" != "$digest" ]]; then
+                printf 'refusing to replace existing Image tag %s (%s != %s)\n' \
+                  "$tag" "$existing_digest" "$digest" >&2
+                exit 1
+              fi
+
+              printf 'version tag already has the expected digest: %s\n' "$tag"
+              return
+            fi
+
+            docker buildx imagetools create \
+              --tag "$tag" \
+              "$image@$digest"
+
+            manifest=$(docker buildx imagetools inspect "$tag" \
+              --format '{{json .Manifest}}')
+            published_digest=$(jq -er '.digest' <<<"$manifest")
+            if [[ "$published_digest" != "$digest" ]]; then
+              printf 'published Image tag has the wrong digest: %s\n' "$tag" >&2
+              exit 1
+            fi
+          }
+
+          publish_version_tag "$SERVER_IMAGE" "$SERVER_DIGEST"
+          publish_version_tag "$AGENT_IMAGE" "$AGENT_DIGEST"
+
+      - name: Publish immutable GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          gh release edit "$GITHUB_REF_NAME" --draft=false

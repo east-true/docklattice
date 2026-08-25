@@ -2,7 +2,7 @@
 
 This repository defines two production image targets in the root Dockerfile:
 `server` and `agent`. Both run as numeric UID/GID 65532. The Agent additionally
-contains Docker CLI 29.6.2 and Docker Compose 5.3.1; it does not contain a
+contains Docker CLI 29.7.2 and Docker Compose 5.5.0; it does not contain a
 daemon, Buildx, or a shell-command execution wrapper.
 
 The exact image indexes, artifact checksums, and upstream license-file
@@ -62,10 +62,50 @@ Two properties of the `Dockerfile` make this possible, and
   disabled. The multi-platform build therefore executes no target-architecture
   binary and needs no `binfmt_misc`/QEMU handler on the build host.
 
-The image build is one part of the Phase 9 gate, not evidence that the gate has
-passed. Release automation must still attach the Go dependency notices, image
-SBOMs, vulnerability results, tests, and clean-host E2E evidence described by
-the implementation plan.
+The local Image build is one part of the Phase 9 gate, not evidence that the
+gate has passed. [`.github/workflows/release.yml`](../../.github/workflows/release.yml)
+is the publication path for an Image-bearing release. A new SemVer tag must be
+reachable from `main`; the workflow first reuses the complete CI gate, then:
+
+1. builds and pushes `server` and `agent` for `linux/amd64` and `linux/arm64`;
+2. refuses to overwrite a GHCR version tag with a different digest or any
+   already-published GitHub Release;
+3. scans both architectures and blocks fixable HIGH/CRITICAL vulnerabilities;
+4. signs each Image index digest with keyless Cosign;
+5. pushes GitHub build-provenance attestations for those exact digests;
+6. attaches per-architecture CycloneDX SBOMs, complete Trivy JSON reports, Go
+   dependency license texts, the exact `trivyignore.yaml` policy,
+   `release-images.json`, and `SHA256SUMS` to the immutable GitHub Release.
+
+Publication is retry-safe. The complete GitHub Release is assembled as a draft
+before either public GHCR version tag is created. A retry removes only an
+incomplete draft, accepts an existing version tag only when it already points
+to the newly rebuilt expected digest, and otherwise fails closed. The draft is
+published only after both version tags have been created and verified.
+
+The Docker build keeps inline BuildKit provenance and SBOM disabled so the
+deterministic Image index remains the subject. Cosign signatures and GitHub
+provenance are attached as OCI referrers and do not rewrite that digest.
+
+Every third-party Action in the workflow is pinned to a full commit SHA. The
+workflow uses only the tag run's short-lived `GITHUB_TOKEN` and OIDC identity;
+it has no long-lived Registry or signing key secret. Verify the static contract
+with:
+
+```sh
+./scripts/verify-release-publishing.sh
+```
+
+The blocking scan is not allowed to hide unreviewed findings. The complete
+unfiltered Trivy JSON is always retained and attached. The only suppressions
+accepted by the gate are the ten path-scoped, expiring entries in
+[`distribution/trivyignore.yaml`](../../distribution/trivyignore.yaml): eight
+Go stdlib findings in the newest official Docker CLI 29.7.2 binary and two
+`x/mod` findings in the newest official Compose 5.5.0 binary. Dockpilot copies
+those signed upstream release artifacts rather than rebuilding them. All ten
+exceptions expire on 2026-09-15 and must be removed or consciously renewed
+against a fresh upstream-version review; they do not suppress the published
+reports.
 
 ## Deliberate upgrades
 

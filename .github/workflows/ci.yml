@@ -1,14 +1,13 @@
 name: CI
 
 on:
+  workflow_call:
   pull_request:
     branches:
       - main
   push:
     branches:
       - main
-    tags:
-      - "v*"
   workflow_dispatch:
 
 permissions:

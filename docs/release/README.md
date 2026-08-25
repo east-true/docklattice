@@ -17,8 +17,15 @@ did *not* measure.
 [`v0.0.0`](https://github.com/east-true/dockpilot/releases/tag/v0.0.0) is the
 first source-only pre-release. Its tag CI passed before publication. GitHub
 provides source archives for the release; it does not include signed
-Server/Agent Images or prebuilt binaries. Image references in the installation
-guide remain explicit placeholders.
+Server/Agent Images or prebuilt binaries.
+
+The Image-bearing release workflow is now defined but has not retroactively
+published Images for `v0.0.0`. A future SemVer tag reachable from `main` will
+run the complete CI gate, publish signed multi-architecture Server/Agent Images
+to GHCR, attach provenance, SBOM, scan and license evidence, and create the
+corresponding GitHub Release. The installation guide resolves exact digest
+references from that Release's generated `release-images.json` rather than
+using a mutable tag.
 
 ## Gates
 
