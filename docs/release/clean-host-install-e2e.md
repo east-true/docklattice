@@ -110,8 +110,9 @@ network and requires all of the following before reporting PASS:
    exactly one running Compose fixture from the requested immutable image ID.
 3. `backup.create` for `compose.yaml`, successful operation polling, and an
    exact one-record manual backup list with a valid manifest digest.
-4. Removal and recreation of the Agent container without a Join Token, using
-   the same state root, followed by an ACTIVE reconnect with the identical
+4. Replacement of the bootstrap Agent with a steady-state container that has
+   neither the separate Join Token file bind nor `--join-token-file`, followed
+   by a later second recreation and an Active reconnect with the identical
    Agent ID, project UID, and backup metadata.
 
 Any missing capability, extra host/project/fixture, terminal operation failure,
@@ -156,8 +157,8 @@ Both product Images were built from and labelled with the same committed
 revision, transferred with `docker save`/`docker load`, and invoked by exact
 Image ID.
 
-    started_at              2026-08-25T05:57:01Z
-    finished_at             2026-08-25T05:57:12Z
+    started_at              2026-08-25T07:31:37Z
+    finished_at             2026-08-25T07:31:48Z
     kernel                  Linux 6.8.0-137-generic x86_64
     docker_server_version   29.1.3
     cgroup                  v2, systemd driver
@@ -168,11 +169,13 @@ Image ID.
     agent_image_id          sha256:3d24018924141da1a1d59eb56dacf9a969515ebd52004f80f3f71d9422f1e94c
     fixture_image_id        sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616
 
-`defaults_config_dump`, registration, project discovery, live dashboard,
-Compose operation, backup create/list, and identity reconnect all recorded
-`PASS`. Network downloads, Image builds, and Image pushes remained
-`FORBIDDEN`. The evidence checksum manifest verified after transfer, and the
-run left no Container or Compose project behind.
+`defaults_config_dump`, registration, bootstrap-to-steady-state replacement,
+project discovery, live dashboard, Compose operation, backup create/list, and
+identity reconnect all recorded `PASS`. The Join Token was mounted from a
+separate host file only for registration; the harness recreated the Agent
+without that bind before deleting the file. Network downloads, Image builds,
+and Image pushes remained `FORBIDDEN`. The evidence checksum manifest verified
+after transfer, and the run left no Container or Compose project behind.
 
 ## Evidence and cleanup
 

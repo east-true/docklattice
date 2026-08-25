@@ -68,13 +68,20 @@ is the publication path for an Image-bearing release. A new SemVer tag must be
 reachable from `main`; the workflow first reuses the complete CI gate, then:
 
 1. builds and pushes `server` and `agent` for `linux/amd64` and `linux/arm64`;
-2. refuses to overwrite either an existing GHCR version tag or GitHub Release;
+2. refuses to overwrite a GHCR version tag with a different digest or any
+   already-published GitHub Release;
 3. scans both architectures and blocks fixable HIGH/CRITICAL vulnerabilities;
 4. signs each Image index digest with keyless Cosign;
 5. pushes GitHub build-provenance attestations for those exact digests;
 6. attaches per-architecture CycloneDX SBOMs, complete Trivy JSON reports, Go
    dependency license texts, the exact `trivyignore.yaml` policy,
    `release-images.json`, and `SHA256SUMS` to the immutable GitHub Release.
+
+Publication is retry-safe. The complete GitHub Release is assembled as a draft
+before either public GHCR version tag is created. A retry removes only an
+incomplete draft, accepts an existing version tag only when it already points
+to the newly rebuilt expected digest, and otherwise fails closed. The draft is
+published only after both version tags have been created and verified.
 
 The Docker build keeps inline BuildKit provenance and SBOM disabled so the
 deterministic Image index remains the subject. Cosign signatures and GitHub

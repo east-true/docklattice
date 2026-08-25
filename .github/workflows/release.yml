@@ -46,15 +46,10 @@ jobs:
       - name: Validate immutable release inputs
         id: release
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
-          if ! grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' <<<"$GITHUB_REF_NAME"; then
-            printf 'release tag is not supported SemVer: %s\n' "$GITHUB_REF_NAME" >&2
-            exit 1
-          fi
+          version=$(./scripts/validate-release-tag.sh "$GITHUB_REF_NAME")
 
           git fetch --no-tags origin main
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
@@ -62,12 +57,6 @@ jobs:
             exit 1
           fi
 
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            printf 'refusing to replace existing GitHub Release %s\n' "$GITHUB_REF_NAME" >&2
-            exit 1
-          fi
-
-          version=${GITHUB_REF_NAME#v}
           source_date_epoch=$(git show -s --format=%ct "$GITHUB_SHA")
 
           printf 'version=%s\n' "$version" >>"$GITHUB_OUTPUT"
@@ -93,20 +82,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
-      - name: Refuse an existing version tag
-        shell: bash
-        env:
-          VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          set -euo pipefail
-
-          for image in "$SERVER_IMAGE" "$AGENT_IMAGE"; do
-            if docker buildx imagetools inspect "$image:$VERSION" >/dev/null 2>&1; then
-              printf 'refusing to replace existing Image tag %s:%s\n' "$image" "$VERSION" >&2
-              exit 1
-            fi
-          done
-
       - name: Build and push the Server Image
         id: server
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -115,7 +90,7 @@ jobs:
           file: ./Dockerfile
           target: server
           platforms: linux/amd64,linux/arm64
-          outputs: type=image,name=${{ env.SERVER_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.SERVER_IMAGE }},push-by-digest=true,name-canonical=true,push=true,unpack=false,rewrite-timestamp=true
           build-args: |
             VERSION=${{ steps.release.outputs.version }}
             REVISION=${{ github.sha }}
@@ -131,7 +106,7 @@ jobs:
           file: ./Dockerfile
           target: agent
           platforms: linux/amd64,linux/arm64
-          outputs: type=image,name=${{ env.AGENT_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.AGENT_IMAGE }},push-by-digest=true,name-canonical=true,push=true,unpack=false,rewrite-timestamp=true
           build-args: |
             VERSION=${{ steps.release.outputs.version }}
             REVISION=${{ github.sha }}
@@ -237,24 +212,7 @@ jobs:
             --certificate-oidc-issuer "$certificate_issuer" \
             "$AGENT_IMAGE@$AGENT_DIGEST"
 
-      - name: Publish immutable version tags
-        shell: bash
-        env:
-          VERSION: ${{ steps.release.outputs.version }}
-          SERVER_DIGEST: ${{ steps.server.outputs.digest }}
-          AGENT_DIGEST: ${{ steps.agent.outputs.digest }}
-        run: |
-          set -euo pipefail
-
-          docker buildx imagetools create \
-            --tag "$SERVER_IMAGE:$VERSION" \
-            "$SERVER_IMAGE@$SERVER_DIGEST"
-
-          docker buildx imagetools create \
-            --tag "$AGENT_IMAGE:$VERSION" \
-            "$AGENT_IMAGE@$AGENT_DIGEST"
-
-      - name: Create immutable GitHub Release
+      - name: Prepare complete GitHub Release draft
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -262,7 +220,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          release_flags=()
+          if release_json=$(gh release view "$GITHUB_REF_NAME" --json isDraft 2>/dev/null); then
+            if [[ "$(jq -r '.isDraft' <<<"$release_json")" != true ]]; then
+              printf 'refusing to replace existing GitHub Release %s\n' "$GITHUB_REF_NAME" >&2
+              exit 1
+            fi
+
+            printf 'removing incomplete draft from an earlier attempt: %s\n' "$GITHUB_REF_NAME"
+            gh release delete "$GITHUB_REF_NAME" --yes
+          fi
+
+          release_flags=(--draft)
           if [[ "$VERSION" == *-* ]]; then
             release_flags+=(--prerelease)
           fi
@@ -276,3 +244,55 @@ jobs:
             "$RELEASE_ASSET_DIR"/*.tar.gz \
             "$RELEASE_ASSET_DIR"/*.yaml \
             "$RELEASE_ASSET_DIR"/SHA256SUMS
+
+      - name: Publish immutable version tags
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          SERVER_DIGEST: ${{ steps.server.outputs.digest }}
+          AGENT_DIGEST: ${{ steps.agent.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          publish_version_tag() {
+            image=$1
+            digest=$2
+            tag="$image:$VERSION"
+
+            if manifest=$(docker buildx imagetools inspect "$tag" \
+              --format '{{json .Manifest}}' 2>/dev/null); then
+              existing_digest=$(jq -er '.digest' <<<"$manifest")
+              if [[ "$existing_digest" != "$digest" ]]; then
+                printf 'refusing to replace existing Image tag %s (%s != %s)\n' \
+                  "$tag" "$existing_digest" "$digest" >&2
+                exit 1
+              fi
+
+              printf 'version tag already has the expected digest: %s\n' "$tag"
+              return
+            fi
+
+            docker buildx imagetools create \
+              --tag "$tag" \
+              "$image@$digest"
+
+            manifest=$(docker buildx imagetools inspect "$tag" \
+              --format '{{json .Manifest}}')
+            published_digest=$(jq -er '.digest' <<<"$manifest")
+            if [[ "$published_digest" != "$digest" ]]; then
+              printf 'published Image tag has the wrong digest: %s\n' "$tag" >&2
+              exit 1
+            fi
+          }
+
+          publish_version_tag "$SERVER_IMAGE" "$SERVER_DIGEST"
+          publish_version_tag "$AGENT_IMAGE" "$AGENT_DIGEST"
+
+      - name: Publish immutable GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          gh release edit "$GITHUB_REF_NAME" --draft=false

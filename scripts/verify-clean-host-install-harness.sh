@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 runner="$repo_dir/scripts/run-clean-host-install-e2e.sh"
 documentation="$repo_dir/docs/release/clean-host-install-e2e.md"
 
@@ -20,6 +20,8 @@ require_literal() {
     }
 }
 
+# These are intentionally literal source-code contracts.
+# shellcheck disable=SC2016
 for literal in \
     'all image arguments must be exact local sha256 image IDs' \
     '[ ! -e "$evidence_dir" ]' \
@@ -29,9 +31,9 @@ for literal in \
     '/var/run/docker.sock' \
     '--pull never' \
     'server issue-token --state-dir /var/lib/dockpilot --ttl 15m' \
-	'docker run --pull never --rm "$server_image" defaults' \
-	'distribution/v1-defaults.json' \
-	'defaults_config_dump=PASS' \
+    'docker run --pull never --rm "$server_image" defaults' \
+    'distribution/v1-defaults.json' \
+    'defaults_config_dump=PASS' \
     'chmod 0700 /clean-host/server /clean-host/agent' \
     'chmod 0600 /clean-host/server/tls/server.crt /clean-host/server/tls/server.key' \
     'capabilities.discovery.enabled == true' \
@@ -41,9 +43,11 @@ for literal in \
     'does not match the uid derived from the fixture root' \
     'kind:"compose.up"' \
     '/backups' \
+    '-v "$runtime/bootstrap/join-token:/run/secrets/dockpilot-join-token:ro"' \
+    'bootstrap_to_steady_state=PASS' \
     'start_agent false' \
     'Agent identity changed across restart' \
-    'rm -f /agent/join-token' \
+    'rm -f "$runtime/bootstrap/join-token"' \
     'status=PASS' \
     'find "$evidence_dir" -type f -exec chmod 0444' \
     'CLEAN_HOST_EVIDENCE_MAX_BYTES' \

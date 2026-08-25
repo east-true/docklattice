@@ -143,7 +143,7 @@ For an expired existing Agent credential, issue a purpose-bound token with
 
 ```sh
 docker_socket_gid=$(stat -c '%g' /var/run/docker.sock)
-docker run -d --name dockpilot-agent --restart unless-stopped \
+docker run -d --name dockpilot-agent \
   --user 65532:65532 --group-add "$docker_socket_gid" \
   --label io.dockpilot.role=agent \
   -v /var/run/docker.sock:/var/run/docker.sock:rw \
@@ -160,23 +160,42 @@ docker run -d --name dockpilot-agent --restart unless-stopped \
 ```
 
 The Join Token file must be a regular owner-readable file with mode 0600 and
-must be readable as UID 65532 inside the container. Remove it after successful
-registration: it is a bootstrap secret, and the Agent does not need it again.
+must be readable as UID 65532 inside the container. Wait until the UI reports
+the Agent as Active. Then replace the bootstrap container with its steady-state
+form before deleting the token. The state volume retains the issued Agent
+credential; the deleted host file is no longer a bind-mount dependency.
 
-Removing it does not affect restarts. A registered Agent holds a runtime
-credential in its state volume and reconnects with that, so the Join Token file
-is read only when an enrollment is actually required - a new state volume, or
-an expired credential. Leaving `--join-token-file` on the container's command
-line while the file behind it is gone is therefore the expected steady state,
-and `--restart unless-stopped` recovers the Agent normally. Dockpilot never
-deletes the file itself; removing the secret stays the operator's action.
+```sh
+docker stop dockpilot-agent
+docker rm dockpilot-agent
+sudo rm /etc/dockpilot/join-token
+
+docker run -d --name dockpilot-agent --restart unless-stopped \
+  --user 65532:65532 --group-add "$docker_socket_gid" \
+  --label io.dockpilot.role=agent \
+  -v /var/run/docker.sock:/var/run/docker.sock:rw \
+  -v dockpilot-agent-state:/var/lib/dockpilot \
+  -v /etc/dockpilot/server-ca.crt:/var/lib/dockpilot/server-ca.crt:ro \
+  -v /srv/stacks:/srv/stacks:ro \
+  "$agent_image" agent \
+  --server dockpilot.internal:8443 \
+  --registration-url https://dockpilot.internal \
+  --server-ca /var/lib/dockpilot/server-ca.crt \
+  --project-root /srv/stacks
+```
+
+Confirm that the same Agent ID returns Active after this recreation. Do not
+leave the consumed token file, its bind mount, or `--join-token-file` in the
+steady-state container configuration. Dockpilot never deletes the host secret
+itself; removing it remains an operator action.
 
 Losing the state volume is the case that does need a token again. Issue a new
-one - purpose-bound with `--rejoin-agent-id` if the Agent had registered before -
-rather than expecting the consumed one to still work. Each discovery root must be an identical absolute-path bind
-mount: `/srv/stacks:/srv/stacks`, never a remapped path. Use `:ro` for the
-first-class read-only mode; use `:rw` only when file editing and backup restore
-are intended, and grant UID 65532 the corresponding host filesystem access.
+one, purpose-bound with `--rejoin-agent-id` if the Agent had registered before,
+rather than expecting the consumed one to still work. Each discovery root must
+be an identical absolute-path bind mount: `/srv/stacks:/srv/stacks`, never a
+remapped path. Use `:ro` for the first-class read-only mode; use `:rw` only when
+file editing and backup restore are intended, and grant UID 65532 the
+corresponding host filesystem access.
 
 Run the Agent separately from managed Compose projects. Do not use rootless
 Docker's nonstandard socket, `DOCKER_HOST`, or a socket proxy for v1.
@@ -195,11 +214,12 @@ docker stop dockpilot-agent
 docker rm dockpilot-agent
 ```
 
-Recreate it with `$agent_image` and the same complete `docker run` contract
-shown above: state volume, Docker socket group, CA path, discovery roots,
-labels, Server addresses, and arguments. Do not delete or replace
-`dockpilot-agent-state`. Confirm that the existing Agent ID returns ACTIVE
-without a Join Token before removing the old digest from the host.
+Recreate it with `$agent_image` and the same complete steady-state `docker run`
+contract shown above: state volume, Docker socket group, CA path, discovery
+roots, labels, Server addresses, and arguments. Do not restore the bootstrap
+token bind or `--join-token-file`. Do not delete or replace
+`dockpilot-agent-state`. Confirm that the existing Agent ID returns Active
+before removing the old digest from the host.
 
 To roll back an Agent, verify that the target release notes permit downgrade,
 then repeat the host-driven recreation with `$previous_agent_image`. If a

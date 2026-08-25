@@ -6,6 +6,7 @@ workflow=$repo_dir/.github/workflows/release.yml
 ci_workflow=$repo_dir/.github/workflows/ci.yml
 scanner=$repo_dir/scripts/scan-release-images.sh
 assets=$repo_dir/scripts/prepare-release-assets.sh
+tag_validator=$repo_dir/scripts/validate-release-tag.sh
 install_doc=$repo_dir/docs/operations/install.md
 ignore_file=$repo_dir/distribution/trivyignore.yaml
 
@@ -20,7 +21,7 @@ require_literal() {
     grep -F -- "$literal" "$file" >/dev/null || fail "$file lacks $literal"
 }
 
-for file in "$workflow" "$ci_workflow" "$scanner" "$assets" "$install_doc" "$ignore_file"; do
+for file in "$workflow" "$ci_workflow" "$scanner" "$assets" "$tag_validator" "$install_doc" "$ignore_file"; do
     [ -f "$file" ] || fail "missing $file"
 done
 
@@ -33,14 +34,20 @@ require_literal 'packages: write' "$workflow"
 require_literal 'persist-credentials: false' "$workflow"
 require_literal 'platforms: linux/amd64,linux/arm64' "$workflow"
 require_literal 'push-by-digest=true' "$workflow"
+require_literal 'rewrite-timestamp=true' "$workflow"
+require_literal 'unpack=false' "$workflow"
 require_literal 'provenance: false' "$workflow"
 require_literal 'cosign sign --yes' "$workflow"
 require_literal 'cosign verify' "$workflow"
 require_literal 'push-to-registry: true' "$workflow"
 require_literal 'gh release create' "$workflow"
+require_literal "gh release delete \"\$GITHUB_REF_NAME\" --yes" "$workflow"
+require_literal "gh release edit \"\$GITHUB_REF_NAME\" --draft=false" "$workflow"
 require_literal 'refusing to replace existing Image tag' "$workflow"
 require_literal 'refusing to replace existing GitHub Release' "$workflow"
 require_literal 'docker buildx imagetools create' "$workflow"
+require_literal 'version tag already has the expected digest' "$workflow"
+require_literal "version=\$(./scripts/validate-release-tag.sh \"\$GITHUB_REF_NAME\")" "$workflow"
 
 if grep -Eq 'uses: [^#[:space:]]+@(main|master|v[0-9])([[:space:]]|$)' "$workflow"; then
     fail "every release Action must be pinned to a full commit SHA"
@@ -72,6 +79,26 @@ require_literal "trap 'rm -f \"\$join_token_file\"' EXIT HUP INT TERM" "$install
 
 sh -n "$scanner"
 sh -n "$assets"
+sh -n "$tag_validator"
+
+[ "$("$tag_validator" v0.1.0)" = 0.1.0 ] ||
+    fail "release tag validator rejected a stable SemVer tag"
+[ "$("$tag_validator" v12.34.56-rc.1)" = 12.34.56-rc.1 ] ||
+    fail "release tag validator rejected a prerelease SemVer tag"
+
+for invalid_tag in \
+    1.2.3 \
+    v01.2.3 \
+    v1.02.3 \
+    v1.2.03 \
+    v1.2.3-01 \
+    v1.2.3-alpha..1 \
+    v1.2.3-- \
+    v1.2.3+build; do
+    if "$tag_validator" "$invalid_tag" >/dev/null 2>&1; then
+        fail "release tag validator accepted malformed tag $invalid_tag"
+    fi
+done
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT HUP INT TERM
