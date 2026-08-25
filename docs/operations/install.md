@@ -83,6 +83,27 @@ prepare `/srv/dockpilot/server-state` as root, copy the certificate and key into
 its `tls` directory, set both ownerships to `65532:65532`, the directories to
 mode 0700, and the files to mode 0600.
 
+Set the source paths to the existing TLS material for the DNS name used by
+Agents and the reverse proxy. `server_ca` is the issuing CA certificate; for a
+self-signed Server certificate it is the same file as `server_cert`.
+
+```sh
+server_cert=/secure/source/dockpilot-server.crt
+server_key=/secure/source/dockpilot-server.key
+server_ca=/secure/source/dockpilot-server-ca.crt
+server_private_ip=10.0.0.10
+
+sudo install -d -m 0700 -o 65532 -g 65532 \
+  /srv/dockpilot/server-state \
+  /srv/dockpilot/server-state/tls
+sudo install -m 0600 -o 65532 -g 65532 \
+  "$server_cert" \
+  /srv/dockpilot/server-state/tls/server.crt
+sudo install -m 0600 -o 65532 -g 65532 \
+  "$server_key" \
+  /srv/dockpilot/server-state/tls/server.key
+```
+
 The default container command listens on all *container* interfaces on ports
 8080 (HTTPS UI/registration) and 8443 (Agent transport). Docker publishes an
 unqualified `-p` mapping on every host interface, so constrain the host side
@@ -90,8 +111,6 @@ explicitly. Port 8080 has no browser authentication and must remain loopback;
 8443 belongs only on the private/VPN interface used by Agents.
 
 ```sh
-server_private_ip=10.0.0.10
-
 docker run -d --name dockpilot-server --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -p "$server_private_ip:8443:8443" \
   -v /srv/dockpilot/server-state:/var/lib/dockpilot:rw \
@@ -114,9 +133,20 @@ The Agent state root is a security boundary. A bind-mounted host directory must
 be owned by UID/GID 65532 and have mode 0700 before the container starts. A
 named volume is initialized to those ownership and mode values by the image.
 
-Issue a short-lived, one-time Join Token from the Server state before starting
-a new Agent. The command writes only the token to stdout, so create the secret
-with a restrictive umask and make it readable by the Agent container identity:
+Securely transfer the verified CA certificate to each Agent host, set
+`server_ca` there to that local source path, and install it before issuing the
+host's token:
+
+```sh
+sudo install -d -m 0700 -o 65532 -g 65532 /etc/dockpilot
+sudo install -m 0400 -o 65532 -g 65532 \
+  "$server_ca" \
+  /etc/dockpilot/server-ca.crt
+```
+
+Issue a short-lived, one-time Join Token on the Server host before starting a
+new Agent. The command writes only the token to stdout, so capture it with a
+restrictive umask:
 
 ```sh
 umask 077
@@ -129,12 +159,28 @@ docker run --rm \
   --state-dir /var/lib/dockpilot \
   --ttl 15m \
   > "$join_token_file"
+```
 
+Securely transfer that file to the intended Agent host before its 15-minute
+expiry. Then remove the Server-host copy and clear its trap. On the Agent host,
+set `transferred_join_token` to the local received file and install it for UID
+65532. Do not paste the token into shell history or command-line arguments.
+
+```sh
+# Run on the Server host after the secure transfer succeeds.
+rm "$join_token_file"
+trap - EXIT HUP INT TERM
+```
+
+```sh
+# Run on the Agent host.
+transferred_join_token=/secure/received/dockpilot-join-token
+trap 'rm -f "$transferred_join_token"' EXIT HUP INT TERM
 sudo install -d -m 0700 -o 65532 -g 65532 /etc/dockpilot
 sudo install -m 0600 -o 65532 -g 65532 \
-  "$join_token_file" \
+  "$transferred_join_token" \
   /etc/dockpilot/join-token
-rm "$join_token_file"
+rm "$transferred_join_token"
 trap - EXIT HUP INT TERM
 ```
 

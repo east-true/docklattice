@@ -46,6 +46,8 @@ jobs:
       - name: Validate immutable release inputs
         id: release
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -55,6 +57,14 @@ jobs:
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
             printf 'release tag must point to a revision reachable from main\n' >&2
             exit 1
+          fi
+
+          if existing_is_draft=$(gh release view "$GITHUB_REF_NAME" \
+            --json isDraft --jq '.isDraft' 2>/dev/null); then
+            if [[ "$existing_is_draft" != true ]]; then
+              printf 'refusing to replace existing GitHub Release %s\n' "$GITHUB_REF_NAME" >&2
+              exit 1
+            fi
           fi
 
           source_date_epoch=$(git show -s --format=%ct "$GITHUB_SHA")
@@ -179,6 +189,7 @@ jobs:
           subject-name: ${{ env.SERVER_IMAGE }}
           subject-digest: ${{ steps.server.outputs.digest }}
           push-to-registry: true
+          create-storage-record: false
 
       - name: Attest Agent build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -186,6 +197,7 @@ jobs:
           subject-name: ${{ env.AGENT_IMAGE }}
           subject-digest: ${{ steps.agent.outputs.digest }}
           push-to-registry: true
+          create-storage-record: false
 
       - name: Verify checksums and signatures before publication
         shell: bash
