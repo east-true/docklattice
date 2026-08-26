@@ -115,9 +115,13 @@ and audited like any other cancellation.
 | max scan duration | 1 min |
 | directory visit rate | 1,000 /s |
 
-Reaching either the directory or the duration bound returns a partial result
-with `truncated=true` and the last scanned path, rather than an incomplete
-result presented as a complete one.
+Reaching either the directory or duration bound, or encountering an unreadable
+child path, returns a partial result with `truncated=true`, a stop reason, and
+the last scanned path. The Agent remains Active: Docker inventory, Container
+logs, metrics, and Projects verified before the stop remain available. A
+previously known Project not revisited by the partial scan is retained as stale
+and non-executable rather than being reported as absent. An unreadable path is
+reported as `PERMISSION_DENIED`; other I/O failures use `FILESYSTEM_ERROR`.
 
 ### Connection and events
 

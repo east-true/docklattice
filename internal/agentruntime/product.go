@@ -96,8 +96,12 @@ func (r *Runtime) startProduct(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := catalog.Rescan(ctx); err != nil {
-		return fmt.Errorf("agentruntime: initial project discovery: %w", err)
+	initialDiscoveryErr := catalog.Rescan(ctx)
+	if initialDiscoveryErr != nil && !agentprojects.IsPublishedDegraded(initialDiscoveryErr) {
+		return fmt.Errorf("agentruntime: initial project discovery: %w", initialDiscoveryErr)
+	}
+	if initialDiscoveryErr != nil {
+		r.diagnostics.problem("discovery_scan_failed", initialDiscoveryErr)
 	}
 	if _, err := backups.Recover(ctx, catalog); err != nil {
 		return fmt.Errorf("agentruntime: recover backup restore journal: %w", err)
@@ -149,6 +153,9 @@ func (r *Runtime) startProduct(ctx context.Context) error {
 	r.operationEngine = engine
 	r.productStorage = runtimeStorage
 	r.startDiscoveryLoop(ctx, catalog, runtimeStorage, appender, r.config.DiscoveryInterval)
+	// A safely published partial scan degrades Discovery through ScanStatus and
+	// per-Project capability reasons. It must not disable Docker, Logs, Metrics,
+	// or Compose operations for Projects that were individually verified.
 	r.updateProductCapability(nil, nil)
 	return nil
 }
@@ -183,6 +190,14 @@ func (r *Runtime) startDiscoveryLoop(ctx context.Context, catalog *agentprojects
 				discoveryErr := catalog.RescanForExternalChanges(discoveryCtx, func(auditCtx context.Context, changes []agentprojects.ExternalConfigChange) error {
 					return appendExternalConfigChangeAudit(auditCtx, appender, changes)
 				})
+				if discoveryErr != nil {
+					r.diagnostics.problem("discovery_scan_failed", discoveryErr)
+					if agentprojects.IsPublishedDegraded(discoveryErr) {
+						discoveryErr = nil
+					}
+				} else {
+					r.diagnostics.resolved("discovery_scan_failed")
+				}
 				_, storageErr := storage.reclaimUntilStable(discoveryCtx)
 				r.updateProductCapability(discoveryErr, storageErr)
 			}

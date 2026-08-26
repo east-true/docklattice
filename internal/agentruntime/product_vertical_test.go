@@ -23,6 +23,7 @@ import (
 	"github.com/east-true/dockpilot/internal/backup"
 	"github.com/east-true/dockpilot/internal/composeconfig"
 	"github.com/east-true/dockpilot/internal/composeexec"
+	"github.com/east-true/dockpilot/internal/discovery"
 	"github.com/east-true/dockpilot/internal/diskbudget"
 	"github.com/east-true/dockpilot/internal/dockeradapter"
 	"github.com/east-true/dockpilot/internal/operation"
@@ -200,6 +201,95 @@ func TestProductionAdapterBootAssemblesCompleteProductHandler(t *testing.T) {
 	}
 	if !closed {
 		t.Fatal("Runtime.Close did not close production Moby Engine")
+	}
+}
+
+func TestProductionBootKeepsVerifiedProductAvailableAfterPartialDiscoveryFailure(t *testing.T) {
+	server := newCredentialServer(t)
+	stateRoot := t.TempDir()
+	projectRoot := t.TempDir()
+	if err := os.Chmod(stateRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(projectRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	verified := filepath.Join(projectRoot, "a-verified")
+	blocked := filepath.Join(projectRoot, "z-blocked")
+	if err := os.Mkdir(verified, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(verified, "compose.yaml"), []byte("services:\n  app:\n    image: example/app\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(blocked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(blocked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blocked, 0o700) })
+	if _, err := os.ReadDir(blocked); err == nil {
+		t.Skip("test process can read mode-000 directories")
+	}
+
+	var diagnostics strings.Builder
+	config := testConfig(stateRoot, server)
+	config.Diagnostics = &diagnostics
+	config.ProjectRoots = []string{projectRoot}
+	config.projectEvaluator = verticalProjectEvaluator{}
+	moby := &verticalMobyEngine{projectRoot: projectRoot}
+	config.DockerOpen = func(identity dockeradapter.IdentityProvider) (Docker, error) {
+		return dockeradapter.New(moby, identity, dockeradapter.MinimumAPIVersion)
+	}
+
+	runtime, err := Boot(context.Background(), config)
+	if err != nil {
+		t.Fatalf("Boot rejected a published partial discovery result: %v", err)
+	}
+	defer runtime.Close(context.Background())
+	if !strings.Contains(diagnostics.String(), "event=discovery_scan_failed") ||
+		!strings.Contains(diagnostics.String(), "event=boot_ready") || strings.Contains(diagnostics.String(), "event=boot_failed") {
+		t.Fatalf("partial discovery diagnostics:\n%s", diagnostics.String())
+	}
+
+	capability, err := runtime.handler.Heartbeat(context.Background(), producttransport.SessionInfo{
+		AgentID: runtime.startup.AgentID, Incarnation: runtime.startup.CurrentIncarnation,
+		CredentialID: runtime.credential.CredentialID, ServerIdentityID: runtime.credential.ServerIdentityID,
+	}, server.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !capability.ConnectionReady || !capability.DockerReady || !capability.ComposeReady || !capability.MetricsMatrix {
+		t.Fatalf("partial discovery disabled unrelated product capabilities: %+v", capability)
+	}
+
+	response, err := runtime.handler.(producttransport.QueryHandler).Query(
+		context.Background(), producttransport.SessionInfo{}, producttransport.QueryRequest{Kind: "project.list"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot struct {
+		Projects []struct {
+			WorkingDir        string `json:"working_dir"`
+			ComposeExecutable bool   `json:"compose_executable"`
+		} `json:"projects"`
+		Status struct {
+			Truncated       bool   `json:"truncated"`
+			StopReason      string `json:"stop_reason"`
+			LastScannedPath string `json:"last_scanned_path"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal(response.Payload, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Projects) != 1 || snapshot.Projects[0].WorkingDir != verified || !snapshot.Projects[0].ComposeExecutable ||
+		!snapshot.Status.Truncated || snapshot.Status.StopReason != string(discovery.StopPermissionDenied) || snapshot.Status.LastScannedPath != blocked {
+		t.Fatalf("partial discovery snapshot=%+v", snapshot)
+	}
+	if _, ok := runtime.handler.(producttransport.LogStreamHandler); !ok {
+		t.Fatal("partial discovery removed Container log handling")
 	}
 }
 

@@ -1070,7 +1070,7 @@ func pathWithin(root, path string) bool {
 
 func validProjectScanStopReason(value string) bool {
 	switch value {
-	case "MAX_DIRECTORIES", "MAX_DURATION", "CONTEXT_CANCELED", "FILESYSTEM_ERROR", "UNSAFE_PATH", "FILE_UNSTABLE":
+	case "MAX_DIRECTORIES", "MAX_DURATION", "CONTEXT_CANCELED", "PERMISSION_DENIED", "FILESYSTEM_ERROR", "UNSAFE_PATH", "FILE_UNSTABLE":
 		return true
 	default:
 		return false

@@ -27,6 +27,7 @@ event type are emitted at most once per minute.
 | `self_identification_failed` | The Agent could not prove which Container is itself and disabled mutations fail-closed. |
 | `docker_ready` | Docker probing and Agent self-identification succeeded. |
 | `docker_snapshot_failed`, `docker_event_stream_ended` | Observed-Audit reconciliation or the Docker event stream failed and will be retried. |
+| `discovery_scan_failed` | A discovery scan published only its verified partial result or failed before publication. Inspect the host's `project_scan` stop reason and last scanned path; unrelated Docker inventory, logs, and metrics remain available after a published partial scan. |
 | `audit_archive_rebound` | The Agent durably accepted a strictly newer Server Audit Archive generation. |
 | `audit_archive_refused` | The Server announced an unsafe Archive identity or generation. `ARCHIVE_ROLLBACK_DETECTED` includes the bound and presented generations. |
 | `shutdown_started`, `shutdown_complete`, `shutdown_failed` | Ordered Agent shutdown began, completed, or failed. |

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -176,6 +177,32 @@ func TestScanDoesNotFollowSymlinksOrEscapeRoot(t *testing.T) {
 		if !withinRoot(root, file.Path) {
 			t.Fatalf("file escaped root: %#v", file)
 		}
+	}
+}
+
+func TestPermissionDeniedReturnsVerifiedPartialResult(t *testing.T) {
+	root := t.TempDir()
+	touch(t, filepath.Join(root, "a-readable", "compose.yaml"))
+	blocked := filepath.Join(root, "z-blocked")
+	if err := os.Mkdir(blocked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(blocked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blocked, 0o700) })
+	if _, err := os.ReadDir(blocked); err == nil {
+		t.Skip("test process can read mode-000 directories")
+	}
+
+	result, err := Scan(context.Background(), DefaultConfig(root))
+	if !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("scan error=%v", err)
+	}
+	want := []string{filepath.Join(root, "a-readable", "compose.yaml")}
+	if !reflect.DeepEqual(paths(result.Files), want) || !result.Truncated || result.StopReason != StopPermissionDenied ||
+		result.LastScannedPath != blocked {
+		t.Fatalf("result=%#v", result)
 	}
 }
 

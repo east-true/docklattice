@@ -101,6 +101,22 @@ type ScanStatus struct {
 	LastScannedPath string
 }
 
+// publishedDegradedError means a rescan safely published every fact it could
+// verify before a bounded or path-local failure. Callers may keep serving the
+// published snapshot while exposing its ScanStatus and per-Project capability
+// reasons. Errors returned before publication remain ordinary fatal errors.
+type publishedDegradedError struct{ err error }
+
+func (e *publishedDegradedError) Error() string { return e.err.Error() }
+func (e *publishedDegradedError) Unwrap() error { return e.err }
+
+// IsPublishedDegraded distinguishes a usable partial snapshot from an error
+// that left the previous Catalog untouched.
+func IsPublishedDegraded(err error) bool {
+	var degraded *publishedDegradedError
+	return errors.As(err, &degraded)
+}
+
 // ExternalConfigChange is a bounded, content-free summary of one managed
 // project's key-file change observed by a periodic discovery scan. The report
 // deliberately carries neither file paths, hashes, nor contents into Audit.
@@ -176,6 +192,9 @@ func (c *Catalog) rescan(ctx context.Context, observer ExternalChangeObserver) e
 	c.scanMu.Lock()
 	defer c.scanMu.Unlock()
 	result, err := c.scanner.Scan(ctx)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
 	if err != nil && !result.Truncated {
 		return err
 	}
@@ -314,7 +333,10 @@ func (c *Catalog) rescan(ctx context.Context, observer ExternalChangeObserver) e
 	c.projects = next
 	c.status = status
 	c.mu.Unlock()
-	return errors.Join(err, evaluationErr)
+	if degradedErr := errors.Join(err, evaluationErr); degradedErr != nil {
+		return &publishedDegradedError{err: degradedErr}
+	}
+	return nil
 }
 
 func externalConfigChanges(previous, next map[string]Project, truncated bool, observedAt time.Time) ([]ExternalConfigChange, error) {

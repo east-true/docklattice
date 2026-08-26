@@ -138,13 +138,14 @@ func DefaultConfig(roots ...string) Config {
 type StopReason string
 
 const (
-	StopNone            StopReason = ""
-	StopMaxDirectories  StopReason = "MAX_DIRECTORIES"
-	StopMaxDuration     StopReason = "MAX_DURATION"
-	StopContextCanceled StopReason = "CONTEXT_CANCELED"
-	StopFilesystemError StopReason = "FILESYSTEM_ERROR"
-	StopUnsafePath      StopReason = "UNSAFE_PATH"
-	StopFileUnstable    StopReason = "FILE_UNSTABLE"
+	StopNone             StopReason = ""
+	StopMaxDirectories   StopReason = "MAX_DIRECTORIES"
+	StopMaxDuration      StopReason = "MAX_DURATION"
+	StopContextCanceled  StopReason = "CONTEXT_CANCELED"
+	StopPermissionDenied StopReason = "PERMISSION_DENIED"
+	StopFilesystemError  StopReason = "FILESYSTEM_ERROR"
+	StopUnsafePath       StopReason = "UNSAFE_PATH"
+	StopFileUnstable     StopReason = "FILE_UNSTABLE"
 )
 
 type ScanErrorCode string
@@ -542,6 +543,9 @@ func selectDefaultComposeFiles(candidates []File) []File {
 }
 
 func stopReasonForError(err error) StopReason {
+	if errors.Is(err, fs.ErrPermission) {
+		return StopPermissionDenied
+	}
 	var scanError *ScanError
 	if errors.As(err, &scanError) {
 		switch scanError.Code {
