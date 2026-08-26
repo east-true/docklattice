@@ -39,7 +39,7 @@ using a mutable tag.
 | [Reproducible distribution](distribution.md) | PASS | `linux/amd64` and `linux/arm64` release images whose two independent build runs produced byte-identical archives. |
 | [Multi-Agent lab](multi-agent-lab.md) | PASS | Three Agents, each on its own Docker Engine. One host partitioned, daemon-restarted, killed, or filled up must not affect the others; a crossed Agent/project pair must be refused; unequal backlogs must all be delivered. Found and now pins the dashboard heartbeat defect. |
 | [Power cut](power-cut.md) | PASS | A libvirt guest losing power mid-write. The file the API had acknowledged survived whole; the acknowledgement in flight at the cut landed too. |
-| [Long-running soak](soak.md) | STAGE 1 PASS (at `7249c29`) | Accumulation that no injected fault can show. One hour of active workload - 113 cycles, 254 stream opens and closes, 84 operations, 9 reconnects - left descriptors and threads flat, Agent state settled, Audit lag at 1, and no OOM, 5xx, or SQLite contention. Stages 2 and 3 outstanding. |
+| [Long-running soak](soak.md) | STAGES 1 AND 2 PASS (at `7249c29`) | One hour active followed by two hours mixed left descriptors flat, Agent state settled, Audit lag at 1, and no OOM, 5xx, or SQLite contention. Stage 3 overnight is outstanding. |
 
 ## Re-running the matrices, and the disposable-VM lab
 
@@ -53,9 +53,9 @@ runs used images built from a working tree rather than a tagged revision, so
 each is recorded as a second execution inside its own gate document rather than
 replacing the release evidence.
 
-The Stage 1 soak was subsequently re-established on a quiet disposable VM at
-current `main` revision `7249c29`; its exact Image IDs and checksummed evidence
-are recorded in [`soak.md`](soak.md).
+The Stage 1 and 2 soaks were subsequently established on a quiet disposable VM
+at current `main` revision `7249c29`; their exact Image IDs and checksummed
+evidence are recorded in [`soak.md`](soak.md).
 
 Three things could not run on a working machine at all, and now run in
 disposable libvirt guests created by
@@ -90,12 +90,11 @@ point:
   ownership row — Agent/Server memory — to `validated`. Every other row still
   names the final evidence it lacks. The resource matrix was defined to produce
   memory evidence, so it promotes memory evidence and nothing else.
-- The [soak](soak.md) has passed its first stage and no more. One hour of
-  active workload is evidence about an hour; the overnight soak the plan
-  requires before a release candidate is signed **has not been run**. Both RSS
-  series rose in every quarter of the current run - by 4.54% and 4.28%, well
-  inside tolerance, but monotonically - which is precisely the reading a longer
-  stage exists to resolve.
+- The [soak](soak.md) has passed Stages 1 and 2 and no more. Two hours of mixed
+  workload is evidence about two hours; the overnight soak the plan requires
+  before a release candidate is signed **has not been run**. Both RSS series
+  rose in every quarter of Stage 2 - by 4.73% and 5.18%, well inside tolerance,
+  but monotonically - which is precisely the reading Stage 3 exists to resolve.
 
 Two known non-blockers are recorded in the gates themselves: the hardening
 matrix records `docker-daemon-restart` as `SKIPPED_NOT_AUTHORIZED` unless the

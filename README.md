@@ -233,7 +233,8 @@ The Playwright suite covers 1440, 1280, 1024, 768, and 375 pixel viewports.
 
 The release evidence records the distinction between implementation complete,
 validated defaults, and release-candidate work. In particular, the one-hour
-soak passed while the longer soak stages remain outstanding. See
+Stage 1 and two-hour Stage 2 soaks passed while the overnight Stage 3 remains
+outstanding. See
 [release evidence](docs/release/README.md) for the exact revisions,
 environments, and limitations.
 

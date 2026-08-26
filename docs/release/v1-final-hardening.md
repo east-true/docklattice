@@ -147,12 +147,11 @@ which is a different case and is covered by recovery matrix case 1b.
 
 ## What has not been run
 
-1. **Stage 2 soak** (2–4 hours, mixed mode) has never run.
-2. **Stage 3 soak** (8–12 hours, mixed overnight) has never run.
+1. **Stage 3 soak** (8–12 hours, mixed overnight) has never run.
 
-Both are excluded from the Interface Freeze gate by project decision but are
-part of the separately adopted Release Candidate gate. Stage 1 has now passed
-at current `main` revision `7249c29`; see [`soak.md`](soak.md).
+It is excluded from the Interface Freeze gate by project decision but is part
+of the separately adopted Release Candidate gate. Stages 1 and 2 have now
+passed at current `main` revision `7249c29`; see [`soak.md`](soak.md).
 The resource matrix was also re-run at its post-fix revision: three trials,
 `status=PASS`, peak RSS in the low tens of MiB against 256/512 MiB budgets, no
 OOM. That run resolved a question this record previously listed as open -
@@ -162,6 +161,6 @@ stream, failing three of five observed trials and passing two with exact counts
 of 10,773 and 80,514 bytes. The driver now holds the stream open until the
 evidence exists. See [resource-gate.md](resource-gate.md).
 
-Stage 1 is now established at the current revision. The longer Stage 2 and 3
-soaks are **not run** and remain a separate Release Candidate gate rather than
-part of the Interface Freeze result.
+Stages 1 and 2 are now established at the current revision. The overnight
+Stage 3 soak is **not run** and remains a separate Release Candidate gate rather
+than part of the Interface Freeze result.
