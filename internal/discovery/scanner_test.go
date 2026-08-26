@@ -199,6 +199,9 @@ func TestPermissionDeniedReturnsVerifiedPartialResult(t *testing.T) {
 	if !errors.Is(err, fs.ErrPermission) {
 		t.Fatalf("scan error=%v", err)
 	}
+	if !HasScanErrorCode(err, CodePermissionDenied) {
+		t.Fatalf("scan error code=%v", err)
+	}
 	want := []string{filepath.Join(root, "a-readable", "compose.yaml")}
 	if !reflect.DeepEqual(paths(result.Files), want) || !result.Truncated || result.StopReason != StopPermissionDenied ||
 		result.LastScannedPath != blocked {

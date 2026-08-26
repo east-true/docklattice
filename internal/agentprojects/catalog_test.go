@@ -566,7 +566,7 @@ func TestTruncatedScanPreservesUnseenAsNonExecutableStale(t *testing.T) {
 
 func TestTruncatedFilesystemErrorPublishesVerifiedProjects(t *testing.T) {
 	agentID, _ := agentid.New()
-	scanErr := &discovery.ScanError{Code: discovery.CodeFilesystem, Path: "/srv/blocked", Err: os.ErrPermission}
+	scanErr := &discovery.ScanError{Code: discovery.CodePermissionDenied, Path: "/srv/blocked", Err: os.ErrPermission}
 	scanner := &fakeScanner{
 		results: []discovery.Result{{
 			Files:     []discovery.File{file("/srv", "/srv/verified/compose.yml", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")},

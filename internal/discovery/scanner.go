@@ -151,9 +151,10 @@ const (
 type ScanErrorCode string
 
 const (
-	CodeFilesystem   ScanErrorCode = "FILESYSTEM_ERROR"
-	CodeUnsafePath   ScanErrorCode = "UNSAFE_PATH"
-	CodeFileUnstable ScanErrorCode = "FILE_UNSTABLE"
+	CodePermissionDenied ScanErrorCode = "PERMISSION_DENIED"
+	CodeFilesystem       ScanErrorCode = "FILESYSTEM_ERROR"
+	CodeUnsafePath       ScanErrorCode = "UNSAFE_PATH"
+	CodeFileUnstable     ScanErrorCode = "FILE_UNSTABLE"
 )
 
 // ScanError identifies facts that cannot safely be accepted into discovery.
@@ -549,6 +550,8 @@ func stopReasonForError(err error) StopReason {
 	var scanError *ScanError
 	if errors.As(err, &scanError) {
 		switch scanError.Code {
+		case CodePermissionDenied:
+			return StopPermissionDenied
 		case CodeUnsafePath:
 			return StopUnsafePath
 		case CodeFileUnstable:
