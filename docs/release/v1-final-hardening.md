@@ -147,28 +147,21 @@ which is a different case and is covered by recovery matrix case 1b.
 
 ## What has not been run
 
-1. **Stage 1 soak at this revision.** Architecture section 30 requires a soak
-   after a transport or session change, and finding 1 is one. The recorded
-   one-hour soak in [`soak.md`](soak.md) predates that fix. A re-run reached
-   17.6 of 60 minutes before being stopped; over 35 samples nothing moved in a
-   direction that would suggest accumulation — Server RSS 27.2→29.2 MiB (peak
-   31.2), Agent RSS 25.2→26.3 MiB (peak 28.0), Server descriptors 15→16, Agent
-   descriptors 11→10, threads at most 12 each, Audit lag constant at 1, zero
-   gaps, zero OOM events, zero HTTP errors, host ACTIVE in every sample — but
-   17.6 minutes is not a soak, and this is not evidence of anything.
-2. **Stage 2 soak** (2–4 hours, mixed mode) has never run.
+1. **Stage 2 soak** (2–4 hours, mixed mode) has never run.
+2. **Stage 3 soak** (8–12 hours, mixed overnight) has never run.
 
-Both are excluded from the Interface Freeze gate by project decision.
-The resource matrix has since been re-run at this revision: three trials,
+Both are excluded from the Interface Freeze gate by project decision but are
+part of the separately adopted Release Candidate gate. Stage 1 has now passed
+at current `main` revision `7249c29`; see [`soak.md`](soak.md).
+The resource matrix was also re-run at its post-fix revision: three trials,
 `status=PASS`, peak RSS in the low tens of MiB against 256/512 MiB budgets, no
-OOM. That run also resolved a question this record previously listed as open -
+OOM. That run resolved a question this record previously listed as open -
 whether the slow-consumer `dropped_bytes` accounting worked at all. It does; the
 gate's own assertion was racing the consumer's position in an in-order byte
 stream, failing three of five observed trials and passing two with exact counts
 of 10,773 and 80,514 bytes. The driver now holds the stream open until the
 evidence exists. See [resource-gate.md](resource-gate.md).
 
-Long-duration soak is **not run**, and is excluded from the Interface Freeze
-gate by project decision. That is a scope decision, not a result: nothing here
-should be read as a soak having passed. If a v1 Release Candidate wants
-long-duration validation, it is a separate release gate.
+Stage 1 is now established at the current revision. The longer Stage 2 and 3
+soaks are **not run** and remain a separate Release Candidate gate rather than
+part of the Interface Freeze result.

@@ -1,12 +1,12 @@
 # Long-running soak
 
-Status: Stage 1 PASS at revision `fd04135`. Not re-established at the current
-revision - see the incomplete re-run at the end. Stages 2 and 3 not run.
+Status: Stage 1 PASS at current `main` revision
+`7249c29a84018ff5a6b2bb351e4a5525ec7840d8`. Stages 2 and 3 not run.
 
 Long-duration soak is **excluded from the v1 Core Interface Freeze gate by
-project decision**. Nothing in this document should be read as a soak having
-passed at the frozen revision; it has not been run there. A v1 Release
-Candidate may adopt long-duration validation as its own separate gate.
+project decision**. The release campaign has adopted all three stages as a
+separate Release Candidate gate: Stage 1 is now established at the candidate
+revision, while Stages 2 and 3 remain required before the candidate is signed.
 
 Every other gate in this directory injects something and asserts what survives.
 This one injects nothing. It runs the product for hours and asserts that
@@ -152,7 +152,51 @@ Stage 1 has passed. Stages 2 and 3 are outstanding.
 
 ## Recorded execution
 
-### Stage 1 - one-hour active soak
+### Stage 1 - current release-candidate revision
+
+    verdict                 PASS
+    mode                    active
+    duration                3600 s measured, 120 s settle, 118 judged samples
+    sample interval         30 s
+    started / finished      2026-08-26T00:11:14Z / 2026-08-26T01:13:26Z
+    kernel                  Linux 6.8.0-137-generic x86_64
+    docker_engine           29.1.3
+    release_version         0.1.0-rc.1-validation.7249c29
+    release_revision        7249c29a84018ff5a6b2bb351e4a5525ec7840d8
+    server_image_id         sha256:f6feba191571eb4a14f2ef7cb5b75e258df49f837f8ceccae79042933a0aa743
+    agent_image_id          sha256:6066a3373c29cce6a9e3e1cb688a158689336065bbdd3a7a0400b02741a841e3
+    fixture_image_id        sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616
+    evidence                492 KiB, 98-entry SHA256SUMS
+
+The quiet disposable VM had no unrelated Compose project. The run drove 113
+cycles, 254 stream opens and closes, 84 operations, and 9
+partition-and-reconnect injections.
+
+| Metric | Quarter medians | Growth | Monotonic | Verdict |
+|---|---|---:|---|---|
+| `server.rss_kib` | 29860, 30552, 30936, 31216 | +4.54% | yes | PASS |
+| `server.threads` | 10, 10, 10, 10 | 0% | no | PASS |
+| `server.fds` | 15, 16, 16, 16 | +6.67% | no | PASS |
+| `agent.rss_kib` | 26980, 27560, 27864, 28136 | +4.28% | yes | PASS |
+| `agent.threads` | 11, 11, 11, 11 | 0% | no | PASS |
+| `agent.fds` | 10, 10, 10, 10 | 0% | no | PASS |
+| `audit.lag` | 1, 1, 1, 1 | 0% | no | PASS |
+| `audit.coverage_revision` | 0, 0, 0, 0 | 0% | no | PASS |
+
+All 119 recorded samples kept the Agent ACTIVE, with no OOM event, failed HTTP
+sample, or Audit coverage gap. Peak RSS was 31548 KiB for the Server and 28684
+KiB for the Agent. Agent state reached 1112 KiB and stayed exactly flat across
+all five settle samples. The Server log had no SQLite contention or failed API
+request, the closing invariant check passed, and cleanup left no Container or
+soak network behind. The transferred evidence independently passed its
+`SHA256SUMS` verification.
+
+Both RSS quarter series still rise monotonically, by 4.54% and 4.28%. The last
+samples are below their peaks and the growth is far inside the 30% tolerance,
+so Stage 1 passes. Stage 2 remains necessary to distinguish slow Go runtime
+settling from accumulation that an hour is too short to expose.
+
+### Earlier Stage 1 - one-hour active soak
 
     verdict                 PASS
     mode                    active
@@ -230,13 +274,14 @@ It also does not run `docker-daemon-restart` or any other host-wide
 disruption. Those belong to a disposable host, not to a machine that has been
 running the operator's containers for the whole soak.
 
-## Stage 1 re-run at revision c6366b8: incomplete
+## Superseded incomplete re-run at revision c6366b8
 
-The recorded one-hour run above predates the dashboard heartbeat fix, and
+The earlier 2026-08-20 recorded run predates the dashboard heartbeat fix, and
 architecture section 30 asks for a soak after a transport or session change. A
 re-run was started at revision `c6366b83dc31c712b58ace47fe384bffb15a2a32` and
-stopped by the operator at 17.6 of 60 minutes, so **stage 1 has not been
-established at the current revision**.
+stopped by the operator at 17.6 of 60 minutes. It did not establish Stage 1 at
+that revision and is retained only as historical context; the complete run at
+`7249c29` above now supplies the current evidence.
 
 What the 35 samples it did produce showed, recorded because discarding it would
 be worse than labelling it:
