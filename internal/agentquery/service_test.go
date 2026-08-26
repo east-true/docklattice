@@ -420,6 +420,31 @@ func TestProjectQueriesUseExplicitStableJSON(t *testing.T) {
 	}
 }
 
+func TestProjectResponseOmitsEffectiveMetadataWhenComposeEvaluationFailed(t *testing.T) {
+	project := agentprojects.Project{
+		UID: testProjectUID, Root: "/srv", WorkingDir: "/srv/app",
+		Files:               []projectmodel.FileFact{{Path: "/srv/app/compose.yaml", Size: 10, SHA256: testManifestHash}},
+		ComposeFiles:        []string{"/srv/app/compose.yaml"},
+		SourceReferences:    []agentprojects.SourceReference{{Kind: "include", Path: "/srv/child/compose.yaml", Accessible: true}},
+		IncludedWorkDirs:    []string{"/srv/child"},
+		CurrentFingerprint:  testManifestHash,
+		SourceGraphComplete: true,
+		ComposeExecutable:   false,
+		CapabilityReason:    "Compose configuration evaluation failed",
+	}
+
+	response := projectResponse(project, false)
+	if len(response.Files) != 1 || response.CurrentFingerprint != testManifestHash ||
+		len(response.SourceReferences) != 1 || len(response.IncludedWorkDirs) != 1 {
+		t.Fatalf("verified discovery facts were not preserved: %+v", response)
+	}
+	if len(response.ComposeFiles) != 0 || len(response.DefinedServices) != 0 || len(response.Services) != 0 ||
+		len(response.EnvFiles) != 0 || len(response.Secrets) != 0 || len(response.Configs) != 0 ||
+		len(response.PullServices) != 0 || response.ProjectUpAvailable || response.ProjectUpReason != "" {
+		t.Fatalf("unverified effective Compose metadata was published: %+v", response)
+	}
+}
+
 func TestProjectSnapshotQueryReturnsOnlyRequestedProject(t *testing.T) {
 	service, _, projects, _, _ := newTestService(t)
 	projects.projects = []agentprojects.Project{
