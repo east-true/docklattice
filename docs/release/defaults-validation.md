@@ -142,15 +142,15 @@ no adjacent-limit comparison was needed.
 | WAL size/age/fsync | provisional | production disk-WAL matrix |
 | Operation timeouts | partial | real health-gated Compose cancellation passed; configured normal/slow/hung timeout boundaries remain unmeasured |
 | Discovery budget/interval | policy decision required | 200,000 directories is unreachable under the simultaneous 60-second and 1,000 directories/second defaults; interval and slow-filesystem evidence also remain |
-| Stats interval/ring | partial | the resource matrix measured real Docker collection with 0, 1, and 6 viewers and the current-revision Stage 1 and 2 soaks passed; the 120-sample browser bound remains |
+| Stats interval/ring | partial | the resource matrix measured real Docker collection with 0, 1, and 6 viewers and all three current-revision soak stages passed; the 120-sample browser bound remains |
 
-The one-hour and two-hour soaks have now passed ([`soak.md`](soak.md), Stages 1
-and 2); the overnight soak has not been run.
+The one-hour, two-hour, and eight-hour overnight soaks have now passed
+([`soak.md`](soak.md), Stages 1 through 3).
 No row above changes as a result. The soak owns direction over time, not the
 values in this table, so a passing soak promotes nothing here on its own. The
 `Stats interval/ring` row retains its separate browser-ring evidence
 requirement even though the resource matrix supplies its real Docker viewer
-0/1/N observation and the current-revision Stage 1 and 2 soaks have passed.
+0/1/N observation and all three current-revision soak stages have passed.
 
 ## Reopened validation campaign — 2026-08-25
 
