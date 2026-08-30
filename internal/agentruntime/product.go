@@ -156,7 +156,7 @@ func (r *Runtime) startProduct(ctx context.Context) error {
 	// A safely published partial scan degrades Discovery through ScanStatus and
 	// per-Project capability reasons. It must not disable Docker, Logs, Metrics,
 	// or Compose operations for Projects that were individually verified.
-	r.updateProductCapability(nil, nil)
+	r.updateProductCapability(composeDiscoveryCapabilityError(initialDiscoveryErr, catalog), nil)
 	return nil
 }
 
@@ -190,19 +190,31 @@ func (r *Runtime) startDiscoveryLoop(ctx context.Context, catalog *agentprojects
 				discoveryErr := catalog.RescanForExternalChanges(discoveryCtx, func(auditCtx context.Context, changes []agentprojects.ExternalConfigChange) error {
 					return appendExternalConfigChangeAudit(auditCtx, appender, changes)
 				})
+				capabilityDiscoveryErr := discoveryErr
 				if discoveryErr != nil {
 					r.diagnostics.problem("discovery_scan_failed", discoveryErr)
-					if agentprojects.IsPublishedDegraded(discoveryErr) {
-						discoveryErr = nil
-					}
+					capabilityDiscoveryErr = composeDiscoveryCapabilityError(discoveryErr, catalog)
 				} else {
 					r.diagnostics.resolved("discovery_scan_failed")
 				}
 				_, storageErr := storage.reclaimUntilStable(discoveryCtx)
-				r.updateProductCapability(discoveryErr, storageErr)
+				r.updateProductCapability(capabilityDiscoveryErr, storageErr)
 			}
 		}
 	}()
+}
+
+func composeDiscoveryCapabilityError(err error, catalog *agentprojects.Catalog) error {
+	if err == nil || !agentprojects.IsPublishedDegraded(err) {
+		return err
+	}
+	projects, _ := catalog.Snapshot()
+	for _, project := range projects {
+		if !project.Stale && project.ComposeExecutable {
+			return nil
+		}
+	}
+	return err
 }
 
 // appendExternalConfigChangeAudit emits one content-free, bounded observation

@@ -293,6 +293,51 @@ func TestProductionBootKeepsVerifiedProductAvailableAfterPartialDiscoveryFailure
 	}
 }
 
+func TestProductionBootDisablesComposeWhenEveryProjectEvaluationFails(t *testing.T) {
+	server := newCredentialServer(t)
+	stateRoot := t.TempDir()
+	projectRoot := t.TempDir()
+	if err := os.Chmod(stateRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(projectRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(projectRoot, "compose.yaml"),
+		[]byte("services:\n  app:\n    image: example/app\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	config := testConfig(stateRoot, server)
+	config.ProjectRoots = []string{projectRoot}
+	config.projectEvaluator = failingProjectEvaluator{}
+	moby := &verticalMobyEngine{projectRoot: projectRoot}
+	config.DockerOpen = func(identity dockeradapter.IdentityProvider) (Docker, error) {
+		return dockeradapter.New(moby, identity, dockeradapter.MinimumAPIVersion)
+	}
+
+	runtime, err := Boot(context.Background(), config)
+	if err != nil {
+		t.Fatalf("Boot rejected a safely published degraded project: %v", err)
+	}
+	defer runtime.Close(context.Background())
+
+	capability, err := runtime.handler.Heartbeat(context.Background(), producttransport.SessionInfo{
+		AgentID: runtime.startup.AgentID, Incarnation: runtime.startup.CurrentIncarnation,
+		CredentialID: runtime.credential.CredentialID, ServerIdentityID: runtime.credential.ServerIdentityID,
+	}, server.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !capability.ConnectionReady || !capability.DockerReady || capability.ComposeReady || !capability.MetricsMatrix ||
+		capability.Reason != "project discovery failed" {
+		t.Fatalf("all Compose evaluations failed but capability=%+v", capability)
+	}
+}
+
 func TestProductionBootReclaimsStateRootPressure(t *testing.T) {
 	server := newCredentialServer(t)
 	root := t.TempDir()
@@ -525,6 +570,12 @@ func (verticalProjectEvaluator) Evaluate(_ context.Context, workingDir string, f
 	return composeconfig.Result{Project: composeexec.Project{
 		WorkingDir: workingDir, Files: append([]string(nil), files...), Name: filepath.Base(workingDir),
 	}, Services: []string{"app"}}, nil
+}
+
+type failingProjectEvaluator struct{}
+
+func (failingProjectEvaluator) Evaluate(context.Context, string, []string) (composeconfig.Result, error) {
+	return composeconfig.Result{}, errors.New("Docker Compose plugin unavailable")
 }
 
 type verticalRestoreJournal struct {
