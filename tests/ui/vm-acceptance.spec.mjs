@@ -17,6 +17,7 @@ const vmSSHUser = process.env.DOCKLATTICE_VM_SSH_USER || "docklattice";
 const vmSSHKey = process.env.DOCKLATTICE_VM_SSH_KEY;
 const vmSSHKnownHosts =
   process.env.DOCKLATTICE_VM_SSH_KNOWN_HOSTS || "/dev/null";
+const vmDockerSocketGID = process.env.DOCKLATTICE_VM_DOCKER_SOCKET_GID || "112";
 
 test.skip(
   !vmAcceptanceEnabled,
@@ -71,7 +72,7 @@ async function recreateAgent() {
     "--network docklattice-acceptance-net",
     "--restart unless-stopped",
     "--user 65532:65532",
-    "--group-add 112",
+    `--group-add ${vmDockerSocketGID}`,
     "--volume docklattice-agent-state:/var/lib/docklattice:z",
     "--volume /opt/docklattice-acceptance/bootstrap/server-ca.crt:/var/lib/docklattice/server-ca.crt:ro",
     "--volume /opt/docklattice-acceptance/bootstrap/join-token:/var/lib/docklattice/join-token:ro",
@@ -576,7 +577,12 @@ test("VM shell, policy, host details, and responsive drawer are live", async ({
   await expect(page.getByText("Build required", { exact: true })).toHaveCount(
     0,
   );
-  await expect(page.getByRole("cell", { name: "Required" })).toHaveCount(2);
+  await expect(
+    page.getByRole("cell", {
+      name: "Required",
+      exact: true,
+    }),
+  ).toHaveCount(2);
   await page.screenshot({
     path: `${evidenceDirectory}/build-policy-before-mutation.png`,
     fullPage: true,
@@ -846,7 +852,7 @@ test("VM runtime distinguishes one-off and orphan Containers and exposes live In
   const composeRunner = [
     "docker run --rm",
     "--user 65532:65532",
-    "--group-add 112",
+    `--group-add ${vmDockerSocketGID}`,
     "--volume /var/run/docker.sock:/var/run/docker.sock",
     `--volume ${projectDirectory}:${projectDirectory}`,
     `--workdir ${projectDirectory}`,
@@ -1720,17 +1726,17 @@ test("VM reports Agent, Compose, and Docker failures and recovers each dependenc
     await vmExec("docker restart docklattice-agent");
     const composeFailure = await waitForHost(
       page,
-      (candidate) => candidate.state !== "ACTIVE",
+      (candidate) =>
+        candidate.state === "ACTIVE" &&
+        candidate.capabilities.connection.enabled &&
+        candidate.capabilities.docker.enabled &&
+        !candidate.capabilities.compose.enabled,
     );
-    expect(composeFailure.capabilities.connection.enabled).toBe(false);
-    await expect
-      .poll(async () => {
-        const result = await vmExec(
-          "sudo docker inspect --format '{{.State.Status}}' docklattice-agent",
-        );
-        return result.stdout.trim();
-      })
-      .toMatch(/restarting|exited/);
+    expect(composeFailure.capabilities.metrics.enabled).toBe(true);
+    const composeContainer = await vmExec(
+      "docker inspect --format '{{.State.Status}}' docklattice-agent",
+    );
+    expect(composeContainer.stdout.trim()).toBe("running");
     await page.goto(
       `/#/projects/${encodeURIComponent(normalProject.uid)}/summary`,
     );

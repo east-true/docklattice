@@ -222,14 +222,14 @@ Playwright gate:
 - each viewport attaches full-page screenshots to `playwright-report`, which
   can be viewed with `npm run test:ui:report` or exercised interactively with
   `npm run test:ui:open`;
-- the current fixture run completes with 47 passed and 58 intentional skips:
-  3 viewport-inapplicable navigation cases and 55 opt-in live-VM cases across
-  the five normal fixture projects.
+- the current fixture run completes with 112 passed and 63 intentional skips:
+  3 viewport-inapplicable navigation cases and 60 opt-in live-VM cases across
+  the five configured viewports.
 
 The Go integration and race suites, `go vet`, JavaScript syntax validation,
 release-scope checks, and Docker Compose CLI option/model smoke check also pass.
 
-## Live VM destructive implementation evidence — 2026-08-24
+## Live VM destructive implementation evidence — 2026-08-30
 
 The opt-in `tests/ui/vm-acceptance.spec.mjs` suite runs against production
 Server and Agent images on an Ubuntu 24.04 VM with Docker Engine 29.1.3 (API
@@ -237,7 +237,29 @@ Server and Agent images on an Ubuntu 24.04 VM with Docker Engine 29.1.3 (API
 `DOCKLATTICE_VM_ACCEPTANCE=1`, HTTPS base URL, SSH host, and SSH key variables, so
 the destructive cases cannot run accidentally in the normal fixture suite.
 
-One serial desktop run completed with 11 passed in 1.9 minutes. It exercised:
+Prepare only a disposable `dp-vm-*` guest. Load the exact Server and Agent
+images under test, copy `scripts/setup-vm-ui-acceptance.sh` into the guest, and
+run it there with those two Image references. The setup script refuses any
+other hostname and only replaces the dedicated `docklattice-acceptance-*`,
+`docklattice-server`, and `docklattice-agent` resources. The Docker socket GID
+is host-specific and must be passed to Playwright:
+
+```sh
+./scripts/setup-vm-ui-acceptance.sh "$server_image" "$agent_image"
+
+DOCKLATTICE_VM_ACCEPTANCE=1 \
+PLAYWRIGHT_TEST_BASE_URL="https://$vm_ip:8080" \
+DOCKLATTICE_VM_EVIDENCE_DIRECTORY="$evidence_directory" \
+DOCKLATTICE_VM_SSH_HOST="$vm_ip" \
+DOCKLATTICE_VM_SSH_USER=lab \
+DOCKLATTICE_VM_SSH_KEY="$vm_ssh_key" \
+DOCKLATTICE_VM_DOCKER_SOCKET_GID="$docker_socket_gid" \
+npm run test:ui -- tests/ui/vm-acceptance.spec.mjs \
+  --project=desktop-1440 --workers=1
+```
+
+The current serial desktop run completed with 12 passed in 1.9 minutes. It
+exercised:
 
 - live Host, Compose project, responsive navigation, details panels, Logs, Files,
   secret reveal, optimistic-write conflicts, backups, and restore-without-Up;
@@ -249,8 +271,10 @@ One serial desktop run completed with 11 passed in 1.9 minutes. It exercised:
   attempts;
 - an eight-request same-project mutation storm and explicit cancellation;
 - rapid Metrics route churn and modal focus containment;
-- Agent stop, missing Compose plugin, inaccessible Docker socket, Server
-  restart during an active operation, and recovery of each dependency;
+- Agent stop, a missing Compose plugin with the Agent and Docker capabilities
+  retained but Compose disabled, an inaccessible Docker socket that fails the
+  Agent closed, Server restart during an active operation, and recovery of each
+  dependency;
 - real Compose Down followed by Engine and UI reconciliation checks: current
   model Service Containers are removed, one-off/orphan Containers and their
   still-used Networks remain, the named Volume retains the same mountpoint,
