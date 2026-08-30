@@ -86,11 +86,11 @@ the case fails if any of it fails:
 | Every Operation this run requested is terminal, with a durable revision | `GET /agents/{id}/operations/{id}` for each tracked ID |
 | The project lock is free | a fresh lock-taking Operation that must not come back `PROJECT_BUSY` |
 | No restore journal survives a settled scenario | the Agent's `restore-journal` directory |
-| No staging file is orphaned | the project directory, for `.dockpilot-*` entries |
+| No staging file is orphaned | the project directory, for `.docklattice-*` entries |
 | Every Audit coverage entry names its source, precision, and an ordered range | the host Audit page |
 | The acknowledged cursor never passes the Server delivery cursor | the same page |
-| Docker's containers are present in Dockpilot's view | `docker ps` against `GET /hosts/{id}/containers` |
-| The Compose file Dockpilot reads is the file on disk | the file route's digest against `sha256sum` |
+| Docker's containers are present in DockLattice's view | `docker ps` against `GET /hosts/{id}/containers` |
+| The Compose file DockLattice reads is the file on disk | the file route's digest against `sha256sum` |
 | The project secret reached neither an API answer nor a container log | a marked secret in the fixture `.env` |
 
 `db-restore` is the one case that legitimately breaks the second invariant: an
@@ -264,8 +264,8 @@ alone against the previous images it reproduces the report exactly:
     reason=join-token-restart: a registered Agent did not return ACTIVE after
            restarting with a consumed Join Token file
 
-    dockpilot agent failed: configure agent runtime: inspect Join Token file:
-    lstat /var/lib/dockpilot/join-token: no such file or directory
+    docklattice agent failed: configure agent runtime: inspect Join Token file:
+    lstat /var/lib/docklattice/join-token: no such file or directory
 
 Against the images built from the fix it passes, and the Agent's log for the
 whole run is empty.

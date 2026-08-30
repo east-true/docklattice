@@ -10,10 +10,10 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/east-true/dockpilot/internal/contract"
-	pb "github.com/east-true/dockpilot/internal/contract/pb"
-	"github.com/east-true/dockpilot/internal/metrics"
-	"github.com/east-true/dockpilot/internal/transport"
+	"github.com/east-true/docklattice/internal/contract"
+	pb "github.com/east-true/docklattice/internal/contract/pb"
+	"github.com/east-true/docklattice/internal/metrics"
+	"github.com/east-true/docklattice/internal/transport"
 )
 
 func TestPadProtoHitsControlledSizes(t *testing.T) {

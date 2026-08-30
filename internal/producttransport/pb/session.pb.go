@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.12
 // 	protoc        (unknown)
-// source: dockpilot/product/v1/session.proto
+// source: docklattice/product/v1/session.proto
 
 // Product control-plane messages. Transport-specific HTTP/2 window, ALPN,
 // metadata, and framing details are intentionally absent from this namespace.
@@ -33,7 +33,7 @@ type HeartbeatRequest struct {
 
 func (x *HeartbeatRequest) Reset() {
 	*x = HeartbeatRequest{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[0]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -45,7 +45,7 @@ func (x *HeartbeatRequest) String() string {
 func (*HeartbeatRequest) ProtoMessage() {}
 
 func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[0]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -58,7 +58,7 @@ func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatRequest.ProtoReflect.Descriptor instead.
 func (*HeartbeatRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{0}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *HeartbeatRequest) GetSentAtUnixNano() int64 {
@@ -96,7 +96,7 @@ type Capability struct {
 
 func (x *Capability) Reset() {
 	*x = Capability{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[1]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -108,7 +108,7 @@ func (x *Capability) String() string {
 func (*Capability) ProtoMessage() {}
 
 func (x *Capability) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[1]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -121,7 +121,7 @@ func (x *Capability) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Capability.ProtoReflect.Descriptor instead.
 func (*Capability) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{1}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Capability) GetConnectionReady() bool {
@@ -211,7 +211,7 @@ type HeartbeatResponse struct {
 
 func (x *HeartbeatResponse) Reset() {
 	*x = HeartbeatResponse{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[2]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -223,7 +223,7 @@ func (x *HeartbeatResponse) String() string {
 func (*HeartbeatResponse) ProtoMessage() {}
 
 func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[2]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -236,7 +236,7 @@ func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
 func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{2}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *HeartbeatResponse) GetObservedAtUnixNano() int64 {
@@ -264,7 +264,7 @@ type QueryRequest struct {
 
 func (x *QueryRequest) Reset() {
 	*x = QueryRequest{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[3]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -276,7 +276,7 @@ func (x *QueryRequest) String() string {
 func (*QueryRequest) ProtoMessage() {}
 
 func (x *QueryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[3]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -289,7 +289,7 @@ func (x *QueryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryRequest.ProtoReflect.Descriptor instead.
 func (*QueryRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{3}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *QueryRequest) GetKind() string {
@@ -322,7 +322,7 @@ type QueryResponse struct {
 
 func (x *QueryResponse) Reset() {
 	*x = QueryResponse{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[4]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -334,7 +334,7 @@ func (x *QueryResponse) String() string {
 func (*QueryResponse) ProtoMessage() {}
 
 func (x *QueryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[4]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -347,7 +347,7 @@ func (x *QueryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryResponse.ProtoReflect.Descriptor instead.
 func (*QueryResponse) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{4}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *QueryResponse) GetPayload() []byte {
@@ -370,7 +370,7 @@ type OperationRequest struct {
 
 func (x *OperationRequest) Reset() {
 	*x = OperationRequest{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[5]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -382,7 +382,7 @@ func (x *OperationRequest) String() string {
 func (*OperationRequest) ProtoMessage() {}
 
 func (x *OperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[5]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -395,7 +395,7 @@ func (x *OperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperationRequest.ProtoReflect.Descriptor instead.
 func (*OperationRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{5}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *OperationRequest) GetOperationId() string {
@@ -454,7 +454,7 @@ type OperationResponse struct {
 
 func (x *OperationResponse) Reset() {
 	*x = OperationResponse{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[6]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -466,7 +466,7 @@ func (x *OperationResponse) String() string {
 func (*OperationResponse) ProtoMessage() {}
 
 func (x *OperationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[6]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -479,7 +479,7 @@ func (x *OperationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperationResponse.ProtoReflect.Descriptor instead.
 func (*OperationResponse) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{6}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *OperationResponse) GetStatus() string {
@@ -582,7 +582,7 @@ type GetOperationRequest struct {
 
 func (x *GetOperationRequest) Reset() {
 	*x = GetOperationRequest{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[7]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -594,7 +594,7 @@ func (x *GetOperationRequest) String() string {
 func (*GetOperationRequest) ProtoMessage() {}
 
 func (x *GetOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[7]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -607,7 +607,7 @@ func (x *GetOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOperationRequest.ProtoReflect.Descriptor instead.
 func (*GetOperationRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{7}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetOperationRequest) GetOperationId() string {
@@ -627,7 +627,7 @@ type GetOperationResponse struct {
 
 func (x *GetOperationResponse) Reset() {
 	*x = GetOperationResponse{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[8]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -639,7 +639,7 @@ func (x *GetOperationResponse) String() string {
 func (*GetOperationResponse) ProtoMessage() {}
 
 func (x *GetOperationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[8]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -652,7 +652,7 @@ func (x *GetOperationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOperationResponse.ProtoReflect.Descriptor instead.
 func (*GetOperationResponse) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{8}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetOperationResponse) GetFound() bool {
@@ -679,7 +679,7 @@ type CancelOperationRequest struct {
 
 func (x *CancelOperationRequest) Reset() {
 	*x = CancelOperationRequest{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[9]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -691,7 +691,7 @@ func (x *CancelOperationRequest) String() string {
 func (*CancelOperationRequest) ProtoMessage() {}
 
 func (x *CancelOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[9]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -704,7 +704,7 @@ func (x *CancelOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOperationRequest.ProtoReflect.Descriptor instead.
 func (*CancelOperationRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{9}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CancelOperationRequest) GetOperationId() string {
@@ -731,7 +731,7 @@ type CancelOperationResponse struct {
 
 func (x *CancelOperationResponse) Reset() {
 	*x = CancelOperationResponse{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[10]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -743,7 +743,7 @@ func (x *CancelOperationResponse) String() string {
 func (*CancelOperationResponse) ProtoMessage() {}
 
 func (x *CancelOperationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[10]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -756,7 +756,7 @@ func (x *CancelOperationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOperationResponse.ProtoReflect.Descriptor instead.
 func (*CancelOperationResponse) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{10}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CancelOperationResponse) GetOutcome() string {
@@ -781,7 +781,7 @@ type ListActiveOperationsRequest struct {
 
 func (x *ListActiveOperationsRequest) Reset() {
 	*x = ListActiveOperationsRequest{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[11]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -793,7 +793,7 @@ func (x *ListActiveOperationsRequest) String() string {
 func (*ListActiveOperationsRequest) ProtoMessage() {}
 
 func (x *ListActiveOperationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[11]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -806,7 +806,7 @@ func (x *ListActiveOperationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActiveOperationsRequest.ProtoReflect.Descriptor instead.
 func (*ListActiveOperationsRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{11}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{11}
 }
 
 type ActiveOperation struct {
@@ -822,7 +822,7 @@ type ActiveOperation struct {
 
 func (x *ActiveOperation) Reset() {
 	*x = ActiveOperation{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[12]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -834,7 +834,7 @@ func (x *ActiveOperation) String() string {
 func (*ActiveOperation) ProtoMessage() {}
 
 func (x *ActiveOperation) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[12]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -847,7 +847,7 @@ func (x *ActiveOperation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActiveOperation.ProtoReflect.Descriptor instead.
 func (*ActiveOperation) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{12}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ActiveOperation) GetOperationId() string {
@@ -894,7 +894,7 @@ type ListActiveOperationsResponse struct {
 
 func (x *ListActiveOperationsResponse) Reset() {
 	*x = ListActiveOperationsResponse{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[13]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -906,7 +906,7 @@ func (x *ListActiveOperationsResponse) String() string {
 func (*ListActiveOperationsResponse) ProtoMessage() {}
 
 func (x *ListActiveOperationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[13]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -919,7 +919,7 @@ func (x *ListActiveOperationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActiveOperationsResponse.ProtoReflect.Descriptor instead.
 func (*ListActiveOperationsResponse) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{13}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListActiveOperationsResponse) GetOperations() []*ActiveOperation {
@@ -947,7 +947,7 @@ type LogStreamRequest struct {
 
 func (x *LogStreamRequest) Reset() {
 	*x = LogStreamRequest{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[14]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -959,7 +959,7 @@ func (x *LogStreamRequest) String() string {
 func (*LogStreamRequest) ProtoMessage() {}
 
 func (x *LogStreamRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[14]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -972,7 +972,7 @@ func (x *LogStreamRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogStreamRequest.ProtoReflect.Descriptor instead.
 func (*LogStreamRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{14}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *LogStreamRequest) GetContainerId() string {
@@ -1061,7 +1061,7 @@ type LogEvent struct {
 
 func (x *LogEvent) Reset() {
 	*x = LogEvent{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[15]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1073,7 +1073,7 @@ func (x *LogEvent) String() string {
 func (*LogEvent) ProtoMessage() {}
 
 func (x *LogEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[15]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1086,7 +1086,7 @@ func (x *LogEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogEvent.ProtoReflect.Descriptor instead.
 func (*LogEvent) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{15}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *LogEvent) GetData() []byte {
@@ -1154,7 +1154,7 @@ type StatsStreamRequest struct {
 
 func (x *StatsStreamRequest) Reset() {
 	*x = StatsStreamRequest{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[16]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1166,7 +1166,7 @@ func (x *StatsStreamRequest) String() string {
 func (*StatsStreamRequest) ProtoMessage() {}
 
 func (x *StatsStreamRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[16]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1179,7 +1179,7 @@ func (x *StatsStreamRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatsStreamRequest.ProtoReflect.Descriptor instead.
 func (*StatsStreamRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{16}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *StatsStreamRequest) GetContainerId() string {
@@ -1199,7 +1199,7 @@ type MetricsMatrixRequest struct {
 
 func (x *MetricsMatrixRequest) Reset() {
 	*x = MetricsMatrixRequest{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[17]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1211,7 +1211,7 @@ func (x *MetricsMatrixRequest) String() string {
 func (*MetricsMatrixRequest) ProtoMessage() {}
 
 func (x *MetricsMatrixRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[17]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1224,10 +1224,10 @@ func (x *MetricsMatrixRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsMatrixRequest.ProtoReflect.Descriptor instead.
 func (*MetricsMatrixRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{17}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{17}
 }
 
-// ManagedFilesystem is capacity for a path Dockpilot writes to - a discovery
+// ManagedFilesystem is capacity for a path DockLattice writes to - a discovery
 // root or the Agent state directory - deduplicated by filesystem. It is not an
 // inventory of the host's mounts.
 type ManagedFilesystem struct {
@@ -1246,7 +1246,7 @@ type ManagedFilesystem struct {
 
 func (x *ManagedFilesystem) Reset() {
 	*x = ManagedFilesystem{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[18]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1258,7 +1258,7 @@ func (x *ManagedFilesystem) String() string {
 func (*ManagedFilesystem) ProtoMessage() {}
 
 func (x *ManagedFilesystem) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[18]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1271,7 +1271,7 @@ func (x *ManagedFilesystem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ManagedFilesystem.ProtoReflect.Descriptor instead.
 func (*ManagedFilesystem) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{18}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ManagedFilesystem) GetPath() string {
@@ -1328,7 +1328,7 @@ type WorkloadSummary struct {
 
 func (x *WorkloadSummary) Reset() {
 	*x = WorkloadSummary{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[19]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1340,7 +1340,7 @@ func (x *WorkloadSummary) String() string {
 func (*WorkloadSummary) ProtoMessage() {}
 
 func (x *WorkloadSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[19]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1353,7 +1353,7 @@ func (x *WorkloadSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkloadSummary.ProtoReflect.Descriptor instead.
 func (*WorkloadSummary) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{19}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *WorkloadSummary) GetCpuCapacity() uint32 {
@@ -1430,7 +1430,7 @@ type MetricsMatrixFrame struct {
 
 func (x *MetricsMatrixFrame) Reset() {
 	*x = MetricsMatrixFrame{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[20]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1442,7 +1442,7 @@ func (x *MetricsMatrixFrame) String() string {
 func (*MetricsMatrixFrame) ProtoMessage() {}
 
 func (x *MetricsMatrixFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[20]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1455,7 +1455,7 @@ func (x *MetricsMatrixFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricsMatrixFrame.ProtoReflect.Descriptor instead.
 func (*MetricsMatrixFrame) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{20}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *MetricsMatrixFrame) GetObservedAtUnixNano() int64 {
@@ -1541,7 +1541,7 @@ type StatsSample struct {
 
 func (x *StatsSample) Reset() {
 	*x = StatsSample{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[21]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1553,7 +1553,7 @@ func (x *StatsSample) String() string {
 func (*StatsSample) ProtoMessage() {}
 
 func (x *StatsSample) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[21]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1566,7 +1566,7 @@ func (x *StatsSample) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatsSample.ProtoReflect.Descriptor instead.
 func (*StatsSample) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{21}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *StatsSample) GetContainerId() string {
@@ -1663,7 +1663,7 @@ type AuditCursor struct {
 
 func (x *AuditCursor) Reset() {
 	*x = AuditCursor{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[22]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1675,7 +1675,7 @@ func (x *AuditCursor) String() string {
 func (*AuditCursor) ProtoMessage() {}
 
 func (x *AuditCursor) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[22]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1688,7 +1688,7 @@ func (x *AuditCursor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditCursor.ProtoReflect.Descriptor instead.
 func (*AuditCursor) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{22}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *AuditCursor) GetIncarnation() uint64 {
@@ -1716,7 +1716,7 @@ type AuditRecord struct {
 
 func (x *AuditRecord) Reset() {
 	*x = AuditRecord{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[23]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1728,7 +1728,7 @@ func (x *AuditRecord) String() string {
 func (*AuditRecord) ProtoMessage() {}
 
 func (x *AuditRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[23]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1741,7 +1741,7 @@ func (x *AuditRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditRecord.ProtoReflect.Descriptor instead.
 func (*AuditRecord) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{23}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *AuditRecord) GetCursor() *AuditCursor {
@@ -1779,7 +1779,7 @@ type AuditGap struct {
 
 func (x *AuditGap) Reset() {
 	*x = AuditGap{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[24]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1791,7 +1791,7 @@ func (x *AuditGap) String() string {
 func (*AuditGap) ProtoMessage() {}
 
 func (x *AuditGap) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[24]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1804,7 +1804,7 @@ func (x *AuditGap) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditGap.ProtoReflect.Descriptor instead.
 func (*AuditGap) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{24}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *AuditGap) GetIncarnation() uint64 {
@@ -1861,7 +1861,7 @@ type AuditCoverageSnapshot struct {
 
 func (x *AuditCoverageSnapshot) Reset() {
 	*x = AuditCoverageSnapshot{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[25]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1873,7 +1873,7 @@ func (x *AuditCoverageSnapshot) String() string {
 func (*AuditCoverageSnapshot) ProtoMessage() {}
 
 func (x *AuditCoverageSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[25]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1886,7 +1886,7 @@ func (x *AuditCoverageSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditCoverageSnapshot.ProtoReflect.Descriptor instead.
 func (*AuditCoverageSnapshot) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{25}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *AuditCoverageSnapshot) GetRevision() uint64 {
@@ -1931,7 +1931,7 @@ type AuditBounds struct {
 
 func (x *AuditBounds) Reset() {
 	*x = AuditBounds{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[26]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1943,7 +1943,7 @@ func (x *AuditBounds) String() string {
 func (*AuditBounds) ProtoMessage() {}
 
 func (x *AuditBounds) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[26]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1956,7 +1956,7 @@ func (x *AuditBounds) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditBounds.ProtoReflect.Descriptor instead.
 func (*AuditBounds) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{26}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *AuditBounds) GetWalFloor() *AuditCursor {
@@ -2012,7 +2012,7 @@ type AuditCursorBehindFloor struct {
 
 func (x *AuditCursorBehindFloor) Reset() {
 	*x = AuditCursorBehindFloor{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[27]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2024,7 +2024,7 @@ func (x *AuditCursorBehindFloor) String() string {
 func (*AuditCursorBehindFloor) ProtoMessage() {}
 
 func (x *AuditCursorBehindFloor) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[27]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2037,7 +2037,7 @@ func (x *AuditCursorBehindFloor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditCursorBehindFloor.ProtoReflect.Descriptor instead.
 func (*AuditCursorBehindFloor) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{27}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *AuditCursorBehindFloor) GetRequested() *AuditCursor {
@@ -2076,7 +2076,7 @@ type AuditUpstream struct {
 
 func (x *AuditUpstream) Reset() {
 	*x = AuditUpstream{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[28]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2088,7 +2088,7 @@ func (x *AuditUpstream) String() string {
 func (*AuditUpstream) ProtoMessage() {}
 
 func (x *AuditUpstream) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[28]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2101,7 +2101,7 @@ func (x *AuditUpstream) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditUpstream.ProtoReflect.Descriptor instead.
 func (*AuditUpstream) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{28}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *AuditUpstream) GetMessage() isAuditUpstream_Message {
@@ -2190,7 +2190,7 @@ type AuditArchiveDescriptor struct {
 
 func (x *AuditArchiveDescriptor) Reset() {
 	*x = AuditArchiveDescriptor{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[29]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2202,7 +2202,7 @@ func (x *AuditArchiveDescriptor) String() string {
 func (*AuditArchiveDescriptor) ProtoMessage() {}
 
 func (x *AuditArchiveDescriptor) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[29]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2215,7 +2215,7 @@ func (x *AuditArchiveDescriptor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditArchiveDescriptor.ProtoReflect.Descriptor instead.
 func (*AuditArchiveDescriptor) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{29}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *AuditArchiveDescriptor) GetServerIdentityId() string {
@@ -2253,7 +2253,7 @@ type AuditAck struct {
 
 func (x *AuditAck) Reset() {
 	*x = AuditAck{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[30]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2265,7 +2265,7 @@ func (x *AuditAck) String() string {
 func (*AuditAck) ProtoMessage() {}
 
 func (x *AuditAck) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[30]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2278,7 +2278,7 @@ func (x *AuditAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditAck.ProtoReflect.Descriptor instead.
 func (*AuditAck) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{30}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *AuditAck) GetAuditArchiveId() string {
@@ -2321,7 +2321,7 @@ type AuditAckResult struct {
 
 func (x *AuditAckResult) Reset() {
 	*x = AuditAckResult{}
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[31]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2333,7 +2333,7 @@ func (x *AuditAckResult) String() string {
 func (*AuditAckResult) ProtoMessage() {}
 
 func (x *AuditAckResult) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_product_v1_session_proto_msgTypes[31]
+	mi := &file_docklattice_product_v1_session_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2346,7 +2346,7 @@ func (x *AuditAckResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditAckResult.ProtoReflect.Descriptor instead.
 func (*AuditAckResult) Descriptor() ([]byte, []int) {
-	return file_dockpilot_product_v1_session_proto_rawDescGZIP(), []int{31}
+	return file_docklattice_product_v1_session_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *AuditAckResult) GetProposed() *AuditCursor {
@@ -2377,11 +2377,11 @@ func (x *AuditAckResult) GetError() string {
 	return ""
 }
 
-var File_dockpilot_product_v1_session_proto protoreflect.FileDescriptor
+var File_docklattice_product_v1_session_proto protoreflect.FileDescriptor
 
-const file_dockpilot_product_v1_session_proto_rawDesc = "" +
+const file_docklattice_product_v1_session_proto_rawDesc = "" +
 	"\n" +
-	"\"dockpilot/product/v1/session.proto\x12\x14dockpilot.product.v1\"=\n" +
+	"$docklattice/product/v1/session.proto\x12\x16docklattice.product.v1\"=\n" +
 	"\x10HeartbeatRequest\x12)\n" +
 	"\x11sent_at_unix_nano\x18\x01 \x01(\x03R\x0esentAtUnixNano\"\xa6\x03\n" +
 	"\n" +
@@ -2397,11 +2397,11 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"\x0efs_read_reason\x18\t \x01(\tR\ffsReadReason\x12&\n" +
 	"\x0ffs_write_reason\x18\n" +
 	" \x01(\tR\rfsWriteReason\x12%\n" +
-	"\x0emetrics_matrix\x18\v \x01(\bR\rmetricsMatrix\"\x88\x01\n" +
+	"\x0emetrics_matrix\x18\v \x01(\bR\rmetricsMatrix\"\x8a\x01\n" +
 	"\x11HeartbeatResponse\x121\n" +
-	"\x15observed_at_unix_nano\x18\x01 \x01(\x03R\x12observedAtUnixNano\x12@\n" +
+	"\x15observed_at_unix_nano\x18\x01 \x01(\x03R\x12observedAtUnixNano\x12B\n" +
 	"\n" +
-	"capability\x18\x02 \x01(\v2 .dockpilot.product.v1.CapabilityR\n" +
+	"capability\x18\x02 \x01(\v2\".docklattice.product.v1.CapabilityR\n" +
 	"capability\"T\n" +
 	"\fQueryRequest\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x16\n" +
@@ -2435,27 +2435,27 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"\x14started_at_unix_nano\x18\f \x01(\x03R\x11startedAtUnixNano\x121\n" +
 	"\x15finished_at_unix_nano\x18\r \x01(\x03R\x12finishedAtUnixNano\"8\n" +
 	"\x13GetOperationRequest\x12!\n" +
-	"\foperation_id\x18\x01 \x01(\tR\voperationId\"s\n" +
+	"\foperation_id\x18\x01 \x01(\tR\voperationId\"u\n" +
 	"\x14GetOperationResponse\x12\x14\n" +
-	"\x05found\x18\x01 \x01(\bR\x05found\x12E\n" +
-	"\toperation\x18\x02 \x01(\v2'.dockpilot.product.v1.OperationResponseR\toperation\"S\n" +
+	"\x05found\x18\x01 \x01(\bR\x05found\x12G\n" +
+	"\toperation\x18\x02 \x01(\v2).docklattice.product.v1.OperationResponseR\toperation\"S\n" +
 	"\x16CancelOperationRequest\x12!\n" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"z\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"|\n" +
 	"\x17CancelOperationResponse\x12\x18\n" +
-	"\aoutcome\x18\x01 \x01(\tR\aoutcome\x12E\n" +
-	"\toperation\x18\x02 \x01(\v2'.dockpilot.product.v1.OperationResponseR\toperation\"\x1d\n" +
-	"\x1bListActiveOperationsRequest\"\xc8\x01\n" +
+	"\aoutcome\x18\x01 \x01(\tR\aoutcome\x12G\n" +
+	"\toperation\x18\x02 \x01(\v2).docklattice.product.v1.OperationResponseR\toperation\"\x1d\n" +
+	"\x1bListActiveOperationsRequest\"\xca\x01\n" +
 	"\x0fActiveOperation\x12!\n" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x1f\n" +
 	"\vproject_key\x18\x03 \x01(\tR\n" +
 	"projectKey\x12\x16\n" +
-	"\x06target\x18\x04 \x01(\tR\x06target\x12E\n" +
-	"\toperation\x18\x05 \x01(\v2'.dockpilot.product.v1.OperationResponseR\toperation\"e\n" +
-	"\x1cListActiveOperationsResponse\x12E\n" +
+	"\x06target\x18\x04 \x01(\tR\x06target\x12G\n" +
+	"\toperation\x18\x05 \x01(\v2).docklattice.product.v1.OperationResponseR\toperation\"g\n" +
+	"\x1cListActiveOperationsResponse\x12G\n" +
 	"\n" +
-	"operations\x18\x01 \x03(\v2%.dockpilot.product.v1.ActiveOperationR\n" +
+	"operations\x18\x01 \x03(\v2'.docklattice.product.v1.ActiveOperationR\n" +
 	"operations\"\xb7\x02\n" +
 	"\x10LogStreamRequest\x12!\n" +
 	"\fcontainer_id\x18\x01 \x01(\tR\vcontainerId\x12\x16\n" +
@@ -2495,18 +2495,18 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"\n" +
 	"free_bytes\x18\x03 \x01(\x04R\tfreeBytes\x12 \n" +
 	"\vunavailable\x18\x04 \x01(\bR\vunavailable\x12\x16\n" +
-	"\x06reason\x18\x05 \x01(\tR\x06reason\"\x82\x02\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"\x84\x02\n" +
 	"\x0fWorkloadSummary\x12!\n" +
 	"\fcpu_capacity\x18\x01 \x01(\rR\vcpuCapacity\x12'\n" +
 	"\x0fmemory_capacity\x18\x02 \x01(\x04R\x0ememoryCapacity\x12-\n" +
 	"\x12containers_running\x18\x03 \x01(\rR\x11containersRunning\x12)\n" +
-	"\x10containers_total\x18\x04 \x01(\rR\x0fcontainersTotal\x12I\n" +
-	"\vfilesystems\x18\x05 \x03(\v2'.dockpilot.product.v1.ManagedFilesystemR\vfilesystems\"\xd0\x03\n" +
+	"\x10containers_total\x18\x04 \x01(\rR\x0fcontainersTotal\x12K\n" +
+	"\vfilesystems\x18\x05 \x03(\v2).docklattice.product.v1.ManagedFilesystemR\vfilesystems\"\xd4\x03\n" +
 	"\x12MetricsMatrixFrame\x121\n" +
-	"\x15observed_at_unix_nano\x18\x01 \x01(\x03R\x12observedAtUnixNano\x12A\n" +
-	"\bworkload\x18\x02 \x01(\v2%.dockpilot.product.v1.WorkloadSummaryR\bworkload\x12A\n" +
+	"\x15observed_at_unix_nano\x18\x01 \x01(\x03R\x12observedAtUnixNano\x12C\n" +
+	"\bworkload\x18\x02 \x01(\v2'.docklattice.product.v1.WorkloadSummaryR\bworkload\x12C\n" +
 	"\n" +
-	"containers\x18\x03 \x03(\v2!.dockpilot.product.v1.StatsSampleR\n" +
+	"containers\x18\x03 \x03(\v2#.docklattice.product.v1.StatsSampleR\n" +
 	"containers\x12%\n" +
 	"\x0edropped_frames\x18\x04 \x01(\x04R\rdroppedFrames\x12)\n" +
 	"\x10membership_stale\x18\x05 \x01(\bR\x0fmembershipStale\x12+\n" +
@@ -2536,9 +2536,9 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"uptimeNano\"K\n" +
 	"\vAuditCursor\x12 \n" +
 	"\vincarnation\x18\x01 \x01(\x04R\vincarnation\x12\x1a\n" +
-	"\bsequence\x18\x02 \x01(\x04R\bsequence\"\x95\x01\n" +
-	"\vAuditRecord\x129\n" +
-	"\x06cursor\x18\x01 \x01(\v2!.dockpilot.product.v1.AuditCursorR\x06cursor\x121\n" +
+	"\bsequence\x18\x02 \x01(\x04R\bsequence\"\x97\x01\n" +
+	"\vAuditRecord\x12;\n" +
+	"\x06cursor\x18\x01 \x01(\v2#.docklattice.product.v1.AuditCursorR\x06cursor\x121\n" +
 	"\x15appended_at_unix_nano\x18\x02 \x01(\x03R\x12appendedAtUnixNano\x12\x18\n" +
 	"\apayload\x18\x03 \x01(\fR\apayload\"\xdc\x01\n" +
 	"\bAuditGap\x12 \n" +
@@ -2547,122 +2547,122 @@ const file_dockpilot_product_v1_session_proto_rawDesc = "" +
 	"\x0euntil_sequence\x18\x03 \x01(\x04R\runtilSequence\x12\x16\n" +
 	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x1c\n" +
 	"\tprecision\x18\x05 \x01(\tR\tprecision\x12,\n" +
-	"\x12last_loss_revision\x18\x06 \x01(\x04R\x10lastLossRevision\"\xe0\x01\n" +
+	"\x12last_loss_revision\x18\x06 \x01(\x04R\x10lastLossRevision\"\xe2\x01\n" +
 	"\x15AuditCoverageSnapshot\x12\x1a\n" +
 	"\brevision\x18\x01 \x01(\x04R\brevision\x123\n" +
-	"\x16generated_at_unix_nano\x18\x02 \x01(\x03R\x13generatedAtUnixNano\x122\n" +
-	"\x04gaps\x18\x03 \x03(\v2\x1e.dockpilot.product.v1.AuditGapR\x04gaps\x12B\n" +
-	"\x1dcoverage_unknown_incarnations\x18\x04 \x03(\x04R\x1bcoverageUnknownIncarnations\"\x8f\x03\n" +
-	"\vAuditBounds\x12>\n" +
-	"\twal_floor\x18\x01 \x01(\v2!.dockpilot.product.v1.AuditCursorR\bwalFloor\x12B\n" +
-	"\vwal_ceiling\x18\x02 \x01(\v2!.dockpilot.product.v1.AuditCursorR\n" +
-	"walCeiling\x12B\n" +
-	"\vnext_cursor\x18\x03 \x01(\v2!.dockpilot.product.v1.AuditCursorR\n" +
-	"nextCursor\x12S\n" +
-	"\x14server_acked_through\x18\x04 \x01(\v2!.dockpilot.product.v1.AuditCursorR\x12serverAckedThrough\x126\n" +
+	"\x16generated_at_unix_nano\x18\x02 \x01(\x03R\x13generatedAtUnixNano\x124\n" +
+	"\x04gaps\x18\x03 \x03(\v2 .docklattice.product.v1.AuditGapR\x04gaps\x12B\n" +
+	"\x1dcoverage_unknown_incarnations\x18\x04 \x03(\x04R\x1bcoverageUnknownIncarnations\"\x97\x03\n" +
+	"\vAuditBounds\x12@\n" +
+	"\twal_floor\x18\x01 \x01(\v2#.docklattice.product.v1.AuditCursorR\bwalFloor\x12D\n" +
+	"\vwal_ceiling\x18\x02 \x01(\v2#.docklattice.product.v1.AuditCursorR\n" +
+	"walCeiling\x12D\n" +
+	"\vnext_cursor\x18\x03 \x01(\v2#.docklattice.product.v1.AuditCursorR\n" +
+	"nextCursor\x12U\n" +
+	"\x14server_acked_through\x18\x04 \x01(\v2#.docklattice.product.v1.AuditCursorR\x12serverAckedThrough\x126\n" +
 	"\x17acknowledged_archive_id\x18\x05 \x01(\tR\x15acknowledgedArchiveId\x12+\n" +
-	"\x11coverage_revision\x18\x06 \x01(\x04R\x10coverageRevision\"\xdd\x01\n" +
-	"\x16AuditCursorBehindFloor\x12?\n" +
-	"\trequested\x18\x01 \x01(\v2!.dockpilot.product.v1.AuditCursorR\trequested\x129\n" +
-	"\x06bounds\x18\x02 \x01(\v2!.dockpilot.product.v1.AuditBoundsR\x06bounds\x12G\n" +
-	"\bcoverage\x18\x03 \x01(\v2+.dockpilot.product.v1.AuditCoverageSnapshotR\bcoverage\"\xc9\x02\n" +
-	"\rAuditUpstream\x12;\n" +
-	"\x06record\x18\x01 \x01(\v2!.dockpilot.product.v1.AuditRecordH\x00R\x06record\x12I\n" +
-	"\bcoverage\x18\x02 \x01(\v2+.dockpilot.product.v1.AuditCoverageSnapshotH\x00R\bcoverage\x12^\n" +
-	"\x13cursor_behind_floor\x18\x03 \x01(\v2,.dockpilot.product.v1.AuditCursorBehindFloorH\x00R\x11cursorBehindFloor\x12E\n" +
+	"\x11coverage_revision\x18\x06 \x01(\x04R\x10coverageRevision\"\xe3\x01\n" +
+	"\x16AuditCursorBehindFloor\x12A\n" +
+	"\trequested\x18\x01 \x01(\v2#.docklattice.product.v1.AuditCursorR\trequested\x12;\n" +
+	"\x06bounds\x18\x02 \x01(\v2#.docklattice.product.v1.AuditBoundsR\x06bounds\x12I\n" +
+	"\bcoverage\x18\x03 \x01(\v2-.docklattice.product.v1.AuditCoverageSnapshotR\bcoverage\"\xd1\x02\n" +
+	"\rAuditUpstream\x12=\n" +
+	"\x06record\x18\x01 \x01(\v2#.docklattice.product.v1.AuditRecordH\x00R\x06record\x12K\n" +
+	"\bcoverage\x18\x02 \x01(\v2-.docklattice.product.v1.AuditCoverageSnapshotH\x00R\bcoverage\x12`\n" +
+	"\x13cursor_behind_floor\x18\x03 \x01(\v2..docklattice.product.v1.AuditCursorBehindFloorH\x00R\x11cursorBehindFloor\x12G\n" +
 	"\n" +
-	"ack_result\x18\x04 \x01(\v2$.dockpilot.product.v1.AuditAckResultH\x00R\tackResultB\t\n" +
+	"ack_result\x18\x04 \x01(\v2&.docklattice.product.v1.AuditAckResultH\x00R\tackResultB\t\n" +
 	"\amessage\"\x90\x01\n" +
 	"\x16AuditArchiveDescriptor\x12,\n" +
 	"\x12server_identity_id\x18\x01 \x01(\tR\x10serverIdentityId\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x02 \x01(\x04R\n" +
 	"generation\x12(\n" +
-	"\x10audit_archive_id\x18\x03 \x01(\tR\x0eauditArchiveId\"\xed\x01\n" +
+	"\x10audit_archive_id\x18\x03 \x01(\tR\x0eauditArchiveId\"\xf1\x01\n" +
 	"\bAuditAck\x12(\n" +
-	"\x10audit_archive_id\x18\x01 \x01(\tR\x0eauditArchiveId\x129\n" +
-	"\x06cursor\x18\x02 \x01(\v2!.dockpilot.product.v1.AuditCursorR\x06cursor\x124\n" +
-	"\x16coverage_revision_seen\x18\x03 \x01(\x04R\x14coverageRevisionSeen\x12F\n" +
-	"\aarchive\x18\x04 \x01(\v2,.dockpilot.product.v1.AuditArchiveDescriptorR\aarchive\"\xd5\x01\n" +
-	"\x0eAuditAckResult\x12=\n" +
-	"\bproposed\x18\x01 \x01(\v2!.dockpilot.product.v1.AuditCursorR\bproposed\x12\x1a\n" +
-	"\baccepted\x18\x02 \x01(\bR\baccepted\x12R\n" +
-	"\x0estale_coverage\x18\x03 \x01(\v2+.dockpilot.product.v1.AuditCoverageSnapshotR\rstaleCoverage\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05errorB@Z>github.com/east-true/dockpilot/internal/producttransport/pb;pbb\x06proto3"
+	"\x10audit_archive_id\x18\x01 \x01(\tR\x0eauditArchiveId\x12;\n" +
+	"\x06cursor\x18\x02 \x01(\v2#.docklattice.product.v1.AuditCursorR\x06cursor\x124\n" +
+	"\x16coverage_revision_seen\x18\x03 \x01(\x04R\x14coverageRevisionSeen\x12H\n" +
+	"\aarchive\x18\x04 \x01(\v2..docklattice.product.v1.AuditArchiveDescriptorR\aarchive\"\xd9\x01\n" +
+	"\x0eAuditAckResult\x12?\n" +
+	"\bproposed\x18\x01 \x01(\v2#.docklattice.product.v1.AuditCursorR\bproposed\x12\x1a\n" +
+	"\baccepted\x18\x02 \x01(\bR\baccepted\x12T\n" +
+	"\x0estale_coverage\x18\x03 \x01(\v2-.docklattice.product.v1.AuditCoverageSnapshotR\rstaleCoverage\x12\x14\n" +
+	"\x05error\x18\x04 \x01(\tR\x05errorBBZ@github.com/east-true/docklattice/internal/producttransport/pb;pbb\x06proto3"
 
 var (
-	file_dockpilot_product_v1_session_proto_rawDescOnce sync.Once
-	file_dockpilot_product_v1_session_proto_rawDescData []byte
+	file_docklattice_product_v1_session_proto_rawDescOnce sync.Once
+	file_docklattice_product_v1_session_proto_rawDescData []byte
 )
 
-func file_dockpilot_product_v1_session_proto_rawDescGZIP() []byte {
-	file_dockpilot_product_v1_session_proto_rawDescOnce.Do(func() {
-		file_dockpilot_product_v1_session_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_dockpilot_product_v1_session_proto_rawDesc), len(file_dockpilot_product_v1_session_proto_rawDesc)))
+func file_docklattice_product_v1_session_proto_rawDescGZIP() []byte {
+	file_docklattice_product_v1_session_proto_rawDescOnce.Do(func() {
+		file_docklattice_product_v1_session_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_docklattice_product_v1_session_proto_rawDesc), len(file_docklattice_product_v1_session_proto_rawDesc)))
 	})
-	return file_dockpilot_product_v1_session_proto_rawDescData
+	return file_docklattice_product_v1_session_proto_rawDescData
 }
 
-var file_dockpilot_product_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
-var file_dockpilot_product_v1_session_proto_goTypes = []any{
-	(*HeartbeatRequest)(nil),             // 0: dockpilot.product.v1.HeartbeatRequest
-	(*Capability)(nil),                   // 1: dockpilot.product.v1.Capability
-	(*HeartbeatResponse)(nil),            // 2: dockpilot.product.v1.HeartbeatResponse
-	(*QueryRequest)(nil),                 // 3: dockpilot.product.v1.QueryRequest
-	(*QueryResponse)(nil),                // 4: dockpilot.product.v1.QueryResponse
-	(*OperationRequest)(nil),             // 5: dockpilot.product.v1.OperationRequest
-	(*OperationResponse)(nil),            // 6: dockpilot.product.v1.OperationResponse
-	(*GetOperationRequest)(nil),          // 7: dockpilot.product.v1.GetOperationRequest
-	(*GetOperationResponse)(nil),         // 8: dockpilot.product.v1.GetOperationResponse
-	(*CancelOperationRequest)(nil),       // 9: dockpilot.product.v1.CancelOperationRequest
-	(*CancelOperationResponse)(nil),      // 10: dockpilot.product.v1.CancelOperationResponse
-	(*ListActiveOperationsRequest)(nil),  // 11: dockpilot.product.v1.ListActiveOperationsRequest
-	(*ActiveOperation)(nil),              // 12: dockpilot.product.v1.ActiveOperation
-	(*ListActiveOperationsResponse)(nil), // 13: dockpilot.product.v1.ListActiveOperationsResponse
-	(*LogStreamRequest)(nil),             // 14: dockpilot.product.v1.LogStreamRequest
-	(*LogEvent)(nil),                     // 15: dockpilot.product.v1.LogEvent
-	(*StatsStreamRequest)(nil),           // 16: dockpilot.product.v1.StatsStreamRequest
-	(*MetricsMatrixRequest)(nil),         // 17: dockpilot.product.v1.MetricsMatrixRequest
-	(*ManagedFilesystem)(nil),            // 18: dockpilot.product.v1.ManagedFilesystem
-	(*WorkloadSummary)(nil),              // 19: dockpilot.product.v1.WorkloadSummary
-	(*MetricsMatrixFrame)(nil),           // 20: dockpilot.product.v1.MetricsMatrixFrame
-	(*StatsSample)(nil),                  // 21: dockpilot.product.v1.StatsSample
-	(*AuditCursor)(nil),                  // 22: dockpilot.product.v1.AuditCursor
-	(*AuditRecord)(nil),                  // 23: dockpilot.product.v1.AuditRecord
-	(*AuditGap)(nil),                     // 24: dockpilot.product.v1.AuditGap
-	(*AuditCoverageSnapshot)(nil),        // 25: dockpilot.product.v1.AuditCoverageSnapshot
-	(*AuditBounds)(nil),                  // 26: dockpilot.product.v1.AuditBounds
-	(*AuditCursorBehindFloor)(nil),       // 27: dockpilot.product.v1.AuditCursorBehindFloor
-	(*AuditUpstream)(nil),                // 28: dockpilot.product.v1.AuditUpstream
-	(*AuditArchiveDescriptor)(nil),       // 29: dockpilot.product.v1.AuditArchiveDescriptor
-	(*AuditAck)(nil),                     // 30: dockpilot.product.v1.AuditAck
-	(*AuditAckResult)(nil),               // 31: dockpilot.product.v1.AuditAckResult
+var file_docklattice_product_v1_session_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_docklattice_product_v1_session_proto_goTypes = []any{
+	(*HeartbeatRequest)(nil),             // 0: docklattice.product.v1.HeartbeatRequest
+	(*Capability)(nil),                   // 1: docklattice.product.v1.Capability
+	(*HeartbeatResponse)(nil),            // 2: docklattice.product.v1.HeartbeatResponse
+	(*QueryRequest)(nil),                 // 3: docklattice.product.v1.QueryRequest
+	(*QueryResponse)(nil),                // 4: docklattice.product.v1.QueryResponse
+	(*OperationRequest)(nil),             // 5: docklattice.product.v1.OperationRequest
+	(*OperationResponse)(nil),            // 6: docklattice.product.v1.OperationResponse
+	(*GetOperationRequest)(nil),          // 7: docklattice.product.v1.GetOperationRequest
+	(*GetOperationResponse)(nil),         // 8: docklattice.product.v1.GetOperationResponse
+	(*CancelOperationRequest)(nil),       // 9: docklattice.product.v1.CancelOperationRequest
+	(*CancelOperationResponse)(nil),      // 10: docklattice.product.v1.CancelOperationResponse
+	(*ListActiveOperationsRequest)(nil),  // 11: docklattice.product.v1.ListActiveOperationsRequest
+	(*ActiveOperation)(nil),              // 12: docklattice.product.v1.ActiveOperation
+	(*ListActiveOperationsResponse)(nil), // 13: docklattice.product.v1.ListActiveOperationsResponse
+	(*LogStreamRequest)(nil),             // 14: docklattice.product.v1.LogStreamRequest
+	(*LogEvent)(nil),                     // 15: docklattice.product.v1.LogEvent
+	(*StatsStreamRequest)(nil),           // 16: docklattice.product.v1.StatsStreamRequest
+	(*MetricsMatrixRequest)(nil),         // 17: docklattice.product.v1.MetricsMatrixRequest
+	(*ManagedFilesystem)(nil),            // 18: docklattice.product.v1.ManagedFilesystem
+	(*WorkloadSummary)(nil),              // 19: docklattice.product.v1.WorkloadSummary
+	(*MetricsMatrixFrame)(nil),           // 20: docklattice.product.v1.MetricsMatrixFrame
+	(*StatsSample)(nil),                  // 21: docklattice.product.v1.StatsSample
+	(*AuditCursor)(nil),                  // 22: docklattice.product.v1.AuditCursor
+	(*AuditRecord)(nil),                  // 23: docklattice.product.v1.AuditRecord
+	(*AuditGap)(nil),                     // 24: docklattice.product.v1.AuditGap
+	(*AuditCoverageSnapshot)(nil),        // 25: docklattice.product.v1.AuditCoverageSnapshot
+	(*AuditBounds)(nil),                  // 26: docklattice.product.v1.AuditBounds
+	(*AuditCursorBehindFloor)(nil),       // 27: docklattice.product.v1.AuditCursorBehindFloor
+	(*AuditUpstream)(nil),                // 28: docklattice.product.v1.AuditUpstream
+	(*AuditArchiveDescriptor)(nil),       // 29: docklattice.product.v1.AuditArchiveDescriptor
+	(*AuditAck)(nil),                     // 30: docklattice.product.v1.AuditAck
+	(*AuditAckResult)(nil),               // 31: docklattice.product.v1.AuditAckResult
 }
-var file_dockpilot_product_v1_session_proto_depIdxs = []int32{
-	1,  // 0: dockpilot.product.v1.HeartbeatResponse.capability:type_name -> dockpilot.product.v1.Capability
-	6,  // 1: dockpilot.product.v1.GetOperationResponse.operation:type_name -> dockpilot.product.v1.OperationResponse
-	6,  // 2: dockpilot.product.v1.CancelOperationResponse.operation:type_name -> dockpilot.product.v1.OperationResponse
-	6,  // 3: dockpilot.product.v1.ActiveOperation.operation:type_name -> dockpilot.product.v1.OperationResponse
-	12, // 4: dockpilot.product.v1.ListActiveOperationsResponse.operations:type_name -> dockpilot.product.v1.ActiveOperation
-	18, // 5: dockpilot.product.v1.WorkloadSummary.filesystems:type_name -> dockpilot.product.v1.ManagedFilesystem
-	19, // 6: dockpilot.product.v1.MetricsMatrixFrame.workload:type_name -> dockpilot.product.v1.WorkloadSummary
-	21, // 7: dockpilot.product.v1.MetricsMatrixFrame.containers:type_name -> dockpilot.product.v1.StatsSample
-	22, // 8: dockpilot.product.v1.AuditRecord.cursor:type_name -> dockpilot.product.v1.AuditCursor
-	24, // 9: dockpilot.product.v1.AuditCoverageSnapshot.gaps:type_name -> dockpilot.product.v1.AuditGap
-	22, // 10: dockpilot.product.v1.AuditBounds.wal_floor:type_name -> dockpilot.product.v1.AuditCursor
-	22, // 11: dockpilot.product.v1.AuditBounds.wal_ceiling:type_name -> dockpilot.product.v1.AuditCursor
-	22, // 12: dockpilot.product.v1.AuditBounds.next_cursor:type_name -> dockpilot.product.v1.AuditCursor
-	22, // 13: dockpilot.product.v1.AuditBounds.server_acked_through:type_name -> dockpilot.product.v1.AuditCursor
-	22, // 14: dockpilot.product.v1.AuditCursorBehindFloor.requested:type_name -> dockpilot.product.v1.AuditCursor
-	26, // 15: dockpilot.product.v1.AuditCursorBehindFloor.bounds:type_name -> dockpilot.product.v1.AuditBounds
-	25, // 16: dockpilot.product.v1.AuditCursorBehindFloor.coverage:type_name -> dockpilot.product.v1.AuditCoverageSnapshot
-	23, // 17: dockpilot.product.v1.AuditUpstream.record:type_name -> dockpilot.product.v1.AuditRecord
-	25, // 18: dockpilot.product.v1.AuditUpstream.coverage:type_name -> dockpilot.product.v1.AuditCoverageSnapshot
-	27, // 19: dockpilot.product.v1.AuditUpstream.cursor_behind_floor:type_name -> dockpilot.product.v1.AuditCursorBehindFloor
-	31, // 20: dockpilot.product.v1.AuditUpstream.ack_result:type_name -> dockpilot.product.v1.AuditAckResult
-	22, // 21: dockpilot.product.v1.AuditAck.cursor:type_name -> dockpilot.product.v1.AuditCursor
-	29, // 22: dockpilot.product.v1.AuditAck.archive:type_name -> dockpilot.product.v1.AuditArchiveDescriptor
-	22, // 23: dockpilot.product.v1.AuditAckResult.proposed:type_name -> dockpilot.product.v1.AuditCursor
-	25, // 24: dockpilot.product.v1.AuditAckResult.stale_coverage:type_name -> dockpilot.product.v1.AuditCoverageSnapshot
+var file_docklattice_product_v1_session_proto_depIdxs = []int32{
+	1,  // 0: docklattice.product.v1.HeartbeatResponse.capability:type_name -> docklattice.product.v1.Capability
+	6,  // 1: docklattice.product.v1.GetOperationResponse.operation:type_name -> docklattice.product.v1.OperationResponse
+	6,  // 2: docklattice.product.v1.CancelOperationResponse.operation:type_name -> docklattice.product.v1.OperationResponse
+	6,  // 3: docklattice.product.v1.ActiveOperation.operation:type_name -> docklattice.product.v1.OperationResponse
+	12, // 4: docklattice.product.v1.ListActiveOperationsResponse.operations:type_name -> docklattice.product.v1.ActiveOperation
+	18, // 5: docklattice.product.v1.WorkloadSummary.filesystems:type_name -> docklattice.product.v1.ManagedFilesystem
+	19, // 6: docklattice.product.v1.MetricsMatrixFrame.workload:type_name -> docklattice.product.v1.WorkloadSummary
+	21, // 7: docklattice.product.v1.MetricsMatrixFrame.containers:type_name -> docklattice.product.v1.StatsSample
+	22, // 8: docklattice.product.v1.AuditRecord.cursor:type_name -> docklattice.product.v1.AuditCursor
+	24, // 9: docklattice.product.v1.AuditCoverageSnapshot.gaps:type_name -> docklattice.product.v1.AuditGap
+	22, // 10: docklattice.product.v1.AuditBounds.wal_floor:type_name -> docklattice.product.v1.AuditCursor
+	22, // 11: docklattice.product.v1.AuditBounds.wal_ceiling:type_name -> docklattice.product.v1.AuditCursor
+	22, // 12: docklattice.product.v1.AuditBounds.next_cursor:type_name -> docklattice.product.v1.AuditCursor
+	22, // 13: docklattice.product.v1.AuditBounds.server_acked_through:type_name -> docklattice.product.v1.AuditCursor
+	22, // 14: docklattice.product.v1.AuditCursorBehindFloor.requested:type_name -> docklattice.product.v1.AuditCursor
+	26, // 15: docklattice.product.v1.AuditCursorBehindFloor.bounds:type_name -> docklattice.product.v1.AuditBounds
+	25, // 16: docklattice.product.v1.AuditCursorBehindFloor.coverage:type_name -> docklattice.product.v1.AuditCoverageSnapshot
+	23, // 17: docklattice.product.v1.AuditUpstream.record:type_name -> docklattice.product.v1.AuditRecord
+	25, // 18: docklattice.product.v1.AuditUpstream.coverage:type_name -> docklattice.product.v1.AuditCoverageSnapshot
+	27, // 19: docklattice.product.v1.AuditUpstream.cursor_behind_floor:type_name -> docklattice.product.v1.AuditCursorBehindFloor
+	31, // 20: docklattice.product.v1.AuditUpstream.ack_result:type_name -> docklattice.product.v1.AuditAckResult
+	22, // 21: docklattice.product.v1.AuditAck.cursor:type_name -> docklattice.product.v1.AuditCursor
+	29, // 22: docklattice.product.v1.AuditAck.archive:type_name -> docklattice.product.v1.AuditArchiveDescriptor
+	22, // 23: docklattice.product.v1.AuditAckResult.proposed:type_name -> docklattice.product.v1.AuditCursor
+	25, // 24: docklattice.product.v1.AuditAckResult.stale_coverage:type_name -> docklattice.product.v1.AuditCoverageSnapshot
 	25, // [25:25] is the sub-list for method output_type
 	25, // [25:25] is the sub-list for method input_type
 	25, // [25:25] is the sub-list for extension type_name
@@ -2670,12 +2670,12 @@ var file_dockpilot_product_v1_session_proto_depIdxs = []int32{
 	0,  // [0:25] is the sub-list for field type_name
 }
 
-func init() { file_dockpilot_product_v1_session_proto_init() }
-func file_dockpilot_product_v1_session_proto_init() {
-	if File_dockpilot_product_v1_session_proto != nil {
+func init() { file_docklattice_product_v1_session_proto_init() }
+func file_docklattice_product_v1_session_proto_init() {
+	if File_docklattice_product_v1_session_proto != nil {
 		return
 	}
-	file_dockpilot_product_v1_session_proto_msgTypes[28].OneofWrappers = []any{
+	file_docklattice_product_v1_session_proto_msgTypes[28].OneofWrappers = []any{
 		(*AuditUpstream_Record)(nil),
 		(*AuditUpstream_Coverage)(nil),
 		(*AuditUpstream_CursorBehindFloor)(nil),
@@ -2685,17 +2685,17 @@ func file_dockpilot_product_v1_session_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dockpilot_product_v1_session_proto_rawDesc), len(file_dockpilot_product_v1_session_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_docklattice_product_v1_session_proto_rawDesc), len(file_docklattice_product_v1_session_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_dockpilot_product_v1_session_proto_goTypes,
-		DependencyIndexes: file_dockpilot_product_v1_session_proto_depIdxs,
-		MessageInfos:      file_dockpilot_product_v1_session_proto_msgTypes,
+		GoTypes:           file_docklattice_product_v1_session_proto_goTypes,
+		DependencyIndexes: file_docklattice_product_v1_session_proto_depIdxs,
+		MessageInfos:      file_docklattice_product_v1_session_proto_msgTypes,
 	}.Build()
-	File_dockpilot_product_v1_session_proto = out.File
-	file_dockpilot_product_v1_session_proto_goTypes = nil
-	file_dockpilot_product_v1_session_proto_depIdxs = nil
+	File_docklattice_product_v1_session_proto = out.File
+	file_docklattice_product_v1_session_proto_goTypes = nil
+	file_docklattice_product_v1_session_proto_depIdxs = nil
 }

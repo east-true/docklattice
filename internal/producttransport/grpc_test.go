@@ -22,8 +22,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/east-true/dockpilot/internal/livestats"
-	"github.com/east-true/dockpilot/internal/logrelay"
+	"github.com/east-true/docklattice/internal/livestats"
+	"github.com/east-true/docklattice/internal/logrelay"
 )
 
 type fakeClock struct {

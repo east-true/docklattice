@@ -3,7 +3,7 @@
 Status: PASS
 
 The browser-facing HTTP API is the product's one untrusted surface, and a
-project directory is written by people outside Dockpilot. This gate sends the
+project directory is written by people outside DockLattice. This gate sends the
 things the product must refuse and asserts the refusal - not merely that nothing
 crashed. It complements [`hardening-matrix-e2e.md`](hardening-matrix-e2e.md),
 which breaks the running system rather than feeding it bad input.
@@ -68,7 +68,7 @@ real `compose.up` against it; it now uses this run's own baseline fixture.
 | `operation-id-reuse` | one operation ID rebound to a different kind, target, and project | each rebinding is refused with 409 and the original record is untouched |
 | `operation-flood` | a burst of 40 operations | every request gets a decision, the Agent stays ACTIVE, and the Server keeps answering |
 | `self-protection` | `container.stop`, `container.restart`, and `container.remove` aimed at the Agent's own container ID | each is refused and the Agent is still running and ACTIVE afterwards |
-| `request-abuse` | malformed JSON, an unknown field, a wrong method, `limit=0`, a malformed cursor, an unknown query parameter, and a 2 MB body | each is refused with a client status, none with a server error, and the Server is healthy afterwards |
+| `request-abuse` | malformed JSON, an unknown field, an unsupported `PATCH` method, `limit=0`, a malformed cursor, an unknown query parameter, and a 2 MB body | each is refused with a client status, none with a server error, and the Server is healthy afterwards |
 | `token-single-use` | one Join Token presented by a second Agent after the first consumed it | the replay is refused and the registered host count does not change |
 | `wrong-server-ca` | an Agent handed a CA that did not sign this Server | it never reaches registration and no host appears |
 | `backup-tamper` | bytes flipped inside a stored backup archive, then a restore | the restore is refused on the entry digest and the live project file is untouched |

@@ -36,8 +36,8 @@ checksum-pinned Compose binary, and checksum-pinned license texts.
 on the reference host, each run producing both targets for both platforms. The
 two runs produced byte-identical archives:
 
-    dockpilot-server-1.0.0.oci.tar  sha256:71587ca09aa4373c735adf04013d4753480d607f4998b93ce24ece28a94f8754
-    dockpilot-agent-1.0.0.oci.tar   sha256:fb29e4c0ca5604de9c9f1bb2e88c90b3f9821bc623cb4900db5efb5ec31b09ce
+    docklattice-server-1.0.0.oci.tar  sha256:71587ca09aa4373c735adf04013d4753480d607f4998b93ce24ece28a94f8754
+    docklattice-agent-1.0.0.oci.tar   sha256:fb29e4c0ca5604de9c9f1bb2e88c90b3f9821bc623cb4900db5efb5ec31b09ce
 
 Each archive carries a two-entry manifest list:
 
@@ -55,7 +55,7 @@ Two properties of the `Dockerfile` make this possible, and
   node whose formatted value contains a heap address, so an image carrying
   `EXPOSE` receives a different config digest on every build even when every
   layer is identical. The Server's listening ports are recorded in the
-  `io.dockpilot.ports` label instead.
+  `io.docklattice.ports` label instead.
 - **No `RUN` in the `server` or `agent` stage.** The unprivileged account and
   the state-directory skeleton are produced in a `$BUILDPLATFORM` stage and
   copied in, and the Go toolchain cross-compiles to `TARGETARCH` with CGO
@@ -101,7 +101,7 @@ unfiltered Trivy JSON is always retained and attached. The only suppressions
 accepted by the gate are the ten path-scoped, expiring entries in
 [`distribution/trivyignore.yaml`](../../distribution/trivyignore.yaml): eight
 Go stdlib findings in the newest official Docker CLI 29.7.2 binary and two
-`x/mod` findings in the newest official Compose 5.5.0 binary. Dockpilot copies
+`x/mod` findings in the newest official Compose 5.5.0 binary. DockLattice copies
 those signed upstream release artifacts rather than rebuilding them. All ten
 exceptions expire on 2026-09-15 and must be removed or consciously renewed
 against a fresh upstream-version review; they do not suppress the published

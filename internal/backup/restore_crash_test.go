@@ -38,7 +38,7 @@ func TestRecoverResumesRollbackInterruptedMidway(t *testing.T) {
 
 	// A rollback started and was killed after staging: one leftover rollback
 	// staging file remains in the project directory.
-	leftover := ".dockpilot-restore-" + restoreStageSuffix("restore-crash", "rollback") + "-000.tmp"
+	leftover := ".docklattice-restore-" + restoreStageSuffix("restore-crash", "rollback") + "-000.tmp"
 	mustWrite(t, filepath.Join(project.WorkingDir, leftover), "partial rollback stage", 0o600)
 
 	restarted, err := New(manager.stateDir, nil, nil)

@@ -136,21 +136,21 @@ no adjacent-limit comparison was needed.
 |---|---|---|
 | Agent/Server memory | validated | none; production cgroup matrix, three repetitions |
 | Retention/disk/reserve | partial | Phase 6 quota fault matrix passed on a disposable size-limited tmpfs; full storage-pressure matrix outstanding |
-| Exact values and relationships | validated | the exact release Server Image emitted `dockpilot defaults` byte-for-byte equal to `distribution/v1-defaults.json` in the current-revision clean-host E2E |
+| Exact values and relationships | validated | the exact release Server Image emitted `docklattice defaults` byte-for-byte equal to `distribution/v1-defaults.json` in the current-revision clean-host E2E |
 | Credential lifetime/renewal | provisional | reconnect/offline E2E |
 | Operation result/tail limits | partial | real 525-operation/500-entry eviction passed; output-tail truncation remains unit-only and needs real process output plus reconnect evidence |
 | WAL size/age/fsync | provisional | production disk-WAL matrix |
 | Operation timeouts | partial | real health-gated Compose cancellation passed; configured normal/slow/hung timeout boundaries remain unmeasured |
 | Discovery budget/interval | policy decision required | 200,000 directories is unreachable under the simultaneous 60-second and 1,000 directories/second defaults; interval and slow-filesystem evidence also remain |
-| Stats interval/ring | partial | the resource matrix measured real Docker collection with 0, 1, and 6 viewers; the 120-sample browser bound and current-revision soak remain |
+| Stats interval/ring | partial | the resource matrix measured real Docker collection with 0, 1, and 6 viewers and all three current-revision soak stages passed; the 120-sample browser bound remains |
 
-The one-hour soak required before the v1 release candidate is signed has now
-passed ([`soak.md`](soak.md), Stage 1); the overnight soak has not been run.
+The one-hour, two-hour, and eight-hour overnight soaks have now passed
+([`soak.md`](soak.md), Stages 1 through 3).
 No row above changes as a result. The soak owns direction over time, not the
 values in this table, so a passing soak promotes nothing here on its own. The
-`Stats interval/ring` row retains separate browser-ring and current-revision
-evidence requirements even though the resource matrix now supplies its real
-Docker viewer 0/1/N observation.
+`Stats interval/ring` row retains its separate browser-ring evidence
+requirement even though the resource matrix supplies its real Docker viewer
+0/1/N observation and all three current-revision soak stages have passed.
 
 ## Reopened validation campaign — 2026-08-25
 
@@ -158,7 +158,7 @@ The previous table stayed provisional even after later gates supplied part of
 its requested evidence. This campaign separates what is already demonstrated
 from what still has no final observation; no row is promoted by inference.
 
-The release binary now exposes a read-only `dockpilot defaults` command. Its
+The release binary now exposes a read-only `docklattice defaults` command. Its
 complete JSON output is pinned by `distribution/v1-defaults.json`, checked by a
 unit test, and required by the clean-host harness from inside the exact Server
 Image. The latest 2026-08-25 clean-host run at revision

@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"io"
 
-	"github.com/east-true/dockpilot/internal/transport"
+	"github.com/east-true/docklattice/internal/transport"
 )
 
 type frameType uint8

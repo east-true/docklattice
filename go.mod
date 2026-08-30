@@ -1,4 +1,4 @@
-module github.com/east-true/dockpilot
+module github.com/east-true/docklattice
 
 go 1.26.6
 

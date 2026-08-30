@@ -11,8 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/east-true/dockpilot/internal/auditgen"
-	"github.com/east-true/dockpilot/internal/dockeradapter"
+	"github.com/east-true/docklattice/internal/auditgen"
+	"github.com/east-true/docklattice/internal/dockeradapter"
 )
 
 var (

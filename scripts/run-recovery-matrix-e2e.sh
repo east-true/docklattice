@@ -91,9 +91,9 @@ for image in "$server_image" "$agent_image"; do
     [ "$(docker image inspect --format '{{.Id}}' "$image")" = "$image" ] ||
         fail "preflight: image reference did not resolve to its exact requested ID: $image"
 done
-[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$server_image")" = "Dockpilot Server" ] ||
+[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$server_image")" = "DockLattice Server" ] ||
     fail "preflight: Server image is not the production Server target"
-[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$agent_image")" = "Dockpilot Agent" ] ||
+[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$agent_image")" = "DockLattice Agent" ] ||
     fail "preflight: Agent image is not the production Agent target"
 server_version=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$server_image")
 agent_version=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$agent_image")
@@ -116,7 +116,7 @@ case "$runtime_base" in *:*|*'
 [ "$runtime_base" != / ] || fail "preflight: TMPDIR cannot be the filesystem root"
 [ -d "$runtime_base" ] || fail "preflight: TMPDIR does not exist"
 
-prefix="dockpilot-recovery-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+prefix="docklattice-recovery-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 umask 077
 artifact_created=0
 runtime=
@@ -140,10 +140,10 @@ capture_log() {
 
 scrub_runtime() {
     [ -n "${runtime:-}" ] && [ -d "$runtime" ] || return 0
-    case "$runtime" in "$runtime_base"/dockpilot-recovery.*) ;; *) return 1 ;; esac
+    case "$runtime" in "$runtime_base"/docklattice-recovery.*) ;; *) return 1 ;; esac
     docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
-        -v "$runtime:/dockpilot-recovery-runtime" "$server_image" \
-        -c 'rm -rf /dockpilot-recovery-runtime/server /dockpilot-recovery-runtime/agent /dockpilot-recovery-runtime/bootstrap /dockpilot-recovery-runtime/projects' \
+        -v "$runtime:/docklattice-recovery-runtime" "$server_image" \
+        -c 'rm -rf /docklattice-recovery-runtime/server /docklattice-recovery-runtime/agent /docklattice-recovery-runtime/bootstrap /docklattice-recovery-runtime/projects' \
         >/dev/null 2>&1 || return 1
     rmdir "$runtime"
 }
@@ -190,8 +190,8 @@ cleanup() {
 trap cleanup EXIT
 trap 'failure_reason="harness interrupted by signal"; exit 130' HUP INT TERM
 
-runtime=$(mktemp -d "$runtime_base/dockpilot-recovery.XXXXXXXX")
-case "$runtime" in "$runtime_base"/dockpilot-recovery.*) ;; *) fail "mktemp returned an unexpected runtime root" ;; esac
+runtime=$(mktemp -d "$runtime_base/docklattice-recovery.XXXXXXXX")
+case "$runtime" in "$runtime_base"/docklattice-recovery.*) ;; *) fail "mktemp returned an unexpected runtime root" ;; esac
 chmod 0700 "$runtime"
 mkdir "$evidence_dir"
 chmod 0700 "$evidence_dir"
@@ -245,7 +245,7 @@ docker network create --subnet "$(harness_subnet)" "$network" >"$evidence_dir/ne
 start_server() {
     docker run --pull never -d --name "$server" --network "$network" --network-alias server \
         --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-        -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/dockpilot:rw" "$server_image" \
+        -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/docklattice:rw" "$server_image" \
         server --listen 0.0.0.0:8080 --agent-listen 0.0.0.0:8443 --allow-public-bind
 }
 
@@ -292,8 +292,8 @@ wait_active_host() {
 
 issue_token() {
     docker run --pull never --rm --user 65532:65532 \
-        -v "$runtime/server:/var/lib/dockpilot:rw" "$server_image" \
-        server issue-token --state-dir /var/lib/dockpilot --ttl 15m \
+        -v "$runtime/server:/var/lib/docklattice:rw" "$server_image" \
+        server issue-token --state-dir /var/lib/docklattice --ttl 15m \
         >"$runtime/bootstrap/join-token" 2>"$evidence_dir/issue-token.stderr"
     [ "$(wc -c <"$runtime/bootstrap/join-token" | awk '{ print $1 }')" -gt 1 ] || fail "Join Token CLI produced no token"
     docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
@@ -305,7 +305,7 @@ issue_token() {
 start_agent() {
     with_token=$1
     if [ "$with_token" = true ]; then
-        token_args="--join-token-file /var/lib/dockpilot/join-token"
+        token_args="--join-token-file /var/lib/docklattice/join-token"
     else
         token_args=
     fi
@@ -313,12 +313,12 @@ start_agent() {
     # shellcheck disable=SC2086
     docker run --pull never -d --name "$agent" --network "$network" \
         --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-        --group-add "$socket_gid" --label io.dockpilot.role=agent \
+        --group-add "$socket_gid" --label io.docklattice.role=agent \
         -v /var/run/docker.sock:/var/run/docker.sock:rw \
-        -v "$runtime/agent:/var/lib/dockpilot:rw" \
+        -v "$runtime/agent:/var/lib/docklattice:rw" \
         -v "$runtime/projects:$runtime/projects:rw" "$agent_image" agent \
         --server server:8443 --registration-url https://server:8080 \
-        --server-ca /var/lib/dockpilot/server-ca.crt $token_args \
+        --server-ca /var/lib/docklattice/server-ca.crt $token_args \
         --display-name recovery-agent --self-container-name "$agent" \
         --project-root "$runtime/projects"
 }

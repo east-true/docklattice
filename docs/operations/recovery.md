@@ -1,17 +1,17 @@
 # Server and Agent identity recovery
 
-This runbook covers loss of Dockpilot's three independent durable boundaries:
+This runbook covers loss of DockLattice's three independent durable boundaries:
 
 - Server Identity State: `identity/server-identity.json`
 - Server operational/audit database: `server.db`
 - each Agent's state directory, including its stable Agent ID and credential
 
-Stop the affected Dockpilot process before restoring files. Preserve a copy of
+Stop the affected DockLattice process before restoring files. Preserve a copy of
 every surviving file before recovery. A database and Identity State backup are
 a matched trust set only when their `server_identity_id` agrees and the
 Identity State archive generation is not behind the database generation.
 
-Dockpilot never guesses an archive rebind or an existing Agent identity.
+DockLattice never guesses an archive rebind or an existing Agent identity.
 
 ## Recovery matrix
 

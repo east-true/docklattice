@@ -262,7 +262,7 @@ type StatsSender interface{ Send(StatsSample) error }
 // job rather than the protocol's.
 type MetricsMatrixRequest struct{}
 
-// ManagedFilesystem is capacity for a path Dockpilot writes to, deduplicated by
+// ManagedFilesystem is capacity for a path DockLattice writes to, deduplicated by
 // filesystem. It is not an inventory of the host's mounts.
 type ManagedFilesystem struct {
 	Path        string

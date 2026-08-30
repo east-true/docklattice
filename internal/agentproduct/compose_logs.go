@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/east-true/dockpilot/internal/agentops"
-	"github.com/east-true/dockpilot/internal/composeexec"
-	"github.com/east-true/dockpilot/internal/logrelay"
+	"github.com/east-true/docklattice/internal/agentops"
+	"github.com/east-true/docklattice/internal/composeexec"
+	"github.com/east-true/docklattice/internal/logrelay"
 )
 
 const (

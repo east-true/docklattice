@@ -1,4 +1,4 @@
-// Package serverstore owns Dockpilot's canonical Server SQLite database.
+// Package serverstore owns DockLattice's canonical Server SQLite database.
 package serverstore
 
 import (

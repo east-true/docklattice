@@ -30,7 +30,7 @@ for literal in \
     "'{{.CgroupVersion}}'" \
     '/var/run/docker.sock' \
     '--pull never' \
-    'server issue-token --state-dir /var/lib/dockpilot --ttl 15m' \
+    'server issue-token --state-dir /var/lib/docklattice --ttl 15m' \
     'docker run --pull never --rm "$server_image" defaults' \
     'distribution/v1-defaults.json' \
     'defaults_config_dump=PASS' \
@@ -43,7 +43,7 @@ for literal in \
     'does not match the uid derived from the fixture root' \
     'kind:"compose.up"' \
     '/backups' \
-    '-v "$runtime/bootstrap/join-token:/run/secrets/dockpilot-join-token:ro"' \
+    '-v "$runtime/bootstrap/join-token:/run/secrets/docklattice-join-token:ro"' \
     'bootstrap_to_steady_state=PASS' \
     'start_agent false' \
     'Agent identity changed across restart' \

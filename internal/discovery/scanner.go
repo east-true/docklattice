@@ -1,4 +1,4 @@
-// Package discovery implements the filesystem half of Dockpilot Compose
+// Package discovery implements the filesystem half of DockLattice Compose
 // discovery. Docker label collection, project merging, and compose config
 // evaluation intentionally live outside this package.
 package discovery
@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	productconfig "github.com/east-true/dockpilot/internal/config"
+	productconfig "github.com/east-true/docklattice/internal/config"
 )
 
 const (
@@ -34,7 +34,7 @@ var defaultIgnoredDirectories = map[string]struct{}{
 	"build":        {},
 }
 
-// The order mirrors Docker Compose's default discovery contract. Dockpilot
+// The order mirrors Docker Compose's default discovery contract. DockLattice
 // always passes explicit --file arguments after discovery, so it must select
 // the same single base file and optional default override that Compose would
 // have selected implicitly. Passing every filename found in a directory would
@@ -138,21 +138,23 @@ func DefaultConfig(roots ...string) Config {
 type StopReason string
 
 const (
-	StopNone            StopReason = ""
-	StopMaxDirectories  StopReason = "MAX_DIRECTORIES"
-	StopMaxDuration     StopReason = "MAX_DURATION"
-	StopContextCanceled StopReason = "CONTEXT_CANCELED"
-	StopFilesystemError StopReason = "FILESYSTEM_ERROR"
-	StopUnsafePath      StopReason = "UNSAFE_PATH"
-	StopFileUnstable    StopReason = "FILE_UNSTABLE"
+	StopNone             StopReason = ""
+	StopMaxDirectories   StopReason = "MAX_DIRECTORIES"
+	StopMaxDuration      StopReason = "MAX_DURATION"
+	StopContextCanceled  StopReason = "CONTEXT_CANCELED"
+	StopPermissionDenied StopReason = "PERMISSION_DENIED"
+	StopFilesystemError  StopReason = "FILESYSTEM_ERROR"
+	StopUnsafePath       StopReason = "UNSAFE_PATH"
+	StopFileUnstable     StopReason = "FILE_UNSTABLE"
 )
 
 type ScanErrorCode string
 
 const (
-	CodeFilesystem   ScanErrorCode = "FILESYSTEM_ERROR"
-	CodeUnsafePath   ScanErrorCode = "UNSAFE_PATH"
-	CodeFileUnstable ScanErrorCode = "FILE_UNSTABLE"
+	CodePermissionDenied ScanErrorCode = "PERMISSION_DENIED"
+	CodeFilesystem       ScanErrorCode = "FILESYSTEM_ERROR"
+	CodeUnsafePath       ScanErrorCode = "UNSAFE_PATH"
+	CodeFileUnstable     ScanErrorCode = "FILE_UNSTABLE"
 )
 
 // ScanError identifies facts that cannot safely be accepted into discovery.
@@ -542,9 +544,14 @@ func selectDefaultComposeFiles(candidates []File) []File {
 }
 
 func stopReasonForError(err error) StopReason {
+	if errors.Is(err, fs.ErrPermission) {
+		return StopPermissionDenied
+	}
 	var scanError *ScanError
 	if errors.As(err, &scanError) {
 		switch scanError.Code {
+		case CodePermissionDenied:
+			return StopPermissionDenied
 		case CodeUnsafePath:
 			return StopUnsafePath
 		case CodeFileUnstable:

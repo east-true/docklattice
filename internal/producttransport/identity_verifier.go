@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/identity"
+	"github.com/east-true/docklattice/internal/identity"
 )
 
 // IdentityVerifier adapts the Server Identity State credential implementation

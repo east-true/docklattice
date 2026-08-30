@@ -113,9 +113,9 @@ for image in "$server_image" "$agent_image" "$fixture_image"; do
     [ "$(docker image inspect --format '{{.Id}}' "$image")" = "$image" ] ||
         fail "preflight: image reference did not resolve to its exact requested ID: $image"
 done
-[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$server_image")" = "Dockpilot Server" ] ||
+[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$server_image")" = "DockLattice Server" ] ||
     fail "preflight: Server image is not the production Server target"
-[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$agent_image")" = "Dockpilot Agent" ] ||
+[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$agent_image")" = "DockLattice Agent" ] ||
     fail "preflight: Agent image is not the production Agent target"
 server_version=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$server_image")
 agent_version=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$agent_image")
@@ -134,7 +134,7 @@ runtime_base=${TMPDIR:-/tmp}
 case "$runtime_base" in /*) ;; *) fail "preflight: TMPDIR must be absolute" ;; esac
 [ -d "$runtime_base" ] || fail "preflight: TMPDIR does not exist"
 
-prefix="dockpilot-hardening-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+prefix="docklattice-hardening-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 umask 077
 artifact_created=0
 runtime=
@@ -163,7 +163,7 @@ remove_compose_objects() {
 
 scrub_runtime() {
     [ -n "${runtime:-}" ] && [ -d "$runtime" ] || return 0
-    case "$runtime" in "$runtime_base"/dockpilot-hardening.*) ;; *) return 1 ;; esac
+    case "$runtime" in "$runtime_base"/docklattice-hardening.*) ;; *) return 1 ;; esac
     docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
         -v "$runtime:/hardening-runtime" "$server_image" \
         -c 'rm -rf /hardening-runtime/server /hardening-runtime/agent /hardening-runtime/bootstrap /hardening-runtime/projects /hardening-runtime/observed-operations' \
@@ -216,8 +216,8 @@ cleanup() {
 trap cleanup EXIT
 trap 'failure_reason="harness interrupted by signal"; exit 130' HUP INT TERM
 
-runtime=$(mktemp -d "$runtime_base/dockpilot-hardening.XXXXXXXX")
-case "$runtime" in "$runtime_base"/dockpilot-hardening.*) ;; *) fail "mktemp returned an unexpected runtime root" ;; esac
+runtime=$(mktemp -d "$runtime_base/docklattice-hardening.XXXXXXXX")
+case "$runtime" in "$runtime_base"/docklattice-hardening.*) ;; *) fail "mktemp returned an unexpected runtime root" ;; esac
 chmod 0700 "$runtime"
 mkdir "$evidence_dir"
 chmod 0700 "$evidence_dir"
@@ -288,7 +288,7 @@ docker network create --subnet "$(harness_subnet)" "$network" >"$evidence_dir/ne
 start_server() {
     docker run --pull never -d --name "$server" --network "$network" --network-alias server \
         --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-        -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/dockpilot:rw" "$server_image" \
+        -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/docklattice:rw" "$server_image" \
         server --listen 0.0.0.0:8080 --agent-listen 0.0.0.0:8443 --allow-public-bind
 }
 
@@ -397,8 +397,8 @@ wait_active_host() {
 
 issue_token() {
     docker run --pull never --rm --user 65532:65532 \
-        -v "$runtime/server:/var/lib/dockpilot:rw" "$server_image" \
-        server issue-token --state-dir /var/lib/dockpilot --ttl 15m \
+        -v "$runtime/server:/var/lib/docklattice:rw" "$server_image" \
+        server issue-token --state-dir /var/lib/docklattice --ttl 15m \
         >"$runtime/bootstrap/join-token" 2>"$evidence_dir/issue-token.stderr"
     [ "$(wc -c <"$runtime/bootstrap/join-token" | awk '{ print $1 }')" -gt 1 ] || fail "Join Token CLI produced no token"
     docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
@@ -410,19 +410,19 @@ issue_token() {
 start_agent() {
     with_token=$1
     if [ "$with_token" = true ]; then
-        token_args="--join-token-file /var/lib/dockpilot/join-token"
+        token_args="--join-token-file /var/lib/docklattice/join-token"
     else
         token_args=
     fi
     # shellcheck disable=SC2086
     docker run --pull never -d --name "$agent" --network "$network" \
         --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-        --group-add "$socket_gid" --label io.dockpilot.role=agent \
+        --group-add "$socket_gid" --label io.docklattice.role=agent \
         -v /var/run/docker.sock:/var/run/docker.sock:rw \
-        -v "$runtime/agent:/var/lib/dockpilot:rw" \
+        -v "$runtime/agent:/var/lib/docklattice:rw" \
         -v "$runtime/projects:$runtime/projects:rw" "$agent_image" agent \
         --server server:8443 --registration-url https://server:8080 \
-        --server-ca /var/lib/dockpilot/server-ca.crt $token_args \
+        --server-ca /var/lib/docklattice/server-ca.crt $token_args \
         --display-name hardening-agent --self-container-name "$agent" \
         --project-root "$runtime/projects"
 }
@@ -547,7 +547,7 @@ if selected db-restore; then
     activity=1
     while [ "$activity" -le 6 ]; do
         docker run --pull never --rm --name "$prefix-audit-activity-$activity" \
-            --label io.dockpilot.role=hardening-fixture --entrypoint /bin/sh \
+            --label io.docklattice.role=hardening-fixture --entrypoint /bin/sh \
             "$fixture_image" -c 'exit 0' >/dev/null 2>&1 || true
         activity=$((activity + 1))
     done
@@ -594,7 +594,7 @@ track_operation() { printf '%s\n' "$1" >>"$observed_operations"; }
 
 agent_state_dir() {
     docker exec "$agent" /bin/sh -c '
-        for candidate in /var/lib/dockpilot /constrained/state; do
+        for candidate in /var/lib/docklattice /constrained/state; do
             if [ -e "$candidate/identity/agent-state.json" ] || [ -e "$candidate/agent-state.json" ]; then
                 printf %s "$candidate"
                 exit 0
@@ -652,7 +652,7 @@ check_invariants() {
         >"$prefix.restore-journal.txt" 2>&1 || true
     [ ! -s "$prefix.restore-journal.txt" ] ||
         fail "$scenario: invariant: a restore journal survived a settled scenario"
-    ls -A "$runtime/projects" | grep -e '^\.dockpilot-' >"$prefix.staging.txt" 2>/dev/null || true
+    ls -A "$runtime/projects" | grep -e '^\.docklattice-' >"$prefix.staging.txt" 2>/dev/null || true
     [ ! -s "$prefix.staging.txt" ] ||
         fail "$scenario: invariant: staging files were orphaned in the project directory"
 
@@ -674,21 +674,21 @@ check_invariants() {
        .coverage.ack.seq < .coverage.delivery_next.seq)' "$prefix.audit.json" >/dev/null ||
         fail "$scenario: invariant: the acknowledged cursor passed the Server delivery cursor"
 
-    # 14. Docker's own answer and Dockpilot's view agree about this run's containers.
-    docker ps --all --filter "label=io.dockpilot.role=agent" --format '{{.ID}}' >"$prefix.docker-agent.txt"
+    # 14. Docker's own answer and DockLattice's view agree about this run's containers.
+    docker ps --all --filter "label=io.docklattice.role=agent" --format '{{.ID}}' >"$prefix.docker-agent.txt"
     api GET "$base_url/api/v1/hosts/$agent_id/containers" '' "$prefix.containers.json"
     while read -r container; do
         [ -n "$container" ] || continue
         jq -e --arg id "$container" 'any(.[]; .id | startswith($id))' "$prefix.containers.json" >/dev/null ||
-            fail "$scenario: invariant: container $container exists in Docker but not in the Dockpilot view"
+            fail "$scenario: invariant: container $container exists in Docker but not in the DockLattice view"
     done <"$prefix.docker-agent.txt"
 
-    # 15. The Compose file Dockpilot reads is the file on disk.
+    # 15. The Compose file DockLattice reads is the file on disk.
     api GET "$base_url/api/v1/projects/$project_uid/files?path=compose.yaml" '' "$prefix.file.json"
     on_disk=$(sha256sum "$runtime/projects/compose.yaml" | awk '{ print $1 }')
     reported=$(jq -r '.sha256' "$prefix.file.json")
     [ "$on_disk" = "$reported" ] ||
-        fail "$scenario: invariant: Dockpilot reported compose.yaml as $reported, disk says $on_disk"
+        fail "$scenario: invariant: DockLattice reported compose.yaml as $reported, disk says $on_disk"
 
     # 16. The project secret never reached Audit, an Operation result, or a log.
     if grep -q -e "$secret_marker" "$prefix.audit.json" "$prefix.probe.json" "$prefix.file.json"; then
@@ -1017,7 +1017,7 @@ fi
 # ------------------------------------------------- case: concurrent edit
 # 10.6 is CORE: a write carrying a stale expected_sha256 is refused with 409 and
 # the current content, so a long-open editor cannot silently overwrite a change
-# made outside Dockpilot.
+# made outside DockLattice.
 if selected concurrent-edit; then
     api GET "$base_url/api/v1/projects/$project_uid/files?path=compose.yaml" '' \
         "$evidence_dir/concurrent-edit.read.json"
@@ -1277,7 +1277,7 @@ fi
 if selected disk-pressure || selected audit-gap; then
     docker stop "$agent" >/dev/null
     mkdir "$runtime/bootstrap/agent-seed"
-    docker cp "$agent:/var/lib/dockpilot/." "$runtime/bootstrap/agent-seed" >/dev/null 2>&1 ||
+    docker cp "$agent:/var/lib/docklattice/." "$runtime/bootstrap/agent-seed" >/dev/null 2>&1 ||
         fail "disk-pressure: could not copy the Agent state out for seeding"
     # docker cp writes as the invoking user, so the seed has to be handed to the
     # Agent's UID before the constrained container can read it.
@@ -1289,14 +1289,14 @@ if selected disk-pressure || selected audit-gap; then
     # real eviction rather than a synthetic flag.
     docker run --pull never -d --name "$agent" --network "$network" \
         --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-        --group-add "$socket_gid" --label io.dockpilot.role=agent \
+        --group-add "$socket_gid" --label io.docklattice.role=agent \
         --mount type=tmpfs,destination=/constrained,tmpfs-size=8m,tmpfs-mode=0777 \
         -v /var/run/docker.sock:/var/run/docker.sock:rw \
         -v "$runtime/bootstrap/agent-seed:/seed:ro" \
         -v "$runtime/projects:$runtime/projects:rw" \
         --entrypoint /bin/sh "$agent_image" -c \
         "mkdir -m 0700 /constrained/state && cp -a /seed/. /constrained/state/ && \
-         exec /usr/local/bin/dockpilot agent --state-dir /constrained/state \
+         exec /usr/local/bin/docklattice agent --state-dir /constrained/state \
            --server server:8443 --registration-url https://server:8080 \
            --server-ca /constrained/state/server-ca.crt \
            --display-name hardening-agent --self-container-name '$agent' \

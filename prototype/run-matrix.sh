@@ -6,7 +6,7 @@ set -euo pipefail
 # prebuilt image; all other controls intentionally have fixed defaults.
 
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-image=${PROTOTYPE_IMAGE:-dockpilot-transport-prototype:local}
+image=${PROTOTYPE_IMAGE:-docklattice-transport-prototype:local}
 artifact_root=${1:-"$repo_dir/artifacts/transport-prototype/official"}
 mkdir -p "$artifact_root"
 
@@ -89,7 +89,7 @@ run_trial() {
   else
     network_name="dpn-${suffix}"
     docker network create "$network_name" >/dev/null
-    server_network=(--network "$network_name" --network-alias prototype-server --cap-add NET_ADMIN -e DOCKPILOT_NETEM=1 -e DOCKPILOT_NETEM_PROOF=/out/network-control-server.txt)
+    server_network=(--network "$network_name" --network-alias prototype-server --cap-add NET_ADMIN -e DOCKLATTICE_NETEM=1 -e DOCKLATTICE_NETEM_PROOF=/out/network-control-server.txt)
     endpoint="prototype-server:8443"
     listen="0.0.0.0:8443"
   fi
@@ -122,7 +122,7 @@ run_trial() {
     if [[ "$condition" == "loopback" ]]; then
       network_args=(--network host)
     else
-      network_args=(--network "$network_name" --cap-add NET_ADMIN -e DOCKPILOT_NETEM=1 -e "DOCKPILOT_NETEM_PROOF=/out/network-control-agent-$padded.txt")
+      network_args=(--network "$network_name" --cap-add NET_ADMIN -e DOCKLATTICE_NETEM=1 -e "DOCKLATTICE_NETEM_PROOF=/out/network-control-agent-$padded.txt")
     fi
     docker run -d --name "$name" "${network_args[@]}" \
       --memory 512m --memory-swap 512m --cpus 1 --ulimit nofile=4096:4096 \

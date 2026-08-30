@@ -621,7 +621,7 @@ type MatrixTotals struct {
 	UptimeKnown bool          `json:"uptime_known"`
 }
 
-// MatrixFilesystem is capacity for one path Dockpilot writes to. Unavailable is
+// MatrixFilesystem is capacity for one path DockLattice writes to. Unavailable is
 // a fact about that path, not about the host.
 type MatrixFilesystem struct {
 	Path        string `json:"path"`
@@ -634,7 +634,7 @@ type MatrixFilesystem struct {
 // MatrixHostRow is the Docker workload an Agent manages, against the capacity
 // its Engine reports. It is deliberately not host OS metrics, and a console
 // must not label it as such: CPUCapacity and MemoryCapacity are what the
-// machine has, Totals is what Dockpilot's containers are using, and what is
+// machine has, Totals is what DockLattice's containers are using, and what is
 // excluded from that is stated rather than papered over.
 type MatrixHostRow struct {
 	CPUCapacity       uint32             `json:"cpu_capacity"`

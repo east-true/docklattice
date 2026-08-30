@@ -425,7 +425,7 @@ func randomTempName() (string, error) {
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", fmt.Errorf("safefile: random staged name: %w", err)
 	}
-	return ".dockpilot-stage-" + hex.EncodeToString(raw[:]), nil
+	return ".docklattice-stage-" + hex.EncodeToString(raw[:]), nil
 }
 
 func writeAll(fd int, content []byte) error {

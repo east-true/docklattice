@@ -26,11 +26,11 @@ func TestDefaultConfig(t *testing.T) {
 	if server.Server.AllowPublicBind {
 		t.Fatal("public bind is enabled by default")
 	}
-	if server.Server.StateDir != "/var/lib/dockpilot" {
+	if server.Server.StateDir != "/var/lib/docklattice" {
 		t.Fatalf("server state dir = %q", server.Server.StateDir)
 	}
 	agent := DefaultConfig(ModeAgent)
-	if agent.Agent.StateDir != "/var/lib/dockpilot" {
+	if agent.Agent.StateDir != "/var/lib/docklattice" {
 		t.Fatalf("agent state dir = %q", agent.Agent.StateDir)
 	}
 	if err := server.Defaults.Validate(); err != nil {

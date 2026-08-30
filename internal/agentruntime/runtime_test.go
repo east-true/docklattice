@@ -12,15 +12,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/agentsafety"
-	"github.com/east-true/dockpilot/internal/agentstate"
-	"github.com/east-true/dockpilot/internal/auditevents"
-	"github.com/east-true/dockpilot/internal/auditgen"
-	"github.com/east-true/dockpilot/internal/auditwal"
-	"github.com/east-true/dockpilot/internal/dockeradapter"
-	"github.com/east-true/dockpilot/internal/identity"
-	"github.com/east-true/dockpilot/internal/producttransport"
-	"github.com/east-true/dockpilot/internal/registrationhttp"
+	"github.com/east-true/docklattice/internal/agentsafety"
+	"github.com/east-true/docklattice/internal/agentstate"
+	"github.com/east-true/docklattice/internal/auditevents"
+	"github.com/east-true/docklattice/internal/auditgen"
+	"github.com/east-true/docklattice/internal/auditwal"
+	"github.com/east-true/docklattice/internal/dockeradapter"
+	"github.com/east-true/docklattice/internal/identity"
+	"github.com/east-true/docklattice/internal/producttransport"
+	"github.com/east-true/docklattice/internal/registrationhttp"
 )
 
 func TestBootRegistersOverTLSAndCleanRestartPreservesIdentity(t *testing.T) {
@@ -469,8 +469,8 @@ func (d *fakeDocker) identification() agentsafety.Identification {
 
 func labelledSelf() []dockeradapter.Container {
 	return []dockeradapter.Container{{
-		ID: "agent-container", Names: []string{"dockpilot-agent"},
-		Labels: map[string]string{agentsafety.AgentRoleLabel: agentsafety.AgentRoleValue, agentsafety.ComposeProjectLabel: "dockpilot"},
+		ID: "agent-container", Names: []string{"docklattice-agent"},
+		Labels: map[string]string{agentsafety.AgentRoleLabel: agentsafety.AgentRoleValue, agentsafety.ComposeProjectLabel: "docklattice"},
 	}}
 }
 

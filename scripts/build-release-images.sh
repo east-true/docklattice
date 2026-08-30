@@ -43,7 +43,7 @@ docker buildx version >/dev/null
 
 mkdir -p dist
 for target in server agent; do
-    output="dist/dockpilot-${target}-${version}.oci.tar"
+    output="dist/docklattice-${target}-${version}.oci.tar"
     if [ -e "$output" ] || [ -e "$output.sha256" ]; then
         printf 'refusing to overwrite existing release output: %s\n' "$output" >&2
         exit 1

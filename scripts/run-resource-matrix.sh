@@ -81,9 +81,9 @@ docker image inspect "$agent_image" >/dev/null 2>&1 || fail "preflight: Agent im
 docker image inspect "$fixture_image" >/dev/null 2>&1 || fail "preflight: fixture image is unavailable: $fixture_image"
 [ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}' "$server_image")" = Apache-2.0 ] ||
     fail "preflight: Server image lacks the production license label"
-[ "$(docker image inspect --format '{{index .Config.Labels "io.dockpilot.role"}}' "$agent_image")" = agent ] ||
-    fail "preflight: Agent image lacks io.dockpilot.role=agent"
-compose_label=$(docker image inspect --format '{{index .Config.Labels "io.dockpilot.compose.version"}}' "$agent_image")
+[ "$(docker image inspect --format '{{index .Config.Labels "io.docklattice.role"}}' "$agent_image")" = agent ] ||
+    fail "preflight: Agent image lacks io.docklattice.role=agent"
+compose_label=$(docker image inspect --format '{{index .Config.Labels "io.docklattice.compose.version"}}' "$agent_image")
 [ -n "$compose_label" ] && [ "$compose_label" != '<no value>' ] ||
     fail "preflight: Agent image lacks its bundled Compose version label"
 
@@ -98,7 +98,7 @@ required_kib=$((artifact_max_bytes / 1024 + 1048576))
 # Compose normalizes project names to lowercase before writing its
 # com.docker.compose.project label. An uppercase prefix would make every label
 # filter in this harness and in the workload driver miss.
-prefix="dockpilot-resource-$(date -u +%Y%m%dT%H%M%SZ | tr '[:upper:]' '[:lower:]')-$$"
+prefix="docklattice-resource-$(date -u +%Y%m%dT%H%M%SZ | tr '[:upper:]' '[:lower:]')-$$"
 current_server=
 current_agent=
 current_network=
@@ -139,8 +139,8 @@ scrub_runtime() {
         *) printf 'refusing to scrub unexpected runtime path: %s\n' "$runtime" >&2; return 1 ;;
     esac
     docker run --rm --user 0:0 --entrypoint /bin/sh \
-        -v "$runtime:/dockpilot-resource-runtime" "$server_image" \
-        -c 'rm -rf /dockpilot-resource-runtime/server /dockpilot-resource-runtime/agent /dockpilot-resource-runtime/bootstrap /dockpilot-resource-runtime/projects' \
+        -v "$runtime:/docklattice-resource-runtime" "$server_image" \
+        -c 'rm -rf /docklattice-resource-runtime/server /docklattice-resource-runtime/agent /docklattice-resource-runtime/bootstrap /docklattice-resource-runtime/projects' \
         >/dev/null 2>&1
 }
 
@@ -533,7 +533,7 @@ harness_subnet() {
         --memory 1g --memory-swap 1g --cpus 1 --pids-limit 512 --ulimit nofile=4096:4096 \
         --log-driver local --log-opt max-size=5m --log-opt max-file=1 --log-opt compress=false \
         -e GODEBUG=gctrace=1 -p 127.0.0.1::8080 \
-        -v "$runtime/server:/var/lib/dockpilot" "$server_image" \
+        -v "$runtime/server:/var/lib/docklattice" "$server_image" \
         server --listen 0.0.0.0:8080 --agent-listen 0.0.0.0:8443 --allow-public-bind \
         >"$evidence/server.container-id"
     server_port=$(docker port "$server" 8080/tcp | awk -F: 'NR == 1 { print $NF }')
@@ -542,8 +542,8 @@ harness_subnet() {
         fail "Server did not become ready"
 
     docker run --rm --user 65532:65532 \
-        -v "$runtime/server:/var/lib/dockpilot" "$server_image" \
-        server issue-token --state-dir /var/lib/dockpilot --ttl 15m \
+        -v "$runtime/server:/var/lib/docklattice" "$server_image" \
+        server issue-token --state-dir /var/lib/docklattice --ttl 15m \
         >"$runtime/bootstrap/join-token" 2>"$evidence/issue-token.stderr"
     cp "$runtime/bootstrap/server-ca.crt" "$runtime/agent/server-ca.crt"
     cp "$runtime/bootstrap/join-token" "$runtime/agent/join-token"
@@ -555,12 +555,12 @@ harness_subnet() {
     docker run -d --name "$agent" --network "$network" \
         --memory 512m --memory-swap 512m --cpus 1 --pids-limit 512 --ulimit nofile=4096:4096 \
         --log-driver local --log-opt max-size=5m --log-opt max-file=1 --log-opt compress=false \
-        --group-add "$socket_gid" --label io.dockpilot.role=agent -e GODEBUG=gctrace=1 \
+        --group-add "$socket_gid" --label io.docklattice.role=agent -e GODEBUG=gctrace=1 \
         -v /var/run/docker.sock:/var/run/docker.sock:rw \
-        -v "$runtime/agent:/var/lib/dockpilot" \
+        -v "$runtime/agent:/var/lib/docklattice" \
         -v "$runtime/projects:$runtime/projects:rw" "$agent_image" agent \
         --server server:8443 --registration-url https://server:8080 \
-        --server-ca /var/lib/dockpilot/server-ca.crt --join-token-file /var/lib/dockpilot/join-token \
+        --server-ca /var/lib/docklattice/server-ca.crt --join-token-file /var/lib/docklattice/join-token \
         --display-name "resource-agent-$trial" --self-container-name "$agent" \
         --project-root "$runtime/projects" >"$evidence/agent.container-id"
 
@@ -592,23 +592,23 @@ harness_subnet() {
     samples="$evidence/resource-samples.tsv"
     printf 'at\trole\tpid\trss_kib\tfd_count\tmemory_current\tmemory_peak\tmemory_max\tevents_max\toom\toom_kill\tanon\tfile\tinactive_file\tsock\tkernel\tslab_unreclaimable\tfile_dirty\tfile_writeback\tpressure_some_avg10_total\tpressure_full_avg10_total\n' >"$samples"
     verdict="$evidence/workload-verdict.env"
-    DOCKPILOT_BASE_URL="https://127.0.0.1:$server_port" \
-    DOCKPILOT_CA_FILE="$runtime/bootstrap/server-ca.crt" \
-    DOCKPILOT_DASHBOARD_FILE="$dashboard" \
-    DOCKPILOT_PROJECT_ROOT="$runtime/projects" \
-    DOCKPILOT_COMPOSE_PROJECT="$fixture_project" \
-    DOCKPILOT_SERVER_CONTAINER="$server" \
-    DOCKPILOT_AGENT_CONTAINER="$agent" \
-    DOCKPILOT_AUDIT_URL="https://127.0.0.1:$server_port/api/v1/hosts" \
-    DOCKPILOT_AGENT_RECONNECT_HELPER="$reconnect_helper" \
-    DOCKPILOT_AGENT_IMAGE="$agent_image" \
-    DOCKPILOT_AGENT_NETWORK="$network" \
-    DOCKPILOT_AGENT_STATE_DIR="$runtime/agent" \
-    DOCKPILOT_AGENT_SOCKET_GID="$socket_gid" \
-    DOCKPILOT_AGENT_DISPLAY_NAME="resource-agent-$trial" \
-    DOCKPILOT_RECONNECT_MARKER="$evidence/agent-reconnect.active" \
-    DOCKPILOT_RECONNECT_CGROUP_EVIDENCE="$evidence/agent.pre-reconnect.memory-events.txt" \
-    DOCKPILOT_RECONNECT_GCTRACE_EVIDENCE="$evidence/agent.pre-reconnect.gctrace.log" \
+    DOCKLATTICE_BASE_URL="https://127.0.0.1:$server_port" \
+    DOCKLATTICE_CA_FILE="$runtime/bootstrap/server-ca.crt" \
+    DOCKLATTICE_DASHBOARD_FILE="$dashboard" \
+    DOCKLATTICE_PROJECT_ROOT="$runtime/projects" \
+    DOCKLATTICE_COMPOSE_PROJECT="$fixture_project" \
+    DOCKLATTICE_SERVER_CONTAINER="$server" \
+    DOCKLATTICE_AGENT_CONTAINER="$agent" \
+    DOCKLATTICE_AUDIT_URL="https://127.0.0.1:$server_port/api/v1/hosts" \
+    DOCKLATTICE_AGENT_RECONNECT_HELPER="$reconnect_helper" \
+    DOCKLATTICE_AGENT_IMAGE="$agent_image" \
+    DOCKLATTICE_AGENT_NETWORK="$network" \
+    DOCKLATTICE_AGENT_STATE_DIR="$runtime/agent" \
+    DOCKLATTICE_AGENT_SOCKET_GID="$socket_gid" \
+    DOCKLATTICE_AGENT_DISPLAY_NAME="resource-agent-$trial" \
+    DOCKLATTICE_RECONNECT_MARKER="$evidence/agent-reconnect.active" \
+    DOCKLATTICE_RECONNECT_CGROUP_EVIDENCE="$evidence/agent.pre-reconnect.memory-events.txt" \
+    DOCKLATTICE_RECONNECT_GCTRACE_EVIDENCE="$evidence/agent.pre-reconnect.gctrace.log" \
     RESOURCE_FIXTURE_IMAGE="$fixture_image" \
     RESOURCE_VERDICT_FILE="$verdict" \
     RESOURCE_CASE_SECONDS="$case_seconds" \

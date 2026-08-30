@@ -7,12 +7,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/east-true/dockpilot/internal/agentprojects"
-	"github.com/east-true/dockpilot/internal/composeexec"
-	"github.com/east-true/dockpilot/internal/logrelay"
-	"github.com/east-true/dockpilot/internal/producttransport"
-	"github.com/east-true/dockpilot/internal/projectmodel"
-	"github.com/east-true/dockpilot/internal/safefile"
+	"github.com/east-true/docklattice/internal/agentprojects"
+	"github.com/east-true/docklattice/internal/composeexec"
+	"github.com/east-true/docklattice/internal/logrelay"
+	"github.com/east-true/docklattice/internal/producttransport"
+	"github.com/east-true/docklattice/internal/projectmodel"
+	"github.com/east-true/docklattice/internal/safefile"
 )
 
 const composeLogProjectUID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

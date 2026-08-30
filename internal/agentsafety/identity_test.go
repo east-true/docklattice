@@ -8,9 +8,9 @@ import (
 func TestIdentifySelfLabelPrecedenceAndProjectProtection(t *testing.T) {
 	containers := []Container{
 		{ID: "configured", Name: "configured-agent"},
-		{ID: "agent-b", Name: "/agent-b", Labels: map[string]string{AgentRoleLabel: AgentRoleValue, ComposeProjectLabel: "dockpilot-b"}},
-		{ID: "sibling-b", Labels: map[string]string{ComposeProjectLabel: "dockpilot-b"}},
-		{ID: "agent-a", Labels: map[string]string{AgentRoleLabel: AgentRoleValue, ComposeProjectLabel: "dockpilot-a"}},
+		{ID: "agent-b", Name: "/agent-b", Labels: map[string]string{AgentRoleLabel: AgentRoleValue, ComposeProjectLabel: "docklattice-b"}},
+		{ID: "sibling-b", Labels: map[string]string{ComposeProjectLabel: "docklattice-b"}},
+		{ID: "agent-a", Labels: map[string]string{AgentRoleLabel: AgentRoleValue, ComposeProjectLabel: "docklattice-a"}},
 		{ID: "unrelated", Labels: map[string]string{ComposeProjectLabel: "other"}},
 	}
 	got := IdentifySelf(containers, SelfConfig{ContainerID: "configured"})
@@ -23,7 +23,7 @@ func TestIdentifySelfLabelPrecedenceAndProjectProtection(t *testing.T) {
 	if !reflect.DeepEqual(got.ProtectedContainerIDs, []string{"agent-a", "agent-b", "sibling-b"}) {
 		t.Fatalf("protected containers = %v", got.ProtectedContainerIDs)
 	}
-	if !reflect.DeepEqual(got.ProtectedComposeProjects, []string{"dockpilot-a", "dockpilot-b"}) {
+	if !reflect.DeepEqual(got.ProtectedComposeProjects, []string{"docklattice-a", "docklattice-b"}) {
 		t.Fatalf("protected projects = %v", got.ProtectedComposeProjects)
 	}
 }

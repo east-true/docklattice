@@ -3,7 +3,7 @@
 Status: implemented and validated, revision 2, except the §13 matrix view,
 which is deferred. §2 items 1-3 have shipped; item 4 has not.
 
-Goal: an operator opens the console and sees, for every Docker host Dockpilot
+Goal: an operator opens the console and sees, for every Docker host DockLattice
 manages and everything running on it, what it is using right now. Nothing is
 stored, nothing is alerted on, and nothing about Audit or command handling
 changes.
@@ -121,7 +121,7 @@ The network case settles it: the official deployment is a container, and host
 network RX/TX read this way would be the Agent's own traffic presented as the
 host's. The others happen to be right on this kernel with no `/proc`
 virtualization in the way — but that is a property of the environment, not a
-promise Dockpilot can make for every host it is installed on.
+promise DockLattice can make for every host it is installed on.
 
 So v1 does not read host `/proc` at all. The host row is **the Docker workload
 this Agent manages**, built from sources that mean the same thing in every
@@ -132,12 +132,12 @@ deployment:
 | logical CPU count, memory capacity        | Docker Engine `info` (`NCPU`, `MemTotal` bytes)           | the daemon runs on the host                                             |
 | containers running / total                | Docker Engine `info`                                      | same                                                                    |
 | CPU / memory / network / block I/O in use | sum of the container samples in this frame                | measured per container by the Engine                                    |
-| managed filesystems: total and free       | `statfs` on discovery roots and the Agent state directory | these are the paths Dockpilot writes to, whatever they are mounted from |
+| managed filesystems: total and free       | `statfs` on discovery roots and the Agent state directory | these are the paths DockLattice writes to, whatever they are mounted from |
 
 `dockeradapter` gained an `Info()` accessor.
 
 The row is labelled as what it is. It is not "Host CPU" — it is the workload
-Dockpilot manages on that host, next to the capacity the Engine reports. An
+DockLattice manages on that host, next to the capacity the Engine reports. An
 operator reading it is not misled about what is excluded, and the honest gap is
 stated in the UI rather than papered over with a number that is right on some
 hosts.

@@ -63,9 +63,9 @@ func EvaluateV1Policy(models []Service) (V1Policy, error) {
 		case !model.Active:
 			decision.UnavailableReason = "Service is excluded by an inactive Compose profile"
 		case model.Image == "":
-			decision.UnavailableReason = "Dockpilot v1 does not build Images; this Service has no declared Image"
+			decision.UnavailableReason = "DockLattice v1 does not build Images; this Service has no declared Image"
 		case model.HasBuild && model.PullPolicy == "build":
-			decision.UnavailableReason = "Compose pull_policy requires an Image build, which Dockpilot v1 does not perform"
+			decision.UnavailableReason = "Compose pull_policy requires an Image build, which DockLattice v1 does not perform"
 		default:
 			decision.PullAvailable = true
 			blocked, err := buildRequiredClosure(name, byModel)
@@ -89,7 +89,7 @@ func EvaluateV1Policy(models []Service) (V1Policy, error) {
 	}
 	if len(projectBlocked) != 0 {
 		policy.ProjectUpAvailable = false
-		policy.ProjectUpReason = "Dockpilot v1 does not build Images; build-required Services: " + strings.Join(projectBlocked, ", ")
+		policy.ProjectUpReason = "DockLattice v1 does not build Images; build-required Services: " + strings.Join(projectBlocked, ", ")
 	}
 	return policy, nil
 }

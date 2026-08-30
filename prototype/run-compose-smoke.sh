@@ -12,8 +12,8 @@ if [[ ! $duration =~ ^([1-9][0-9]*)s$ ]]; then
 fi
 duration_seconds=${BASH_REMATCH[1]}
 work=$(mktemp -d)
-project="dockpilot-compose-smoke-$UID-$$"
-image="dockpilot-compose-smoke:$UID-$$"
+project="docklattice-compose-smoke-$UID-$$"
+image="docklattice-compose-smoke:$UID-$$"
 image_created=false
 cleanup() {
   COMPOSE_SMOKE_IMAGE=$image "$docker_bin" compose \

@@ -1,6 +1,6 @@
 # Release evidence
 
-The Dockpilot v1 implementation is complete. Every phase of the historical
+The DockLattice v1 implementation is complete. Every phase of the historical
 [`v1 implementation plan`](v1-implementation-plan.md) has passed. The
 hardening, abuse, and recovery matrices were executed against release images
 built from revision `fd04135`; the resource matrix, clean-host installation,
@@ -14,7 +14,7 @@ did *not* measure.
 
 ## Published version
 
-[`v0.0.0`](https://github.com/east-true/dockpilot/releases/tag/v0.0.0) is the
+[`v0.0.0`](https://github.com/east-true/docklattice/releases/tag/v0.0.0) is the
 first source-only pre-release. Its tag CI passed before publication. GitHub
 provides source archives for the release; it does not include signed
 Server/Agent Images or prebuilt binaries.
@@ -39,7 +39,7 @@ using a mutable tag.
 | [Reproducible distribution](distribution.md) | PASS | `linux/amd64` and `linux/arm64` release images whose two independent build runs produced byte-identical archives. |
 | [Multi-Agent lab](multi-agent-lab.md) | PASS | Three Agents, each on its own Docker Engine. One host partitioned, daemon-restarted, killed, or filled up must not affect the others; a crossed Agent/project pair must be refused; unequal backlogs must all be delivered. Found and now pins the dashboard heartbeat defect. |
 | [Power cut](power-cut.md) | PASS | A libvirt guest losing power mid-write. The file the API had acknowledged survived whole; the acknowledgement in flight at the cut landed too. |
-| [Long-running soak](soak.md) | STAGE 1 PASS (at `fd04135`) | Accumulation that no injected fault can show. One hour of active workload - 113 cycles, 254 stream opens and closes, 84 operations, 9 reconnects - left descriptors and threads flat, Agent state settled, Audit lag at 1, and no OOM, 5xx, or SQLite contention. Stages 2 and 3 outstanding. |
+| [Long-running soak](soak.md) | PRE-RENAME BASELINE PASS; CURRENT RERUN REQUIRED | At `7249c29`, one hour active, two hours mixed, and eight hours mixed overnight left descriptors flat, Agent state settled, Audit caught up, and no OOM, 5xx, or SQLite contention. The renamed release revision still needs this gate. |
 
 ## Re-running the matrices, and the disposable-VM lab
 
@@ -53,6 +53,11 @@ runs used images built from a working tree rather than a tagged revision, so
 each is recorded as a second execution inside its own gate document rather than
 replacing the release evidence.
 
+All three soak stages were subsequently established on a quiet disposable VM
+at revision `7249c29`; their exact Image IDs and checksummed evidence are
+recorded in [`soak.md`](soak.md). They are retained as a behavioral baseline,
+not as validation of the later DockLattice identity migration.
+
 Three things could not run on a working machine at all, and now run in
 disposable libvirt guests created by
 [`../../scripts/vm-lab-provision.sh`](../../scripts/vm-lab-provision.sh):
@@ -60,7 +65,7 @@ disposable libvirt guests created by
 | Needs | Why a workstation cannot host it | Gate |
 |---|---|---|
 | a real `systemctl restart docker` | stops every container on the machine | [hardening matrix](hardening-matrix-e2e.md), third execution |
-| a genuinely clean host | the gate is defined for a machine where Dockpilot has never run | [clean-host installation](clean-host-install-e2e.md), second execution |
+| a genuinely clean host | the gate is defined for a machine where DockLattice has never run | [clean-host installation](clean-host-install-e2e.md), second execution |
 | an abrupt power cut | only a hypervisor can take the power away | [power cut](power-cut.md) |
 
 The [multi-Agent lab](multi-agent-lab.md) runs there too, for a different
@@ -86,12 +91,13 @@ point:
   ownership row — Agent/Server memory — to `validated`. Every other row still
   names the final evidence it lacks. The resource matrix was defined to produce
   memory evidence, so it promotes memory evidence and nothing else.
-- The [soak](soak.md) has passed its first stage and no more. One hour of
-  active workload is evidence about an hour; the overnight soak the plan
-  requires before a release candidate is signed **has not been run**. Both RSS
-  series rose in every quarter of that hour - by 3.22% and 2.45%, well inside
-  tolerance, but monotonically - which is precisely the reading a longer stage
-  exists to resolve.
+- The [soak](soak.md) passed all three adopted stages at the pre-rename
+  baseline. In the eight-hour
+  Stage 3 run, Server and Agent RSS quarter medians rose monotonically by 3.36%
+  and 11.63%, inside the predefined 30% tolerance, while threads, descriptors,
+  Audit direction, and settled Agent state remained flat. That is a PASS for
+  the defined overnight gate, not a claim about behavior beyond eight hours or
+  validation of the renamed release surface.
 
 Two known non-blockers are recorded in the gates themselves: the hardening
 matrix records `docker-daemon-restart` as `SKIPPED_NOT_AUTHORIZED` unless the
@@ -135,7 +141,7 @@ soak's leak verdict, against a real leak, ordinary noise, a settled warm-up, and
 a growing Audit lag. Both fail if the behaviour they describe stops being true.
 
 `verify-release-scope.sh` audits the transitive dependency graph of
-`./cmd/dockpilot` — not a directory — for any behaviour architecture section 18
+`./cmd/docklattice` — not a directory — for any behaviour architecture section 18
 classifies as FUTURE or DO NOT BUILD. Auditing the graph is what keeps the
 disposable Appendix A prototype out of scope for the right reason: the release
 binary does not link it, and it would come back into scope the moment anything

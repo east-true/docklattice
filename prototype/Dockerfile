@@ -1,4 +1,4 @@
-# Disposable Appendix A runner. This image is not a Dockpilot release image.
+# Disposable Appendix A runner. This image is not a DockLattice release image.
 FROM golang:1.26.5-bookworm AS build
 WORKDIR /src
 COPY go.mod go.sum ./

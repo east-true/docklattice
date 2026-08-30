@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-const helperEnabled = "DOCKPILOT_COMPOSEEXEC_HELPER"
+const helperEnabled = "DOCKLATTICE_COMPOSEEXEC_HELPER"
 
 func TestMain(main *testing.M) {
 	if os.Getenv(helperEnabled) == "1" {
@@ -57,7 +57,7 @@ func TestRunnerCancellationSignalsEntireProcessGroup(t *testing.T) {
 	ready := filepath.Join(dir, "ready")
 	markers := filepath.Join(dir, "markers")
 	runner := helperRunner("term-tree")
-	runner.Env = append(runner.Env, "DOCKPILOT_HELPER_READY="+ready, "DOCKPILOT_HELPER_MARKERS="+markers)
+	runner.Env = append(runner.Env, "DOCKLATTICE_HELPER_READY="+ready, "DOCKLATTICE_HELPER_MARKERS="+markers)
 	ctx, cancel := context.WithCancel(context.Background())
 	type outcome struct {
 		result Result
@@ -86,7 +86,7 @@ func TestRunnerTimeoutUsesSameTermThenKillPath(t *testing.T) {
 	ready := filepath.Join(dir, "ready")
 	runner := helperRunner("ignore-term-tree")
 	runner.CancelGrace = 50 * time.Millisecond
-	runner.Env = append(runner.Env, "DOCKPILOT_HELPER_READY="+ready)
+	runner.Env = append(runner.Env, "DOCKLATTICE_HELPER_READY="+ready)
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	result, err := runner.Run(ctx, validSpec(OperationRestart), nil)
@@ -118,13 +118,13 @@ func helperRunner(mode string) Runner {
 		CancelGrace: 2 * time.Second,
 		Env: append(os.Environ(),
 			helperEnabled+"=1",
-			"DOCKPILOT_HELPER_MODE="+mode,
+			"DOCKLATTICE_HELPER_MODE="+mode,
 		),
 	}
 }
 
 func runHelper() int {
-	switch os.Getenv("DOCKPILOT_HELPER_MODE") {
+	switch os.Getenv("DOCKLATTICE_HELPER_MODE") {
 	case "output":
 		_, _ = os.Stdout.Write(bytes.Repeat([]byte("o"), 100<<10))
 		_, _ = os.Stderr.Write([]byte("stderr-final\n"))
@@ -138,7 +138,7 @@ func runHelper() int {
 	case "ignore-term-child":
 		return runSignalChild(true)
 	default:
-		_, _ = fmt.Fprintf(os.Stderr, "unknown helper mode %q\n", os.Getenv("DOCKPILOT_HELPER_MODE"))
+		_, _ = fmt.Fprintf(os.Stderr, "unknown helper mode %q\n", os.Getenv("DOCKLATTICE_HELPER_MODE"))
 		return 2
 	}
 }
@@ -156,35 +156,35 @@ func runSignalTree(ignore bool) int {
 		childMode = "ignore-term-child"
 	}
 	child := exec.Command(os.Args[0])
-	child.Env = replaceEnv(os.Environ(), "DOCKPILOT_HELPER_MODE", childMode)
+	child.Env = replaceEnv(os.Environ(), "DOCKLATTICE_HELPER_MODE", childMode)
 	if err := child.Start(); err != nil {
 		return 3
 	}
-	appendLine(os.Getenv("DOCKPILOT_HELPER_READY"), "parent-ready "+strconv.Itoa(os.Getpid()))
+	appendLine(os.Getenv("DOCKLATTICE_HELPER_READY"), "parent-ready "+strconv.Itoa(os.Getpid()))
 	if ignore {
-		appendLine(os.Getenv("DOCKPILOT_HELPER_READY"), "child-spawned "+strconv.Itoa(child.Process.Pid))
+		appendLine(os.Getenv("DOCKLATTICE_HELPER_READY"), "child-spawned "+strconv.Itoa(child.Process.Pid))
 		for {
 			time.Sleep(time.Hour)
 		}
 	}
 	<-signals
-	appendLine(os.Getenv("DOCKPILOT_HELPER_MARKERS"), "parent-term")
+	appendLine(os.Getenv("DOCKLATTICE_HELPER_MARKERS"), "parent-term")
 	return 0
 }
 
 func runSignalChild(ignore bool) int {
 	if ignore {
 		signal.Ignore(syscall.SIGTERM)
-		appendLine(os.Getenv("DOCKPILOT_HELPER_READY"), "child-ready "+strconv.Itoa(os.Getpid()))
+		appendLine(os.Getenv("DOCKLATTICE_HELPER_READY"), "child-ready "+strconv.Itoa(os.Getpid()))
 		for {
 			time.Sleep(time.Hour)
 		}
 	}
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM)
-	appendLine(os.Getenv("DOCKPILOT_HELPER_READY"), "child-ready "+strconv.Itoa(os.Getpid()))
+	appendLine(os.Getenv("DOCKLATTICE_HELPER_READY"), "child-ready "+strconv.Itoa(os.Getpid()))
 	<-signals
-	appendLine(os.Getenv("DOCKPILOT_HELPER_MARKERS"), "child-term")
+	appendLine(os.Getenv("DOCKLATTICE_HELPER_MARKERS"), "child-term")
 	return 0
 }
 

@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/backup"
-	"github.com/east-true/dockpilot/internal/composeexec"
-	"github.com/east-true/dockpilot/internal/config"
-	"github.com/east-true/dockpilot/internal/diskbudget"
-	"github.com/east-true/dockpilot/internal/operation"
-	"github.com/east-true/dockpilot/internal/producttransport"
-	"github.com/east-true/dockpilot/internal/safefile"
+	"github.com/east-true/docklattice/internal/backup"
+	"github.com/east-true/docklattice/internal/composeexec"
+	"github.com/east-true/docklattice/internal/config"
+	"github.com/east-true/docklattice/internal/diskbudget"
+	"github.com/east-true/docklattice/internal/operation"
+	"github.com/east-true/docklattice/internal/producttransport"
+	"github.com/east-true/docklattice/internal/safefile"
 )
 
 type fixedProjectCatalog struct{ project composeexec.Project }
@@ -190,7 +190,7 @@ func TestFileWriteUsesComposeValidationPreWriteSnapshotAndPayloadHashOnly(t *tes
 	}
 	spec := runner.lastSpec()
 	if spec.Operation != composeexec.OperationConfig || spec.Flags.ConfigOutput != composeexec.ConfigOutputQuiet ||
-		len(spec.Project.Files) != 1 || !strings.Contains(spec.Project.Files[0], ".dockpilot-stage-") {
+		len(spec.Project.Files) != 1 || !strings.Contains(spec.Project.Files[0], ".docklattice-stage-") {
 		t.Fatalf("validation spec = %+v", spec)
 	}
 	wantPayloadHash := sha(string(payload))
@@ -238,7 +238,7 @@ func TestEnvWriteValidatesWithStagedEnvFile(t *testing.T) {
 	if record := waitTerminal(t, engine, "write-env"); record.Status != operation.StatusSuccess || strings.Contains(record.Result, "new-secret") {
 		t.Fatalf("record = %+v", record)
 	}
-	if envFile := runner.lastSpec().Project.EnvFile; !strings.Contains(envFile, ".dockpilot-stage-") || !filepath.IsAbs(envFile) {
+	if envFile := runner.lastSpec().Project.EnvFile; !strings.Contains(envFile, ".docklattice-stage-") || !filepath.IsAbs(envFile) {
 		t.Fatalf("validation env file = %q", envFile)
 	}
 }

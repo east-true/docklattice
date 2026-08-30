@@ -11,17 +11,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/agentprojects"
-	"github.com/east-true/dockpilot/internal/agentsafety"
-	"github.com/east-true/dockpilot/internal/agentstate"
-	"github.com/east-true/dockpilot/internal/agentstorage"
-	"github.com/east-true/dockpilot/internal/auditevents"
-	"github.com/east-true/dockpilot/internal/auditwal"
-	"github.com/east-true/dockpilot/internal/diskbudget"
-	"github.com/east-true/dockpilot/internal/dockeradapter"
-	"github.com/east-true/dockpilot/internal/identity"
-	"github.com/east-true/dockpilot/internal/producttransport"
-	"github.com/east-true/dockpilot/internal/registrationhttp"
+	"github.com/east-true/docklattice/internal/agentprojects"
+	"github.com/east-true/docklattice/internal/agentsafety"
+	"github.com/east-true/docklattice/internal/agentstate"
+	"github.com/east-true/docklattice/internal/agentstorage"
+	"github.com/east-true/docklattice/internal/auditevents"
+	"github.com/east-true/docklattice/internal/auditwal"
+	"github.com/east-true/docklattice/internal/diskbudget"
+	"github.com/east-true/docklattice/internal/dockeradapter"
+	"github.com/east-true/docklattice/internal/identity"
+	"github.com/east-true/docklattice/internal/producttransport"
+	"github.com/east-true/docklattice/internal/registrationhttp"
 )
 
 var (

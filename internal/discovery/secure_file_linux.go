@@ -182,6 +182,8 @@ func stableStat(before, after syscall.Stat_t) bool {
 
 func classifyOpenError(path string, err error) error {
 	switch {
+	case errors.Is(err, fs.ErrPermission):
+		return &ScanError{Code: CodePermissionDenied, Path: path, Err: err}
 	case errors.Is(err, syscall.ELOOP), errors.Is(err, syscall.ENOTDIR):
 		return &ScanError{Code: CodeUnsafePath, Path: path, Err: err}
 	case errors.Is(err, syscall.ENOENT):

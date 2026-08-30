@@ -11,7 +11,7 @@ set -eu
 #   a real `systemctl restart docker`   the daemon under its actual service
 #                                       manager, with the unit's own ordering,
 #                                       socket activation, and cgroup
-#   a genuinely clean host              a machine where Dockpilot has never
+#   a genuinely clean host              a machine where DockLattice has never
 #                                       run and no other Compose project
 #                                       exists, which is what the clean-host
 #                                       gate is defined for
@@ -47,7 +47,7 @@ image_dir=/var/lib/libvirt/images
 vm_memory=${VM_MEMORY_MIB:-2048}
 vm_vcpus=${VM_VCPUS:-2}
 vm_disk_gib=${VM_DISK_GIB:-20}
-key_file=${VM_SSH_KEY:-$HOME/.ssh/dockpilot-vm-lab}
+key_file=${VM_SSH_KEY:-$HOME/.ssh/docklattice-vm-lab}
 
 command -v virsh >/dev/null 2>&1 || fail "virsh is not installed"
 command -v virt-install >/dev/null 2>&1 || fail "virt-install is not installed"
@@ -73,7 +73,7 @@ require_name() {
 ensure_key() {
     [ -f "$key_file" ] && return 0
     mkdir -p "$(dirname "$key_file")"
-    ssh-keygen -t ed25519 -N '' -C dockpilot-vm-lab -f "$key_file" >/dev/null
+    ssh-keygen -t ed25519 -N '' -C docklattice-vm-lab -f "$key_file" >/dev/null
     printf 'created lab ssh key: %s\n' "$key_file"
 }
 
@@ -107,7 +107,7 @@ packages:
 runcmd:
   - [ systemctl, enable, --now, docker ]
   - [ sh, -c, "usermod -aG docker lab" ]
-  - [ sh, -c, "docker version >/var/log/dockpilot-vm-ready 2>&1 || true" ]
+  - [ sh, -c, "docker version >/var/log/docklattice-vm-ready 2>&1 || true" ]
 CLOUDINIT
     printf 'instance-id: %s\nlocal-hostname: %s\n' "$name" "$name" >"$work/meta-data"
     cloud-localds "$work/$name-seed.iso" "$work/user-data" "$work/meta-data"

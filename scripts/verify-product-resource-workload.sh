@@ -31,15 +31,15 @@ for literal in \
     'bounded-buffers.jsonl' \
     'io-evidence.tsv' \
     'resource-trend.json' \
-    'docker top "$DOCKPILOT_AGENT_CONTAINER"' \
-    'DOCKPILOT_AUDIT_URL' \
+    'docker top "$DOCKLATTICE_AGENT_CONTAINER"' \
+    'DOCKLATTICE_AUDIT_URL' \
     '/$agent_id/audit?limit=500' \
     'configured_max_buffer_bytes:1048576' \
     'slow_dropped_bytes' \
     'kind:"compose.up"' \
     'trigger == "pre_restore"' \
     'kind:"discovery.rescan"' \
-    'DOCKPILOT_AGENT_RECONNECT_HELPER' \
+    'DOCKLATTICE_AGENT_RECONNECT_HELPER' \
     'P0 p99 latency exceeds 500ms' \
     'Audit ACK lag exceeds 20 records' \
     'last-three average RSS <= 120% of first-three after the churn baseline' \

@@ -75,7 +75,7 @@ func (r *Root) ReclaimAbandonedStagingForDiskPressure(ctx context.Context, bytes
 }
 
 func validStagingName(name string) bool {
-	const prefix = ".dockpilot-stage-"
+	const prefix = ".docklattice-stage-"
 	if !strings.HasPrefix(name, prefix) || len(name) != len(prefix)+32 {
 		return false
 	}

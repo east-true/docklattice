@@ -1,6 +1,6 @@
 # Concepts
 
-This is the mental model behind Dockpilot, in English, for someone who has not
+This is the mental model behind DockLattice, in English, for someone who has not
 read the architecture record. It is a summary written to be *correct*, not
 complete: [`architecture.md`](architecture.md) remains the authority, and each
 section below names the architecture section it summarizes.
@@ -14,7 +14,7 @@ Everything else follows from that split (architecture section 2).
 
 ## Where truth lives
 
-Dockpilot deliberately refuses to become a second source of truth for things
+DockLattice deliberately refuses to become a second source of truth for things
 Docker already knows. Each row below names the *only* component allowed to
 answer that question:
 
@@ -22,7 +22,7 @@ answer that question:
 |---|---|
 | What containers, images, networks, volumes exist right now | Docker Engine |
 | What a Compose file says | The host filesystem |
-| Whether an operation may run, and who holds the project lock | The Dockpilot Agent |
+| Whether an operation may run, and who holds the project lock | The DockLattice Agent |
 | Audit records not yet synchronized | The Agent's bounded disk WAL |
 | Synchronized audit records and their coverage | The Server's canonical archive |
 | Whether an Agent is trusted at all | Server Identity State |
@@ -55,7 +55,7 @@ the scale workload group. The raw results are kept under
 
 A single connection carrying cancellations, audit sync, queries, logs, and stats
 has an obvious failure mode: a slow log stream starves a cancel. HTTP/2 stream
-priority is not available to applications, so Dockpilot owns scheduling itself
+priority is not available to applications, so DockLattice owns scheduling itself
 (architecture section 5.2):
 
 | Class | Carries |
@@ -106,7 +106,7 @@ A **discovery root must be an identical absolute-path bind mount** —
 `/srv/stacks:/srv/stacks`, never a remapped path (architecture sections 3.1 and
 3.2). The reason is that the Agent hands paths to the Docker daemon, which
 resolves them on the *host*; if the container's view of a path differs from the
-host's, every bind mount Dockpilot creates silently points somewhere else. The
+host's, every bind mount DockLattice creates silently points somewhere else. The
 Agent verifies this itself at start-up (the Path Identity Self-Check) and demotes
 any root that fails to read-only with an explicit capability reason, rather than
 trusting a path it cannot prove.
@@ -121,22 +121,22 @@ The project *name* is deliberately not part of the identity, because the name is
 one line in a `.env` file — putting it in the identity would make projects
 vanish and reappear in the UI every time someone edited that line. A project
 whose working directory changes is genuinely a different project, to Compose as
-well as to Dockpilot.
+well as to DockLattice.
 
 Compose projects Docker reports but that live outside any discovery root are
 shown as **unmanaged projects**: viewable, not editable. This is a first-class
 state, not an error, because it is extremely common in practice.
 
-Two things Dockpilot watches for, both of which are real operational accidents
+Two things DockLattice watches for, both of which are real operational accidents
 rather than theoretical ones:
 
 - **Project name collision** (architecture section 7.6). Two directories on one
   host using the same Compose project name means `compose up` in one will adopt,
   recreate, and delete the *other's* containers. Detection costs one SQL
-  statement; Dockpilot flags both projects and blocks mutating operations.
+  statement; DockLattice flags both projects and blocks mutating operations.
 - **External configuration change** (architecture section 7.7). Discovery
   re-hashes the key files of each managed project every five minutes and records
-  a change made outside Dockpilot as observed audit. This is polling, not
+  a change made outside DockLattice as observed audit. This is polling, not
   `fsnotify`, because one inotify watch per file per project hits
   `max_user_watches` on any real host, and the goal is after-the-fact
   observation rather than realtime reaction. Detection never triggers automatic
@@ -175,7 +175,7 @@ say so — but they record different causes, because "someone stopped this" and
 
 One exclusive lock per project, held by the Agent (architecture section 8.4).
 Held by every mutating operation; held by no read. Contention waits at most two
-seconds and then returns `409 PROJECT_BUSY` — Dockpilot does not queue, because a
+seconds and then returns `409 PROJECT_BUSY` — DockLattice does not queue, because a
 queued mutation is a mutation whose ordering nobody chose.
 
 There is deliberately **no force-release API**. The lock's holder is the Agent
@@ -196,7 +196,7 @@ commit point that would break data consistency.
 ### Cancellation is not rollback
 
 Cancelling stops further work. It does not undo what already happened, and
-Dockpilot never claims otherwise — an operation that was cancelled after partial
+DockLattice never claims otherwise — an operation that was cancelled after partial
 application says exactly that (architecture section 9).
 
 Two disconnections that are explicitly *not* cancellations: the browser closing,
@@ -231,23 +231,23 @@ overwriting whatever changed underneath it.
 Two kinds, kept distinct because they have genuinely different reliability
 (architecture section 11.1):
 
-**Managed audit** is what happened *through* Dockpilot. It is generated from the
+**Managed audit** is what happened *through* DockLattice. It is generated from the
 operation lifecycle itself — one completed operation is one audit record — rather
 than from a parallel code path that could drift. It is never rate-limited and
 never sampled. The actor is recorded only when it is knowable: `ui:<client_ip>`
 or `webhook:<provider>`, and nothing invented.
 
-**Observed audit** is what happened *outside* Dockpilot, using Docker events as a
+**Observed audit** is what happened *outside* DockLattice, using Docker events as a
 signal. Events are a whitelist (container create/start/die/stop/kill/destroy,
 health status, rename; image pull/delete/tag; volume and network create/destroy)
 and are suppressed under load: identical events within five seconds coalesce with
-a count, and above twenty per second Dockpilot emits one "event storm" summary
+a count, and above twenty per second DockLattice emits one "event storm" summary
 instead. A Docker event is treated as a *signal that state changed*, never as the
 current state — meaningful transitions trigger exactly one inspect, and `start`
 does not, because re-inspecting on every event turns an event storm into daemon
 load.
 
-If Docker cannot say who did something, the actor is `unknown`. Dockpilot does
+If Docker cannot say who did something, the actor is `unknown`. DockLattice does
 not guess, and does not try to become a host-level audit system.
 
 ### Durability
@@ -262,7 +262,7 @@ Two states describe a hole in the record, and the distinction matters
 - `AUDIT_GAP` — records are known to be missing, and the range is known.
 - `AUDIT_CONTINUITY_UNCERTAIN` — continuity across a boundary cannot be proven.
 
-Dockpilot reports which one it is instead of collapsing both into a warning.
+DockLattice reports which one it is instead of collapsing both into a warning.
 
 **The Server never refuses Agent audit ingest because of its own capacity
 pressure.** Under pressure it evicts the oldest eligible canonical data and keeps
@@ -286,7 +286,7 @@ retention; the Agent executes the deletions it is told to perform.
 Under disk pressure, **manual backups are never automatically deleted** — an
 operator who deliberately took a backup gets to keep it.
 
-## What Dockpilot will not do
+## What DockLattice will not do
 
 Every behaviour is classified in architecture section 18 as CORE, OPTIONAL,
 FUTURE, or DO NOT BUILD. The DO NOT BUILD list for v1 includes Kubernetes and

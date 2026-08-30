@@ -13,14 +13,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/composeexec"
+	"github.com/east-true/docklattice/internal/composeexec"
 )
 
-const evaluatorHelper = "DOCKPILOT_COMPOSECONFIG_HELPER"
+const evaluatorHelper = "DOCKLATTICE_COMPOSECONFIG_HELPER"
 
 func TestMain(main *testing.M) {
 	if os.Getenv(evaluatorHelper) == "1" {
-		switch os.Getenv("DOCKPILOT_COMPOSECONFIG_MODE") {
+		switch os.Getenv("DOCKLATTICE_COMPOSECONFIG_MODE") {
 		case "json":
 			_, _ = os.Stdout.WriteString(`{"name":"demo","services":{"web":{"environment":{"SECRET":"not-returned"}},"db":{}}}`)
 			os.Exit(0)
@@ -89,7 +89,7 @@ func hasComposeConfigArgs(args []string) bool {
 func helperEvaluator(mode string) Evaluator {
 	return Evaluator{
 		DockerPath: os.Args[0], CancelGrace: 20 * time.Millisecond,
-		Env: append(os.Environ(), evaluatorHelper+"=1", "DOCKPILOT_COMPOSECONFIG_MODE="+mode, "COMPOSE_PROFILES=prod"),
+		Env: append(os.Environ(), evaluatorHelper+"=1", "DOCKLATTICE_COMPOSECONFIG_MODE="+mode, "COMPOSE_PROFILES=prod"),
 	}
 }
 

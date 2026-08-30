@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/identity"
-	"github.com/east-true/dockpilot/internal/serverstore"
+	"github.com/east-true/docklattice/internal/identity"
+	"github.com/east-true/docklattice/internal/serverstore"
 )
 
 const archiveSettingKey = "audit_archive_identity"

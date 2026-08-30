@@ -15,14 +15,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/agentprojects"
-	"github.com/east-true/dockpilot/internal/backup"
-	"github.com/east-true/dockpilot/internal/composeexec"
-	"github.com/east-true/dockpilot/internal/discovery"
-	"github.com/east-true/dockpilot/internal/dockeradapter"
-	"github.com/east-true/dockpilot/internal/producttransport"
-	"github.com/east-true/dockpilot/internal/projectmodel"
-	"github.com/east-true/dockpilot/internal/safefile"
+	"github.com/east-true/docklattice/internal/agentprojects"
+	"github.com/east-true/docklattice/internal/backup"
+	"github.com/east-true/docklattice/internal/composeexec"
+	"github.com/east-true/docklattice/internal/discovery"
+	"github.com/east-true/docklattice/internal/dockeradapter"
+	"github.com/east-true/docklattice/internal/producttransport"
+	"github.com/east-true/docklattice/internal/projectmodel"
+	"github.com/east-true/docklattice/internal/safefile"
 )
 
 const testProjectUID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -417,6 +417,31 @@ func TestProjectQueriesUseExplicitStableJSON(t *testing.T) {
 	}
 	if status.DirectoriesSeen != 4 || !status.ScannedAt.Equal(at) {
 		t.Fatalf("status = %+v", status)
+	}
+}
+
+func TestProjectResponseOmitsEffectiveMetadataWhenComposeEvaluationFailed(t *testing.T) {
+	project := agentprojects.Project{
+		UID: testProjectUID, Root: "/srv", WorkingDir: "/srv/app",
+		Files:               []projectmodel.FileFact{{Path: "/srv/app/compose.yaml", Size: 10, SHA256: testManifestHash}},
+		ComposeFiles:        []string{"/srv/app/compose.yaml"},
+		SourceReferences:    []agentprojects.SourceReference{{Kind: "include", Path: "/srv/child/compose.yaml", Accessible: true}},
+		IncludedWorkDirs:    []string{"/srv/child"},
+		CurrentFingerprint:  testManifestHash,
+		SourceGraphComplete: true,
+		ComposeExecutable:   false,
+		CapabilityReason:    "Compose configuration evaluation failed",
+	}
+
+	response := projectResponse(project, false)
+	if len(response.Files) != 1 || response.CurrentFingerprint != testManifestHash ||
+		len(response.SourceReferences) != 1 || len(response.IncludedWorkDirs) != 1 {
+		t.Fatalf("verified discovery facts were not preserved: %+v", response)
+	}
+	if len(response.ComposeFiles) != 0 || len(response.DefinedServices) != 0 || len(response.Services) != 0 ||
+		len(response.EnvFiles) != 0 || len(response.Secrets) != 0 || len(response.Configs) != 0 ||
+		len(response.PullServices) != 0 || response.ProjectUpAvailable || response.ProjectUpReason != "" {
+		t.Fatalf("unverified effective Compose metadata was published: %+v", response)
 	}
 }
 

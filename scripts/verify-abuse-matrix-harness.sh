@@ -38,6 +38,7 @@ for literal in \
     'the Agent container is no longer running' \
     'malformed-json' \
     'unknown-field' \
+    'api_status PATCH "$base_url/api/v1/operations"' \
     'oversized-body' \
     'a refusal answered with a server error' \
     'were not both marked as colliding' \

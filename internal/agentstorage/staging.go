@@ -8,8 +8,8 @@ import (
 	"math"
 	"sort"
 
-	"github.com/east-true/dockpilot/internal/agentprojects"
-	"github.com/east-true/dockpilot/internal/safefile"
+	"github.com/east-true/docklattice/internal/agentprojects"
+	"github.com/east-true/docklattice/internal/safefile"
 )
 
 type ProjectSnapshot interface {

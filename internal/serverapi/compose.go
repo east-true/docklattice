@@ -8,8 +8,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/east-true/dockpilot/internal/producttransport"
-	"github.com/east-true/dockpilot/internal/webui"
+	"github.com/east-true/docklattice/internal/producttransport"
+	"github.com/east-true/docklattice/internal/webui"
 	"google.golang.org/grpc/status"
 )
 
@@ -89,7 +89,7 @@ func (b *Backend) OpenProjectLogs(ctx context.Context, projectUID string, reques
 	}
 	if session.Info().ProtocolVersion == producttransport.PreviousProductProtocolVersion &&
 		(request.ContainerID != "" || !request.Since.IsZero() || !request.Until.IsZero()) {
-		return nil, fmt.Errorf("%w: selected Container and Since/Until log controls require the current Dockpilot Agent", webui.ErrUnavailable)
+		return nil, fmt.Errorf("%w: selected Container and Since/Until log controls require the current DockLattice Agent", webui.ErrUnavailable)
 	}
 	stream, err := session.OpenLogs(ctx, producttransport.LogRequest{
 		ProjectUID: projectUID, ContainerID: request.ContainerID, Services: append([]string(nil), request.Services...), Follow: request.Follow,

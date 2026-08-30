@@ -10,10 +10,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/east-true/dockpilot/internal/auditevents"
-	"github.com/east-true/dockpilot/internal/auditstore"
-	"github.com/east-true/dockpilot/internal/producttransport"
-	"github.com/east-true/dockpilot/internal/webui"
+	"github.com/east-true/docklattice/internal/auditevents"
+	"github.com/east-true/docklattice/internal/auditstore"
+	"github.com/east-true/docklattice/internal/producttransport"
+	"github.com/east-true/docklattice/internal/webui"
 )
 
 const maxAuditCoverageEntries = 500

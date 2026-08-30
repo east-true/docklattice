@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/east-true/dockpilot/internal/agentprojects"
-	"github.com/east-true/dockpilot/internal/safefile"
+	"github.com/east-true/docklattice/internal/agentprojects"
+	"github.com/east-true/docklattice/internal/safefile"
 )
 
 type snapshotProjects []agentprojects.Project

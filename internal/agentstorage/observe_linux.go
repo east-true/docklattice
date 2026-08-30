@@ -10,7 +10,7 @@ import (
 	"math"
 	"path/filepath"
 
-	"github.com/east-true/dockpilot/internal/diskbudget"
+	"github.com/east-true/docklattice/internal/diskbudget"
 	"golang.org/x/sys/unix"
 )
 

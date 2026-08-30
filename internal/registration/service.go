@@ -17,9 +17,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/east-true/dockpilot/internal/agentid"
-	"github.com/east-true/dockpilot/internal/identity"
-	"github.com/east-true/dockpilot/internal/serverstore"
+	"github.com/east-true/docklattice/internal/agentid"
+	"github.com/east-true/docklattice/internal/identity"
+	"github.com/east-true/docklattice/internal/serverstore"
 )
 
 const (

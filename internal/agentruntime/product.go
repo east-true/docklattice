@@ -8,21 +8,21 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/agentproduct"
-	"github.com/east-true/dockpilot/internal/agentprojects"
-	"github.com/east-true/dockpilot/internal/agentsafety"
-	"github.com/east-true/dockpilot/internal/agentstorage"
-	"github.com/east-true/dockpilot/internal/auditevents"
-	"github.com/east-true/dockpilot/internal/auditgen"
-	"github.com/east-true/dockpilot/internal/backup"
-	"github.com/east-true/dockpilot/internal/composeconfig"
-	"github.com/east-true/dockpilot/internal/composeexec"
-	"github.com/east-true/dockpilot/internal/composesource"
-	productconfig "github.com/east-true/dockpilot/internal/config"
-	"github.com/east-true/dockpilot/internal/discovery"
-	"github.com/east-true/dockpilot/internal/dockeradapter"
-	"github.com/east-true/dockpilot/internal/managedaudit"
-	"github.com/east-true/dockpilot/internal/operation"
+	"github.com/east-true/docklattice/internal/agentproduct"
+	"github.com/east-true/docklattice/internal/agentprojects"
+	"github.com/east-true/docklattice/internal/agentsafety"
+	"github.com/east-true/docklattice/internal/agentstorage"
+	"github.com/east-true/docklattice/internal/auditevents"
+	"github.com/east-true/docklattice/internal/auditgen"
+	"github.com/east-true/docklattice/internal/backup"
+	"github.com/east-true/docklattice/internal/composeconfig"
+	"github.com/east-true/docklattice/internal/composeexec"
+	"github.com/east-true/docklattice/internal/composesource"
+	productconfig "github.com/east-true/docklattice/internal/config"
+	"github.com/east-true/docklattice/internal/discovery"
+	"github.com/east-true/docklattice/internal/dockeradapter"
+	"github.com/east-true/docklattice/internal/managedaudit"
+	"github.com/east-true/docklattice/internal/operation"
 )
 
 // startProduct is intentionally tied to the production Docker adapter. Unit
@@ -96,8 +96,12 @@ func (r *Runtime) startProduct(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := catalog.Rescan(ctx); err != nil {
-		return fmt.Errorf("agentruntime: initial project discovery: %w", err)
+	initialDiscoveryErr := catalog.Rescan(ctx)
+	if initialDiscoveryErr != nil && !agentprojects.IsPublishedDegraded(initialDiscoveryErr) {
+		return fmt.Errorf("agentruntime: initial project discovery: %w", initialDiscoveryErr)
+	}
+	if initialDiscoveryErr != nil {
+		r.diagnostics.problem("discovery_scan_failed", initialDiscoveryErr)
 	}
 	if _, err := backups.Recover(ctx, catalog); err != nil {
 		return fmt.Errorf("agentruntime: recover backup restore journal: %w", err)
@@ -149,11 +153,14 @@ func (r *Runtime) startProduct(ctx context.Context) error {
 	r.operationEngine = engine
 	r.productStorage = runtimeStorage
 	r.startDiscoveryLoop(ctx, catalog, runtimeStorage, appender, r.config.DiscoveryInterval)
-	r.updateProductCapability(nil, nil)
+	// A safely published partial scan degrades Discovery through ScanStatus and
+	// per-Project capability reasons. It must not disable Docker, Logs, Metrics,
+	// or Compose operations for Projects that were individually verified.
+	r.updateProductCapability(composeDiscoveryCapabilityError(initialDiscoveryErr, catalog), nil)
 	return nil
 }
 
-// managedPaths are the paths Dockpilot writes to on this host: the discovery
+// managedPaths are the paths DockLattice writes to on this host: the discovery
 // roots and the Agent state root. They are what the host row reports capacity
 // for. Deduplication is by filesystem and happens at probe time, because two
 // distinct paths on one mount are one filesystem and neither of them is
@@ -183,11 +190,31 @@ func (r *Runtime) startDiscoveryLoop(ctx context.Context, catalog *agentprojects
 				discoveryErr := catalog.RescanForExternalChanges(discoveryCtx, func(auditCtx context.Context, changes []agentprojects.ExternalConfigChange) error {
 					return appendExternalConfigChangeAudit(auditCtx, appender, changes)
 				})
+				capabilityDiscoveryErr := discoveryErr
+				if discoveryErr != nil {
+					r.diagnostics.problem("discovery_scan_failed", discoveryErr)
+					capabilityDiscoveryErr = composeDiscoveryCapabilityError(discoveryErr, catalog)
+				} else {
+					r.diagnostics.resolved("discovery_scan_failed")
+				}
 				_, storageErr := storage.reclaimUntilStable(discoveryCtx)
-				r.updateProductCapability(discoveryErr, storageErr)
+				r.updateProductCapability(capabilityDiscoveryErr, storageErr)
 			}
 		}
 	}()
+}
+
+func composeDiscoveryCapabilityError(err error, catalog *agentprojects.Catalog) error {
+	if err == nil || !agentprojects.IsPublishedDegraded(err) {
+		return err
+	}
+	projects, _ := catalog.Snapshot()
+	for _, project := range projects {
+		if !project.Stale && project.ComposeExecutable {
+			return nil
+		}
+	}
+	return err
 }
 
 // appendExternalConfigChangeAudit emits one content-free, bounded observation

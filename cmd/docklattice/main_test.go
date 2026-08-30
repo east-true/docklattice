@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/east-true/dockpilot/internal/agentid"
-	"github.com/east-true/dockpilot/internal/app"
-	productconfig "github.com/east-true/dockpilot/internal/config"
-	"github.com/east-true/dockpilot/internal/registration"
-	"github.com/east-true/dockpilot/internal/serverbootstrap"
+	"github.com/east-true/docklattice/internal/agentid"
+	"github.com/east-true/docklattice/internal/app"
+	productconfig "github.com/east-true/docklattice/internal/config"
+	"github.com/east-true/docklattice/internal/registration"
+	"github.com/east-true/docklattice/internal/serverbootstrap"
 )
 
 type blockingRuntime struct {
@@ -34,7 +34,7 @@ func TestHelp(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"--help"}, "dockpilot <server|agent|defaults>"},
+		{[]string{"--help"}, "docklattice <server|agent|defaults>"},
 		{[]string{"server", "--help"}, "--listen"},
 		{[]string{"server", "issue-token", "--help"}, "--rejoin-agent-id"},
 		{[]string{"agent", "--help"}, "--state-dir"},
@@ -186,11 +186,11 @@ func TestAgentDefaultsAndCancelableLifecycle(t *testing.T) {
 	if code := <-done; code != 0 {
 		t.Fatalf("code = %d, stderr=%q", code, stderr.String())
 	}
-	if got.Agent.StateDir != "/var/lib/dockpilot" {
+	if got.Agent.StateDir != "/var/lib/docklattice" {
 		t.Fatalf("state dir = %q", got.Agent.StateDir)
 	}
 	if got.Agent.ServerAddress != app.DefaultAgentServerAddress || got.Agent.RegistrationURL != app.DefaultAgentRegistrationURL ||
-		got.Agent.ServerCAFile != "/var/lib/dockpilot/server-ca.crt" {
+		got.Agent.ServerCAFile != "/var/lib/docklattice/server-ca.crt" {
 		t.Fatalf("Agent connection defaults = %#v", got.Agent)
 	}
 	if err := got.Defaults.Validate(); err != nil {

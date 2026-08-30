@@ -1,4 +1,4 @@
-# Dockpilot 아키텍처 결정 기록
+# DockLattice 아키텍처 결정 기록
 
 **상태**: 동결 (Frozen)
 **동결일**: 2026-08-13
@@ -8,7 +8,7 @@
 
 ## 0. 이 문서에 대하여
 
-이 문서는 Dockpilot의 구현 착수 전 설계 결정을 통합한 기록이다. 설계 논의는 시간순으로 누적되었으나 이 문서는 주제별로 재구성했다.
+이 문서는 DockLattice의 구현 착수 전 설계 결정을 통합한 기록이다. 설계 논의는 시간순으로 누적되었으나 이 문서는 주제별로 재구성했다.
 
 이 문서의 지위:
 
@@ -22,44 +22,44 @@
 
 ## 1. 프로젝트 정의와 범위
 
-Dockpilot은 여러 Docker 호스트를 중앙에서 조회·제어하고, Docker Compose 기능을 GUI로 수행하며, 감사 이력·실시간 로그·실시간 메트릭·기본 백업을 제공하는 **경량 내부망용 Docker Control Plane**이다.
+DockLattice은 여러 Docker 호스트를 중앙에서 조회·제어하고, Docker Compose 기능을 GUI로 수행하며, 감사 이력·실시간 로그·실시간 메트릭·기본 백업을 제공하는 **경량 내부망용 Docker Control Plane**이다.
 
 ```
 Browser UI
     |
-Dockpilot Server          (Control Plane)
+DockLattice Server          (Control Plane)
     |
     | Agent-initiated persistent connection
     |
-    +-- Dockpilot Agent A  (Local Controller)
+    +-- DockLattice Agent A  (Local Controller)
     |       +-- Docker Engine
     |       +-- Docker Compose CLI
     |       +-- Local Compose Files
     |
-    +-- Dockpilot Agent B
+    +-- DockLattice Agent B
             ...
 ```
 
-하나의 프로젝트, 하나의 바이너리, 두 실행 모드(`dockpilot server` / `dockpilot agent`).
+하나의 프로젝트, 하나의 바이너리, 두 실행 모드(`docklattice server` / `docklattice agent`).
 
 ### 1.1 핵심 철학
 
-> Docker가 이미 제공하는 기능은 Docker에 맡기고, Dockpilot은 여러 Docker 호스트를 연결하고 관리하는 얇은 중앙 제어 계층만 제공한다.
+> Docker가 이미 제공하는 기능은 Docker에 맡기고, DockLattice은 여러 Docker 호스트를 연결하고 관리하는 얇은 중앙 제어 계층만 제공한다.
 
-목표는 기능이 많은 Docker 플랫폼이 아니라, **Docker + Dockpilot만 있으면 여러 Docker Host의 자주 쓰는 운영 작업을 중앙 GUI에서 안정적으로 수행할 수 있는 작고 명확한 Control Plane**이다.
+목표는 기능이 많은 Docker 플랫폼이 아니라, **Docker + DockLattice만 있으면 여러 Docker Host의 자주 쓰는 운영 작업을 중앙 GUI에서 안정적으로 수행할 수 있는 작고 명확한 Control Plane**이다.
 
 ### 1.2 런타임 의존성 원칙
 
 운영 환경에서 요구하는 것은 다음뿐이다.
 
 ```
-Docker Host   : Docker + Dockpilot Agent
-Central Host  : Dockpilot Server
+Docker Host   : Docker + DockLattice Agent
+Central Host  : DockLattice Server
 ```
 
 Prometheus, Grafana, Loki, Redis, PostgreSQL/MySQL, Kafka, NATS, 별도 로그 수집 daemon, 별도 백업 daemon, 외부 SaaS, 별도 인증 서버 — 그 무엇도 설치를 요구하지 않는다.
 
-빌드 시점 의존성(Go 라이브러리, Docker 공식 SDK, embedded DB 라이브러리, 프론트엔드 빌드 의존성)은 허용한다. 중요한 것은 **운영자가 Docker와 Dockpilot 외의 서비스를 설치하지 않아도 되는 것**이다.
+빌드 시점 의존성(Go 라이브러리, Docker 공식 SDK, embedded DB 라이브러리, 프론트엔드 빌드 의존성)은 허용한다. 중요한 것은 **운영자가 Docker와 DockLattice 외의 서비스를 설치하지 않아도 되는 것**이다.
 
 ### 1.3 의도적으로 만들지 않는 것
 
@@ -88,7 +88,7 @@ Apache License 2.0.
 - `LICENSE` 동봉, `NOTICE` 유지·전파, 수정 파일 변경 표기
 - `go-licenses` 등으로 의존성 라이선스 목록을 CI에서 자동 생성하고 릴리스 아티팩트에 포함. **frontend 의존성도 포함**(바이너리에 embed되므로 배포물의 일부)
 - Agent 이미지에 docker CLI + compose plugin을 번들하므로 이미지에 `/licenses/` 포함
-- 상표: 프로젝트명·로고에 "Docker"를 포함하지 않는다. README에 *"Dockpilot is not affiliated with or endorsed by Docker, Inc."* 명시. Docker 고래 로고 사용 금지.
+- 상표: 프로젝트명·로고에 "Docker"를 포함하지 않는다. README에 *"DockLattice is not affiliated with or endorsed by Docker, Inc."* 명시. Docker 고래 로고 사용 금지.
 
 ---
 
@@ -100,7 +100,7 @@ Apache License 2.0.
 |---|---|
 | Docker 현재 상태 (container/image/network/volume/health) | **Docker Engine** |
 | Compose 설정 파일 내용 | **Host Filesystem** |
-| Operation 실행 및 Project Lock | **Dockpilot Agent** |
+| Operation 실행 및 Project Lock | **DockLattice Agent** |
 | 미동기 Audit | **Agent bounded disk WAL** |
 | 동기화된 Audit과 Coverage | **Server canonical archive + Coverage Ledger** |
 | Server-Agent 통신 신뢰 | **Server Identity State** |
@@ -138,13 +138,13 @@ Container를 단독 채택하는 실질 이득: **compose 버전이 이미지에
 ```
 mounts:
   /var/run/docker.sock  -> /var/run/docker.sock       (rw, 필수)
-  /var/lib/dockpilot    -> /var/lib/dockpilot         (rw, agent state)
+  /var/lib/docklattice    -> /var/lib/docklattice         (rw, agent state)
   <discovery_root_N>    -> <동일 절대경로>              (rw = 편집 허용, ro = 조회 전용)
 network: bridge (Server로의 outbound만 필요)
 restart: unless-stopped
 labels:
-  io.dockpilot.role: agent
-container_name: dockpilot-agent
+  io.docklattice.role: agent
+container_name: docklattice-agent
 ```
 
 - Agent는 절대경로를 받지 않는다. Server가 보내는 것은 `project_uid + relative_path`뿐이다.
@@ -181,7 +181,7 @@ UI에서 Agent 자신을 stop/remove하면 자살하고 진행 중인 operation�
 자기 식별 순서:
 
 ```
-1순위: label io.dockpilot.role=agent 로 조회
+1순위: label io.docklattice.role=agent 로 조회
        (컨테이너 ID는 생성 후에 확정되므로 env 주입은 부적절)
 2순위: 설정값 self_container_id / self_container_name
 둘 다 실패: fail-closed
@@ -513,7 +513,7 @@ discovery roots (명시적 지정)
 `docker-compose.yaml`. override도
 `compose.override.yml`, `compose.override.yaml`,
 `docker-compose.override.yml`, `docker-compose.override.yaml` 중 첫 파일 하나만
-base 뒤에 둔다. Dockpilot은 이후 명시적 `--file` 인자를 사용하므로 이 선택과
+base 뒤에 둔다. DockLattice은 이후 명시적 `--file` 인자를 사용하므로 이 선택과
 순서를 자체적으로 보존해야 한다.
 
 ```
@@ -530,7 +530,7 @@ budget이 depth보다 우월한 이유는 **문제를 조용히 누락시키지 
 - **symlink 디렉터리는 따라가지 않는다.** 무한 루프와 discovery root 탈출을 동시에 막는다. symlink된 project는 root에 직접 추가하도록 안내한다.
 - hidden 디렉터리는 **스캔한다**(`.deploy/`, `.docker/` 같은 실사용 패턴 존재). 기본 ignore에 `.git`을 명시적으로 포함한다.
 - 기본 ignore(보수적): `.git`, `node_modules`, `vendor`, `.cache`, `.venv`, `__pycache__`, `target`, `dist`, `build`. `logs`/`tmp`/`backups`는 사용자 프로젝트 디렉터리명과 충돌 가능성이 있어 **기본 목록에서 제외**하고 사용자 설정으로 남긴다.
-- 사용자 ignore는 Agent config의 glob 리스트. `.dockpilotignore` 파일 지원은 FUTURE(root 안의 파일을 신뢰하는 새 신뢰 경계가 생긴다).
+- 사용자 ignore는 Agent config의 glob 리스트. `.docklatticeignore` 파일 지원은 FUTURE(root 안의 파일을 신뢰하는 새 신뢰 경계가 생긴다).
 - 주기: 기본 5분 + on-demand rescan + write/compose operation 직후 targeted rescan.
 - I/O: 단일 goroutine, `os.ReadDir` 기반, 초당 디렉터리 상한. Agent가 host I/O를 잡아먹으면 안 된다.
 
@@ -596,7 +596,7 @@ Server가 merge 시 `(agent_id, project_name)` 중복을 검출해 양쪽 projec
 
 ### 7.7 외부 파일 변경 감지 (CORE, polling)
 
-목적은 캐시가 아니다. Dockpilot 밖에서 관리 대상 설정이 변경된 사실을 관측해 Audit/UI에 반영하는 것이다.
+목적은 캐시가 아니다. DockLattice 밖에서 관리 대상 설정이 변경된 사실을 관측해 Audit/UI에 반영하는 것이다.
 
 ```
 주기적 discovery scan
@@ -634,7 +634,7 @@ UI 문구:
 
 ```
 부정확: "설정이 적용되지 않음"
-정확:   "마지막 Dockpilot 적용 이후 설정 파일이 변경됨"
+정확:   "마지막 DockLattice 적용 이후 설정 파일이 변경됨"
 ```
 
 SSH에서 외부 `compose up`을 실행했는지는 알 수 없으므로 "미적용"이라고 단정하지 않는다.
@@ -644,7 +644,7 @@ SSH에서 외부 `compose up`을 실행했는지는 알 수 없으므로 "미적
 ```
 in-sync      : applied fingerprint == current
 changed      : applied fingerprint != current
-no baseline  : Dockpilot 적용 이력 없음
+no baseline  : DockLattice 적용 이력 없음
 ```
 
 `no baseline`을 `changed`로 뭉뚱그리면 Tier 1의 신뢰도가 첫날부터 떨어진다.
@@ -662,7 +662,7 @@ Docker runtime 기능 → Docker Engine API/SDK
 Docker Compose 기능 → docker compose CLI
 ```
 
-`compose-go` 라이브러리를 직접 쓰지 않는다. 버전별 동작 차이를 Dockpilot이 떠안게 되고 재구현 금지 원칙에 정면으로 위배된다.
+`compose-go` 라이브러리를 직접 쓰지 않는다. 버전별 동작 차이를 DockLattice이 떠안게 되고 재구현 금지 원칙에 정면으로 위배된다.
 
 ```
 허용: exec docker compose ...   (고정 argv, shell 미경유, 화이트리스트된 인자)
@@ -675,7 +675,7 @@ Docker Compose 기능 → docker compose CLI
 
 **Process Group**: compose CLI 자식은 별도 process group으로 실행한다. 취소 시 프로세스 트리 전체를 정리할 수 있고, 세션 정리가 실행 중인 compose에 신호를 흘리지 않는다.
 
-**Compose build policy (v1)**: Dockpilot은 Image build를 수행하지 않는다.
+**Compose build policy (v1)**: DockLattice은 Image build를 수행하지 않는다.
 별도 Build action, Dockerfile/build-context 편집, build args, BuildKit 제어를
 제공하지 않으며 `build`는 effective Compose model의 조회 metadata일 뿐이다.
 
@@ -688,11 +688,11 @@ Docker Compose 기능 → docker compose CLI
 - Pull은 effective model에서 `image`가 선언된 Service 이름을 명시적으로 전달한다.
   `--ignore-buildable`을 사용하지 않고 Pull 실패를 build로 fallback하지 않는다.
 
-즉 Dockpilot은 선택된 effective Service model을 선언된 Image만으로 충족할 수
+즉 DockLattice은 선택된 effective Service model을 선언된 Image만으로 충족할 수
 있을 때만 Compose mutation을 수행한다. 분류의 권위는 Docker Compose CLI가
 반환한 effective model이며 YAML 또는 CLI 오류 문자열을 별도로 해석하지 않는다.
 
-Compose 버전은 "v2"라는 major 이름에 기대지 않고 **Agent 이미지에 Dockpilot이 검증한 plugin 버전을 고정 번들**한다. Agent capability가 실제 bundled version을 보고하고, CI는 `Dockpilot release X → bundled Compose version Y` 조합으로 e2e 검증한다. Docker Engine은 여전히 가변이므로 **API version negotiation과 최소 엔진 버전 선언·기동 시 검사**는 유지한다.
+Compose 버전은 "v2"라는 major 이름에 기대지 않고 **Agent 이미지에 DockLattice이 검증한 plugin 버전을 고정 번들**한다. Agent capability가 실제 bundled version을 보고하고, CI는 `DockLattice release X → bundled Compose version Y` 조합으로 e2e 검증한다. Docker Engine은 여전히 가변이므로 **API version negotiation과 최소 엔진 버전 선언·기동 시 검사**는 유지한다.
 
 ### 8.2 Operation 타입
 
@@ -811,7 +811,7 @@ Progress 판정은 stdout 출력 여부가 아니라 **Operation 단계 revision
 **`force_release_lock` API는 만들지 않는다.** 실행 중인 작업 위에 다른 작업을 얹을 수 있게 되어 lock의 존재 이유가 사라진다. 탈출은 운영 절차로 한다.
 
 ```
-1차: Host에서 Dockpilot Agent 컨테이너 재시작
+1차: Host에서 DockLattice Agent 컨테이너 재시작
      → 실행 중이던 Operation이 interrupted
      → Project Lock 자연 해제
      → Server로 interrupted 상태와 부분 적용 가능성 보고
@@ -827,7 +827,7 @@ Progress 판정은 stdout 출력 여부가 아니라 **Operation 단계 revision
 
 ### 9.1 원칙
 
-**Cancel은 rollback이 아니다.** `CancelOperation`은 "지금 실행을 멈춰라"이지 "이미 적용된 것을 되돌려라"가 아니다. Dockpilot은 일반 Operation에 대해 자동 rollback을 수행하지 않는다.
+**Cancel은 rollback이 아니다.** `CancelOperation`은 "지금 실행을 멈춰라"이지 "이미 적용된 것을 되돌려라"가 아니다. DockLattice은 일반 Operation에 대해 자동 rollback을 수행하지 않는다.
 
 **Browser disconnect도 Transport disconnect도 Operation cancel이 아니다.** 변경 Operation은 Browser와 transport session으로부터 독립적으로 실행된다.
 
@@ -877,7 +877,7 @@ Restore            : 첫 target file 교체를 시작하는 순간
 Container mutation : Docker Engine에 mutation request를 전달하는 순간
 ```
 
-이미 Docker에 전달한 요청을 Dockpilot이 되돌리려 하지 않는다.
+이미 Docker에 전달한 요청을 DockLattice이 되돌리려 하지 않는다.
 
 ### 9.3 Commit 진입과 Cancel 경쟁 조건
 
@@ -955,7 +955,7 @@ API 계약: Server → Agent 는 (project_uid, relative_path) 만 전달. 절대
 
 - 기본 compose 파일
 - 명시적으로 선택된 override 파일
-- Dockpilot이 생성한 override 파일
+- DockLattice이 생성한 override 파일
 - 프로젝트 루트의 `.env` / `.env.*`
 
 **읽기만 허용** — compose가 참조하는 파일 중 다음을 **모두** 만족하는 것:
@@ -1072,13 +1072,13 @@ UI의 `[모두 저장]` 버튼은 제공할 수 있으나 의미는 단순한 �
 
 ### 11.1 두 종류
 
-**Managed Audit** — Dockpilot을 통해 발생한 행위. Operation lifecycle에서 자동 생성한다(operation 완료 = audit 1건). 별도 코드 경로를 만들지 않는다.
+**Managed Audit** — DockLattice을 통해 발생한 행위. Operation lifecycle에서 자동 생성한다(operation 완료 = audit 1건). 별도 코드 경로를 만들지 않는다.
 
 `actor`는 표현 가능한 것만 기록한다: `ui:<client_ip>` 또는 `webhook:<provider>`. 없는 정보를 만들어내지 않는다.
 
 **Managed Audit에는 rate limit을 적용하지 않는다. 전량 기록한다.**
 
-**Observed Audit** — Dockpilot 밖에서 발생한 변경. Docker Events를 signal로 쓰되, **Event는 상태 변경의 신호이지 현재 상태의 Source of Truth가 아니다.**
+**Observed Audit** — DockLattice 밖에서 발생한 변경. Docker Events를 signal로 쓰되, **Event는 상태 변경의 신호이지 현재 상태의 Source of Truth가 아니다.**
 
 ```
 구독 필터(화이트리스트):
@@ -1501,7 +1501,7 @@ AND ACK Watermark가 5분 이상 정체
 
 UI: *"Audit Record는 Server에 수집되고 있지만 Agent ACK가 진행되지 않고 있습니다. 이 상태가 지속되면 Agent WAL 증가와 저장 공간 압박으로 이어질 수 있습니다."*
 
-**Dockpilot은 이 상황에서 ACK 정합성 규칙을 완화하지 않는다.** Coverage 정합성을 깨뜨리면 Audit 유실 사실 자체를 정확히 기록할 수 없기 때문이다. WAL 크기 상한 자동 확대도 하지 않는다.
+**DockLattice은 이 상황에서 ACK 정합성 규칙을 완화하지 않는다.** Coverage 정합성을 깨뜨리면 Audit 유실 사실 자체를 정확히 기록할 수 없기 때문이다. WAL 크기 상한 자동 확대도 하지 않는다.
 
 지속적인 Coverage Churn(ACK 대상 범위 안에서 GAP이 계속 생성)은 프로토콜 오류가 아니라 **Agent가 Audit을 생성·유실하는 속도가 Server 동기화 속도를 넘어선 상태**다. 정상 부하에서는 발생하지 않아야 하며 이는 전송 프로토타입 합격 기준으로 검증한다.
 
@@ -1632,7 +1632,7 @@ v1에서 제외하는 근거:
 2. **bind mount는 discovery root 밖의 임의 경로를 가리킨다.** 백업하려면 Agent에 "임의 경로 읽기" 능력을 줘야 하고 §10의 file safety 경계가 무너진다. 이 이유만으로도 bind backup은 v1에서 배제해야 한다.
 3. 크기/시간/디스크 압박이 Agent를 backup product로 만든다.
 
-> Dockpilot이 application-consistent database backup을 자동으로 보장하려 하지 않는다.
+> DockLattice이 application-consistent database backup을 자동으로 보장하려 하지 않는다.
 
 나중에 넣는다면 최소 형태로만: named volume만, 명시적 opt-in, "애플리케이션 일관성을 보장하지 않습니다"를 회피 불가능하게 표시, DB류는 문서에서 "dump를 compose service로 돌리세요"로 안내.
 
@@ -1672,7 +1672,7 @@ COMMITTING + 일부 교체됨      → pre-restore snapshot으로 rollback 시�
                  SSH를 통한 수동 복구 안내
 ```
 
-이는 Compose 상태를 추측해 자동 롤백하는 기능이 **아니다.** Dockpilot이 자신이 시작한 다중 파일 트랜잭션의 원자성 경계를 닫는 것이다.
+이는 Compose 상태를 추측해 자동 롤백하는 기능이 **아니다.** DockLattice이 자신이 시작한 다중 파일 트랜잭션의 원자성 경계를 닫는 것이다.
 
 ---
 
@@ -1680,7 +1680,7 @@ COMMITTING + 일부 교체됨      → pre-restore snapshot으로 rollback 시�
 
 ### 14.1 Agent Disk Budget
 
-Dockpilot 때문에 호스트 디스크가 가득 차서 서비스가 죽는 것은 최악의 시나리오다.
+DockLattice 때문에 호스트 디스크가 가득 차서 서비스가 죽는 것은 최악의 시나리오다.
 
 **축출 순서** — 되돌릴 수 없는 데이터를 가장 늦게 버린다:
 
@@ -1694,7 +1694,7 @@ Dockpilot 때문에 호스트 디스크가 가득 차서 서비스가 죽는 것
 7. 더 이상 자동 삭제하지 않음 → DEGRADED_STORAGE 진입
 ```
 
-**수동 Backup은 자동으로 삭제하지 않는다.** 사용자가 명시적으로 생성한 backup을 Dockpilot이 조용히 삭제해서는 안 된다.
+**수동 Backup은 자동으로 삭제하지 않는다.** 사용자가 명시적으로 생성한 backup을 DockLattice이 조용히 삭제해서는 안 된다.
 
 ### 14.2 Emergency Reserve (기본 64MB)
 
@@ -1733,13 +1733,13 @@ Operation output tail은 disk pressure에서 축출 가능하되 최소 결과(`
 
 **허용되는 변경 Operation**: `compose.up/down/start/stop/restart`, `container.start/stop/restart/remove`
 
-허용 근거: Agent configuration file을 새로 작성하지 않고, 자동 snapshot이 필요 없으며, Host 장애 대응이나 공간 확보에 필요할 수 있고, Emergency Reserve에서 최소 Operation 상태와 Managed Audit을 기록할 수 있다. 디스크가 찬 상황에서 서비스 재시작 수단까지 차단하면 Dockpilot이 장애 대응을 방해하게 된다.
+허용 근거: Agent configuration file을 새로 작성하지 않고, 자동 snapshot이 필요 없으며, Host 장애 대응이나 공간 확보에 필요할 수 있고, Emergency Reserve에서 최소 Operation 상태와 Managed Audit을 기록할 수 있다. 디스크가 찬 상황에서 서비스 재시작 수단까지 차단하면 DockLattice이 장애 대응을 방해하게 된다.
 
 단, 수락 전에 **Durable Admission Check**를 통과해야 한다: 최소 Operation Record / Managed Audit Record / terminal·interrupted 상태를 기록할 공간이 있는가. 이 최소 공간조차 없으면 거부한다.
 
 **거부되는 Operation**: `compose.pull`, file write, `backup.create`, `backup.restore`, 새 수동 Backup, 자동 Snapshot이 필요한 변경, 대용량 staging이 필요한 작업
 
-`compose.pull`을 거부하는 이유: Docker Storage에 큰 이미지 데이터를 추가해 free-space 부족을 악화시킬 수 있다. `compose.up --no-build`도 Compose 설정에 따라 image pull이 발생해 실패할 수 있다. Dockpilot은 이를 build로 fallback하지 않으며 storage warning과 Docker/Compose 결과를 그대로 반환한다.
+`compose.pull`을 거부하는 이유: Docker Storage에 큰 이미지 데이터를 추가해 free-space 부족을 악화시킬 수 있다. `compose.up --no-build`도 Compose 설정에 따라 image pull이 발생해 실패할 수 있다. DockLattice은 이를 build로 fallback하지 않으며 storage warning과 Docker/Compose 결과를 그대로 반환한다.
 
 **원인 구분 (필수)**:
 
@@ -1747,7 +1747,7 @@ Operation output tail은 disk pressure에서 축출 가능하되 최소 결과(`
 storage_degraded_reason: FILESYSTEM_FREE_LOW | AGENT_STATE_BUDGET_EXCEEDED | BOTH
 ```
 
-두 원인은 사용자의 조치가 다르므로 반드시 구분한다. Dockpilot과 무관한 파일 때문에 Host filesystem이 가득 찬 경우 Agent가 자기 데이터를 정리해도 DEGRADED_STORAGE가 유지될 수 있으며 **이는 의도된 동작**이다. 해결은 Host filesystem 정리이며 Dockpilot이 임의의 Host 파일을 삭제해서는 안 된다.
+두 원인은 사용자의 조치가 다르므로 반드시 구분한다. DockLattice과 무관한 파일 때문에 Host filesystem이 가득 찬 경우 Agent가 자기 데이터를 정리해도 DEGRADED_STORAGE가 유지될 수 있으며 **이는 의도된 동작**이다. 해결은 Host filesystem 정리이며 DockLattice이 임의의 Host 파일을 삭제해서는 안 된다.
 
 `DEGRADED_STORAGE`는 Compose 같은 허용 capability를 false로 만들지 않는다. 대신 Agent heartbeat의 capability reason으로 보고하며, Server API와 Web UI는 capability가 enabled여도 그 reason을 보존해 경고로 표시한다. 사용자는 작업 버튼을 계속 사용할 수 있고, 어떤 저장소 압박이 남아 있는지도 확인할 수 있어야 한다.
 
@@ -1774,7 +1774,7 @@ oom      : reclaim으로도 공간을 확보하지 못함. 실패 조건.
 oom_kill : 프로세스가 종료됨. 실패 조건.
 ```
 
-Dockpilot Agent는 WAL write, backup/snapshot 파일 쓰기, compose CLI의 파일 읽기로 page cache를 지속 생성하므로 `max`는 부하 중 계속 증가한다. 이를 실패로 판정하면 정상 구현이 불합격 처리된다.
+DockLattice Agent는 WAL write, backup/snapshot 파일 쓰기, compose CLI의 파일 읽기로 page cache를 지속 생성하므로 `max`는 부하 중 계속 증가한다. 이를 실패로 판정하면 정상 구현이 불합격 처리된다.
 
 다만 다음 표현도 쓰지 않는다: "max 증가 = 항상 정상", "max 증가는 page cache 때문이라고 단정". `max`는 anon/file/kernel 어떤 charge로도 증가할 수 있으므로 breakdown과 시간 추세를 함께 본다.
 
@@ -1888,13 +1888,13 @@ Compose Project → Overview / Services / Logs / Metrics / Environment
 - `--remove-orphans`는 기본 비활성 OPTIONAL 플래그.
 - `.env` 편집 화면은 값을 기본 마스킹하고 명시적 토글로 표시한다.
 
-**Secret 취급 (CORE)**: audit payload와 operation record에 파일 내용을 절대 넣지 않는다(sha256과 파일명만). compose 로그 스트림에 secret이 나올 수 있으나 이는 Docker의 동작이므로 Dockpilot이 개입하지 않는다(문서에 명시).
+**Secret 취급 (CORE)**: audit payload와 operation record에 파일 내용을 절대 넣지 않는다(sha256과 파일명만). compose 로그 스트림에 secret이 나올 수 있으나 이는 Docker의 동작이므로 DockLattice이 개입하지 않는다(문서에 명시).
 
 ---
 
 ## 17. Optional Git CD
 
-Dockpilot의 중심은 Docker이며 Git/CD가 아니다. Git integration이 없어도 모든 Docker 관리 기능이 동작해야 한다.
+DockLattice의 중심은 Docker이며 Git/CD가 아니다. Git integration이 없어도 모든 Docker 관리 기능이 동작해야 한다.
 
 ```
 Manual Trigger ----\
@@ -1958,7 +1958,7 @@ docker system df / prune (얇은 래핑)
 
 ```
 metrics history / 시계열
-discovery max_depth, discovery boundary 마커, .dockpilotignore
+discovery max_depth, discovery boundary 마커, .docklatticeignore
 Native Agent 정식 지원
 Key Rotation
 원격 backup 스토리지, 알림, 인증/RBAC, CLI/TUI
@@ -2041,7 +2041,7 @@ Delta Coverage API
 
 답하는 질문: 단일 Agent-initiated 지속 연결에서 Control / Durable Sync / Bulk 트래픽이 공존할 수 있는가. 느린 소비자 하나가 다른 클래스를 굶기지 않는가. Audit Sync가 지속 전진하는가. Memory가 상한 안에서 안정되는가.
 
-답하지 않는 질문: Dockpilot의 기능적 정확성, Docker/Compose 동작, Discovery 성능, 파일 안전성, UI.
+답하지 않는 질문: DockLattice의 기능적 정확성, Docker/Compose 동작, Discovery 성능, 파일 안전성, UI.
 
 ### A.2 검증 가설
 
@@ -2396,7 +2396,7 @@ Transport Prototype 단계에서 코드 작성 범위는 다음으로 제한했�
 작성하지 않음:
   Docker API 연동, docker compose 실행, 실제 Agent 등록,
   SQLite, 실제 Audit WAL, 실제 Backup, Web UI, File editing,
-  Dockpilot production server/agent
+  DockLattice production server/agent
 ```
 
-전체 Dockpilot 구현은 다음 단계의 구현 계획을 수립한 뒤 시작한다. 프로토타입 전용 workload, driver, stub queue/store와 탈락한 WebSocket adapter는 제품 코드로 이관하지 않는다.
+전체 DockLattice 구현은 다음 단계의 구현 계획을 수립한 뒤 시작한다. 프로토타입 전용 workload, driver, stub queue/store와 탈락한 WebSocket adapter는 제품 코드로 이관하지 않는다.

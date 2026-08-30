@@ -21,7 +21,7 @@ All at revision `c6366b83dc31c712b58ace47fe384bffb15a2a32` unless noted.
 | [Hardening matrix](hardening-matrix-e2e.md), `docker-daemon-restart` | `dp-vm-clean` guest | PASS |
 | [Abuse matrix](abuse-matrix-e2e.md), 13 cases | workstation | PASS |
 | [Recovery matrix](recovery-matrix-e2e.md), incl. new case 1b | workstation | PASS |
-| [Clean-host installation](clean-host-install-e2e.md) | `dp-vm-clean` guest, never ran Dockpilot | PASS |
+| [Clean-host installation](clean-host-install-e2e.md) | `dp-vm-clean` guest, never ran DockLattice | PASS |
 | [Multi-Agent lab](multi-agent-lab.md), 11 cases, 3 Agents | `dp-vm-lab` guest | PASS |
 | [Power cut](power-cut.md) | `dp-vm-clean` guest, `virsh destroy` | PASS |
 | [Soak](soak.md) stage 1 re-run | workstation | INCOMPLETE — stopped at 17.6 of 60 minutes |
@@ -145,30 +145,23 @@ generation ahead of everything already issued. The two-advance recovery seen
 earlier came from restoring the Identity State *and* the database together,
 which is a different case and is covered by recovery matrix case 1b.
 
-## What has not been run
+## Release-candidate soak completion
 
-1. **Stage 1 soak at this revision.** Architecture section 30 requires a soak
-   after a transport or session change, and finding 1 is one. The recorded
-   one-hour soak in [`soak.md`](soak.md) predates that fix. A re-run reached
-   17.6 of 60 minutes before being stopped; over 35 samples nothing moved in a
-   direction that would suggest accumulation — Server RSS 27.2→29.2 MiB (peak
-   31.2), Agent RSS 25.2→26.3 MiB (peak 28.0), Server descriptors 15→16, Agent
-   descriptors 11→10, threads at most 12 each, Audit lag constant at 1, zero
-   gaps, zero OOM events, zero HTTP errors, host ACTIVE in every sample — but
-   17.6 minutes is not a soak, and this is not evidence of anything.
-2. **Stage 2 soak** (2–4 hours, mixed mode) has never run.
-
-Both are excluded from the Interface Freeze gate by project decision.
-The resource matrix has since been re-run at this revision: three trials,
+The long-running soak is excluded from the Interface Freeze gate by project
+decision but is part of the separately adopted Release Candidate gate. All
+three stages passed at the pre-rename revision `7249c29`, including the
+eight-hour mixed overnight stage; see [`soak.md`](soak.md). The DockLattice
+identity migration requires the gate to be repeated at the renamed release
+revision.
+The resource matrix was also re-run at its post-fix revision: three trials,
 `status=PASS`, peak RSS in the low tens of MiB against 256/512 MiB budgets, no
-OOM. That run also resolved a question this record previously listed as open -
+OOM. That run resolved a question this record previously listed as open -
 whether the slow-consumer `dropped_bytes` accounting worked at all. It does; the
 gate's own assertion was racing the consumer's position in an in-order byte
 stream, failing three of five observed trials and passing two with exact counts
 of 10,773 and 80,514 bytes. The driver now holds the stream open until the
 evidence exists. See [resource-gate.md](resource-gate.md).
 
-Long-duration soak is **not run**, and is excluded from the Interface Freeze
-gate by project decision. That is a scope decision, not a result: nothing here
-should be read as a soak having passed. If a v1 Release Candidate wants
-long-duration validation, it is a separate release gate.
+All three stages are established as the pre-rename behavioral baseline. The
+separate Release Candidate soak gate remains open for the renamed revision and
+does not alter the earlier Interface Freeze result.

@@ -67,7 +67,7 @@ const dashboard = {
       pull_services: ["api", "db"],
       project_up_available: false,
       project_up_reason:
-        "Dockpilot v1 does not build Images; build-required Services: worker",
+        "DockLattice v1 does not build Images; build-required Services: worker",
       defined_services: [
         {
           name: "api",
@@ -95,7 +95,7 @@ const dashboard = {
           pull_available: false,
           up_available: false,
           unavailable_reason:
-            "Dockpilot v1 does not build Images; this Service has no declared Image",
+            "DockLattice v1 does not build Images; this Service has no declared Image",
         },
       ],
     },
@@ -401,7 +401,7 @@ test("host-first shell renders deterministic fleet state", async ({
   page,
 }, testInfo) => {
   const sidebar = page.getByRole("complementary", {
-    name: "Dockpilot navigation",
+    name: "DockLattice navigation",
   });
   await expect(sidebar.getByRole("link", { name: "Search" })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Home" })).toBeVisible();
@@ -498,7 +498,7 @@ test("top bar controls a persisted and context-safe refresh cadence", async ({
   await intervalSelect.selectOption("300000");
   expect(
     await page.evaluate(() =>
-      localStorage.getItem("dockpilot.auto-refresh-interval.v1"),
+      localStorage.getItem("docklattice.auto-refresh-interval.v1"),
     ),
   ).toBe("300000");
 
@@ -547,7 +547,7 @@ test("Refresh keeps current data visible while replacement data loads", async ({
   await expect(refreshButton).toHaveAttribute("aria-busy", "true");
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
   await expect(page.getByText("Loading current state")).toHaveCount(0);
-  await expect(page.getByText("Refreshing Dockpilot")).toHaveCount(0);
+  await expect(page.getByText("Refreshing DockLattice")).toHaveCount(0);
 
   releaseDashboard();
   await expect(refreshButton).toBeEnabled();
@@ -629,7 +629,7 @@ test("Host Summary separates visible Engine details without repeating overview f
     .locator("xpath=ancestor::section");
   await expect(composeExceptions.getByRole("columnheader")).toHaveText([
     "Project",
-    "Dockpilot condition",
+    "DockLattice condition",
     "Config drift",
   ]);
   const staleProject = composeExceptions.locator("tbody tr").filter({
@@ -1206,7 +1206,9 @@ test("list columns resize by pointer and keyboard without page overflow", async 
 
   const storedRatios = await page.evaluate(() => {
     const key = Object.keys(localStorage).find((candidate) => {
-      return candidate.startsWith("dockpilot.table-widths.v2:Project|Services");
+      return candidate.startsWith(
+        "docklattice.table-widths.v2:Project|Services",
+      );
     });
     return key ? JSON.parse(localStorage.getItem(key)) : null;
   });
@@ -1290,7 +1292,7 @@ test("Compose build policy is visible and blocks whole-project Up", async ({
   const runtimePanel = page.locator("section.project-runtime-panel");
   await expect(
     projectPanel.getByRole("heading", {
-      name: "Dockpilot management",
+      name: "DockLattice management",
       exact: true,
     }),
   ).toBeVisible();
@@ -1320,7 +1322,7 @@ test("Compose build policy is visible and blocks whole-project Up", async ({
     .boundingBox();
   const managementPosition = await projectPanel
     .getByRole("heading", {
-      name: "Dockpilot management",
+      name: "DockLattice management",
       exact: true,
     })
     .boundingBox();
@@ -1796,7 +1798,7 @@ test("narrow viewport exposes an accessible navigation path without horizontal p
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
   await expect(
-    page.getByRole("complementary", { name: "Dockpilot navigation" }),
+    page.getByRole("complementary", { name: "DockLattice navigation" }),
   ).toBeVisible();
   const horizontalOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth - window.innerWidth,
@@ -1856,7 +1858,7 @@ test("Container Inspector is route-aware, non-modal, and responsive", async ({
     );
     expect(
       await page.evaluate(() =>
-        localStorage.getItem("dockpilot.inspector-width.v1"),
+        localStorage.getItem("docklattice.inspector-width.v1"),
       ),
     ).toBe(String(Math.round(draggedWidth)));
 

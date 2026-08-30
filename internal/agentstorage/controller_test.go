@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/east-true/dockpilot/internal/backup"
-	"github.com/east-true/dockpilot/internal/diskbudget"
-	"github.com/east-true/dockpilot/internal/operation"
+	"github.com/east-true/docklattice/internal/backup"
+	"github.com/east-true/docklattice/internal/diskbudget"
+	"github.com/east-true/docklattice/internal/operation"
 )
 
 func TestControllerAppliesDegradedPolicyAndReserveClasses(t *testing.T) {

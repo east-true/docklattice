@@ -8,8 +8,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/east-true/dockpilot/internal/agentstate"
-	"github.com/east-true/dockpilot/internal/producttransport"
+	"github.com/east-true/docklattice/internal/agentstate"
+	"github.com/east-true/docklattice/internal/producttransport"
 )
 
 func TestAgentDiagnosticsDescribeLifecycleWithoutExposingSecrets(t *testing.T) {

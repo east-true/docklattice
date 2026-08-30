@@ -32,8 +32,8 @@ jobs:
 
     env:
       REGISTRY: ghcr.io
-      SERVER_IMAGE: ghcr.io/${{ github.repository_owner }}/dockpilot-server
-      AGENT_IMAGE: ghcr.io/${{ github.repository_owner }}/dockpilot-agent
+      SERVER_IMAGE: ghcr.io/${{ github.repository_owner }}/docklattice-server
+      AGENT_IMAGE: ghcr.io/${{ github.repository_owner }}/docklattice-agent
       RELEASE_ASSET_DIR: dist/release-assets
 
     steps:
@@ -249,7 +249,7 @@ jobs:
 
           gh release create "$GITHUB_REF_NAME" \
             --verify-tag \
-            --title "Dockpilot $GITHUB_REF_NAME" \
+            --title "DockLattice $GITHUB_REF_NAME" \
             --generate-notes \
             "${release_flags[@]}" \
             "$RELEASE_ASSET_DIR"/*.json \

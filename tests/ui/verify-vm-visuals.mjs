@@ -6,7 +6,7 @@ import { browserExecutable } from "../../playwright.config.mjs";
 
 const baseURL = process.env.PLAYWRIGHT_TEST_BASE_URL;
 const evidenceDirectory =
-  process.env.DOCKPILOT_VM_EVIDENCE_DIRECTORY ||
+  process.env.DOCKLATTICE_VM_EVIDENCE_DIRECTORY ||
   "test-results/vm-visual-acceptance";
 
 if (!baseURL) {
@@ -81,7 +81,7 @@ async function loadContext(page) {
           return response.json();
         });
         host = dashboard?.hosts?.find(
-          (candidate) => candidate.display_name === "dockpilot-vm-acceptance",
+          (candidate) => candidate.display_name === "docklattice-vm-acceptance",
         );
         return Boolean(host?.capabilities?.docker?.enabled);
       },
@@ -117,7 +117,7 @@ async function loadContext(page) {
   const container = containers.find(
     (candidate) =>
       candidate.compose_service === "web" &&
-      candidate.compose_project === "dockpilot-acceptance-normal",
+      candidate.compose_project === "docklattice-acceptance-normal",
   );
 
   expect(container, "normal web Container must be present").toBeTruthy();
@@ -165,11 +165,11 @@ async function verifyViewport(browser, viewport) {
     });
 
     await expect(
-      page.getByRole("heading", { name: "dockpilot-vm-acceptance" }),
+      page.getByRole("heading", { name: "docklattice-vm-acceptance" }),
     ).toBeVisible();
 
     const inspector = page.getByRole("complementary", {
-      name: /dockpilot-acceptance-normal-web-1/,
+      name: /docklattice-acceptance-normal-web-1/,
     });
     if (viewport.route === "container-inspector") {
       await expect(inspector).toBeVisible();

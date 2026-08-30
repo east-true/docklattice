@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/agentprojects"
-	"github.com/east-true/dockpilot/internal/auditwal"
-	"github.com/east-true/dockpilot/internal/diskbudget"
+	"github.com/east-true/docklattice/internal/agentprojects"
+	"github.com/east-true/docklattice/internal/auditwal"
+	"github.com/east-true/docklattice/internal/diskbudget"
 )
 
 type fakeProjectSnapshot []agentprojects.Project
@@ -221,15 +221,15 @@ func TestEvictionExecutorUnackedTierCreatesDurableDiskPressureGap(t *testing.T) 
 func TestProjectStagingReclaimerUsesOnlyCatalogRoots(t *testing.T) {
 	project := t.TempDir()
 	secondProject := t.TempDir()
-	stage := filepath.Join(project, ".dockpilot-stage-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	secondStage := filepath.Join(secondProject, ".dockpilot-stage-cccccccccccccccccccccccccccccccc")
+	stage := filepath.Join(project, ".docklattice-stage-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	secondStage := filepath.Join(secondProject, ".docklattice-stage-cccccccccccccccccccccccccccccccc")
 	if err := os.WriteFile(stage, []byte("stage"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(secondStage, []byte("stage"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	outside := filepath.Join(t.TempDir(), ".dockpilot-stage-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	outside := filepath.Join(t.TempDir(), ".docklattice-stage-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
 		t.Fatal(err)
 	}

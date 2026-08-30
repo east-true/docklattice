@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/agentid"
-	"github.com/east-true/dockpilot/internal/agentstate"
-	"github.com/east-true/dockpilot/internal/identity"
-	"github.com/east-true/dockpilot/internal/serverstore"
+	"github.com/east-true/docklattice/internal/agentid"
+	"github.com/east-true/docklattice/internal/agentstate"
+	"github.com/east-true/docklattice/internal/identity"
+	"github.com/east-true/docklattice/internal/serverstore"
 )
 
 var fixedNow = time.Date(2026, 8, 15, 9, 0, 0, 123456789, time.FixedZone("KST", 9*60*60))

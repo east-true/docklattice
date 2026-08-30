@@ -3,8 +3,8 @@ package grpcadapter
 import (
 	"context"
 
-	"github.com/east-true/dockpilot/internal/scheduling"
-	"github.com/east-true/dockpilot/internal/transport"
+	"github.com/east-true/docklattice/internal/scheduling"
+	"github.com/east-true/docklattice/internal/transport"
 )
 
 type sendJob struct {

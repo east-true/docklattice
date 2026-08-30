@@ -53,7 +53,7 @@ parameter is a `400`, so a typo in a filter name can never silently return
 unfiltered data.
 
 The inventory routes accept no query parameters at all. They are a pass-through
-of Docker's own answer, not a Dockpilot cache.
+of Docker's own answer, not a DockLattice cache.
 
 ## Projects
 
@@ -108,7 +108,7 @@ Both mutations return `202`. Restore verifies every file's SHA-256 against the
 archive manifest and refuses the whole restore on any mismatch — a tampered or
 truncated archive fails closed and leaves the live project untouched.
 
-Restore is the *only* multi-file transaction in Dockpilot.
+Restore is the *only* multi-file transaction in DockLattice.
 
 ## Operations
 

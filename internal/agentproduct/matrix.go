@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/dockeradapter"
-	"github.com/east-true/dockpilot/internal/livematrix"
-	"github.com/east-true/dockpilot/internal/livestats"
+	"github.com/east-true/docklattice/internal/dockeradapter"
+	"github.com/east-true/docklattice/internal/livematrix"
+	"github.com/east-true/docklattice/internal/livestats"
 )
 
 // MatrixDocker is the Docker surface live metrics need. It is separate from
@@ -106,7 +106,7 @@ func (e dockerEvents) consume(ctx context.Context, changed func()) {
 }
 
 // dockerWorkload is the host row: what the Engine says about the machine it
-// runs on, plus capacity for the paths Dockpilot writes to.
+// runs on, plus capacity for the paths DockLattice writes to.
 type dockerWorkload struct {
 	docker MatrixDocker
 	paths  []string
@@ -136,7 +136,7 @@ func (w dockerWorkload) Capacity(ctx context.Context) (livematrix.Capacity, erro
 // filesystem they live on so two discovery roots under one mount appear once.
 //
 // It reports these paths and nothing else. It is not a mount inventory, and
-// must not become one: the question is how much room Dockpilot has where it
+// must not become one: the question is how much room DockLattice has where it
 // writes, which is answered by the paths it writes to.
 func (w dockerWorkload) filesystems() []livematrix.Filesystem {
 	probe := w.probe

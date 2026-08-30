@@ -30,22 +30,22 @@ require_env() {
     [ -n "$value" ] || fail "required environment is missing: $name"
 }
 
-for name in DOCKPILOT_BASE_URL DOCKPILOT_CA_FILE DOCKPILOT_DASHBOARD_FILE DOCKPILOT_PROJECT_ROOT \
-    DOCKPILOT_COMPOSE_PROJECT DOCKPILOT_SERVER_CONTAINER DOCKPILOT_AGENT_CONTAINER \
-    DOCKPILOT_AUDIT_URL DOCKPILOT_AGENT_RECONNECT_HELPER \
+for name in DOCKLATTICE_BASE_URL DOCKLATTICE_CA_FILE DOCKLATTICE_DASHBOARD_FILE DOCKLATTICE_PROJECT_ROOT \
+    DOCKLATTICE_COMPOSE_PROJECT DOCKLATTICE_SERVER_CONTAINER DOCKLATTICE_AGENT_CONTAINER \
+    DOCKLATTICE_AUDIT_URL DOCKLATTICE_AGENT_RECONNECT_HELPER \
     RESOURCE_CASE_SECONDS RESOURCE_VERDICT_FILE RESOURCE_FIXTURE_IMAGE; do
     require_env "$name"
 done
 
-case "$DOCKPILOT_BASE_URL" in https://127.0.0.1:[0-9]*) ;; *) fail "base URL must be the harness-local HTTPS endpoint" ;; esac
-case "$DOCKPILOT_PROJECT_ROOT" in /*) ;; *) fail "project root must be absolute" ;; esac
-case "$DOCKPILOT_PROJECT_ROOT" in *:*|*'
+case "$DOCKLATTICE_BASE_URL" in https://127.0.0.1:[0-9]*) ;; *) fail "base URL must be the harness-local HTTPS endpoint" ;; esac
+case "$DOCKLATTICE_PROJECT_ROOT" in /*) ;; *) fail "project root must be absolute" ;; esac
+case "$DOCKLATTICE_PROJECT_ROOT" in *:*|*'
 '*) fail "project root contains an unsafe character" ;; esac
 case "$RESOURCE_VERDICT_FILE" in "$evidence"/*) ;; *) fail "verdict file must be inside the evidence directory" ;; esac
 [ ! -e "$RESOURCE_VERDICT_FILE" ] || fail "refusing to overwrite workload verdict"
-[ -r "$DOCKPILOT_CA_FILE" ] && [ -r "$DOCKPILOT_DASHBOARD_FILE" ] || fail "CA or dashboard input is unreadable"
-[ -x "$DOCKPILOT_AGENT_RECONNECT_HELPER" ] || fail "Agent reconnect helper is not executable"
-case "$DOCKPILOT_AUDIT_URL" in "$DOCKPILOT_BASE_URL"/api/v1/hosts) ;; *) fail "Audit URL must be the harness-local canonical API" ;; esac
+[ -r "$DOCKLATTICE_CA_FILE" ] && [ -r "$DOCKLATTICE_DASHBOARD_FILE" ] || fail "CA or dashboard input is unreadable"
+[ -x "$DOCKLATTICE_AGENT_RECONNECT_HELPER" ] || fail "Agent reconnect helper is not executable"
+case "$DOCKLATTICE_AUDIT_URL" in "$DOCKLATTICE_BASE_URL"/api/v1/hosts) ;; *) fail "Audit URL must be the harness-local canonical API" ;; esac
 case "$RESOURCE_CASE_SECONDS" in ''|*[!0-9]*) fail "RESOURCE_CASE_SECONDS must be an integer" ;; esac
 [ "$RESOURCE_CASE_SECONDS" -ge 120 ] || fail "RESOURCE_CASE_SECONDS must be at least 120 for production traffic and settle phases"
 
@@ -55,23 +55,23 @@ done
 nanoseconds=$(date +%s%N)
 case "$nanoseconds" in ''|*[!0-9]*) fail "date must support nanosecond timestamps" ;; esac
 docker info >/dev/null 2>&1 || fail "Docker daemon is unavailable"
-docker inspect "$DOCKPILOT_SERVER_CONTAINER" "$DOCKPILOT_AGENT_CONTAINER" >/dev/null 2>&1 || fail "production Server or Agent container is missing"
-[ "$(docker inspect --format '{{.State.Running}}' "$DOCKPILOT_SERVER_CONTAINER")" = true ] || fail "production Server is not running"
-[ "$(docker inspect --format '{{.State.Running}}' "$DOCKPILOT_AGENT_CONTAINER")" = true ] || fail "production Agent is not running"
+docker inspect "$DOCKLATTICE_SERVER_CONTAINER" "$DOCKLATTICE_AGENT_CONTAINER" >/dev/null 2>&1 || fail "production Server or Agent container is missing"
+[ "$(docker inspect --format '{{.State.Running}}' "$DOCKLATTICE_SERVER_CONTAINER")" = true ] || fail "production Server is not running"
+[ "$(docker inspect --format '{{.State.Running}}' "$DOCKLATTICE_AGENT_CONTAINER")" = true ] || fail "production Agent is not running"
 docker image inspect "$RESOURCE_FIXTURE_IMAGE" >/dev/null 2>&1 || fail "local fixture image is unavailable"
 
-agent_id=$(jq -r '.hosts[] | select(.state == "ACTIVE") | .id' "$DOCKPILOT_DASHBOARD_FILE")
-project_uid=$(jq -r --arg root "$DOCKPILOT_PROJECT_ROOT" '.projects[] | select(.working_dir == $root and .present == true and .stale == false) | .uid' "$DOCKPILOT_DASHBOARD_FILE")
+agent_id=$(jq -r '.hosts[] | select(.state == "ACTIVE") | .id' "$DOCKLATTICE_DASHBOARD_FILE")
+project_uid=$(jq -r --arg root "$DOCKLATTICE_PROJECT_ROOT" '.projects[] | select(.working_dir == $root and .present == true and .stale == false) | .uid' "$DOCKLATTICE_DASHBOARD_FILE")
 [ -n "$agent_id" ] && [ "$agent_id" != null ] || fail "dashboard has no active production Agent"
 [ "$(printf '%s\n' "$agent_id" | awk 'NF { count++ } END { print count+0 }')" -eq 1 ] || fail "dashboard does not identify exactly one active Agent"
 [ -n "$project_uid" ] && [ "$project_uid" != null ] || fail "dashboard has no exact fixture project"
 [ "$(printf '%s\n' "$project_uid" | awk 'NF { count++ } END { print count+0 }')" -eq 1 ] || fail "dashboard does not identify exactly one fixture project"
-jq -e --arg agent "$agent_id" --arg root "$DOCKPILOT_PROJECT_ROOT" '
+jq -e --arg agent "$agent_id" --arg root "$DOCKLATTICE_PROJECT_ROOT" '
   any(.hosts[]; .id == $agent and .state == "ACTIVE" and
     .capabilities.connection.enabled == true and .capabilities.docker.enabled == true and
     .capabilities.compose.enabled == true and .capabilities.discovery.enabled == true) and
   any(.projects[]; .working_dir == $root and .compose_executable == true and .filesystem_writable == true)
-' "$DOCKPILOT_DASHBOARD_FILE" >/dev/null || fail "required product capability is missing"
+' "$DOCKLATTICE_DASHBOARD_FILE" >/dev/null || fail "required product capability is missing"
 
 compose_evidence="$evidence/compose-child-processes.tsv"
 latency_evidence="$evidence/p0-p1-latency.jsonl"
@@ -88,7 +88,7 @@ printf 'observed_at\tpid\tppid\texecutable\toperation_id\n' >"$compose_evidence"
 : >"$buffer_evidence"
 printf 'observed_at\tkind\tbytes\tfiles\tdetail\n' >"$io_evidence"
 
-prefix="dockpilot-resource-driver-$trial-$$"
+prefix="docklattice-resource-driver-$trial-$$"
 stop_audit="$evidence/.stop-audit-$prefix"
 stop_compose="$evidence/.stop-compose-$prefix"
 background_pids=
@@ -110,16 +110,16 @@ cleanup() {
     for pid in $background_pids; do
         wait "$pid" 2>/dev/null || true
     done
-    ids=$(docker ps -aq --filter "label=io.dockpilot.resource-driver=$prefix" 2>/dev/null || true)
+    ids=$(docker ps -aq --filter "label=io.docklattice.resource-driver=$prefix" 2>/dev/null || true)
     if [ -n "$ids" ]; then
         # IDs are Docker-generated and bounded to this unique driver label.
         # shellcheck disable=SC2086
         docker rm -f $ids >/dev/null 2>&1 || true
     fi
-    if docker inspect "$DOCKPILOT_AGENT_CONTAINER" >/dev/null 2>&1; then
-        docker exec "$DOCKPILOT_AGENT_CONTAINER" /bin/sh -c \
-            'root=$1; rm -rf "$root/.dockpilot-resource-discovery"; rm -f "$root/.env"' \
-            sh "$DOCKPILOT_PROJECT_ROOT" >/dev/null 2>&1 || true
+    if docker inspect "$DOCKLATTICE_AGENT_CONTAINER" >/dev/null 2>&1; then
+        docker exec "$DOCKLATTICE_AGENT_CONTAINER" /bin/sh -c \
+            'root=$1; rm -rf "$root/.docklattice-resource-discovery"; rm -f "$root/.env"' \
+            sh "$DOCKLATTICE_PROJECT_ROOT" >/dev/null 2>&1 || true
     fi
     rm -f "$stop_audit" "$stop_compose" "$evidence"/.api-*.tmp "$evidence"/.stream-*.tmp
     if [ "$status" -ne 0 ] || [ "$completed" -ne 1 ]; then
@@ -145,9 +145,9 @@ api_request() {
     output=$4
     start=$(date +%s%N)
     if [ "$method" = GET ]; then
-        curl --fail --silent --show-error --max-time 10 --cacert "$DOCKPILOT_CA_FILE" "$url" >"$output.tmp"
+        curl --fail --silent --show-error --max-time 10 --cacert "$DOCKLATTICE_CA_FILE" "$url" >"$output.tmp"
     else
-        curl --fail --silent --show-error --max-time 10 --cacert "$DOCKPILOT_CA_FILE" \
+        curl --fail --silent --show-error --max-time 10 --cacert "$DOCKLATTICE_CA_FILE" \
             -H 'Content-Type: application/json' -X "$method" --data "$body" "$url" >"$output.tmp"
     fi
     end=$(date +%s%N)
@@ -172,8 +172,8 @@ poll_operation() {
     output=$2
     deadline=$(( $(date +%s) + 90 ))
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        if curl --fail --silent --show-error --max-time 5 --cacert "$DOCKPILOT_CA_FILE" \
-            "$DOCKPILOT_BASE_URL/api/v1/agents/$agent_id/operations/$operation_id" >"$output.tmp" 2>/dev/null; then
+        if curl --fail --silent --show-error --max-time 5 --cacert "$DOCKLATTICE_CA_FILE" \
+            "$DOCKLATTICE_BASE_URL/api/v1/agents/$agent_id/operations/$operation_id" >"$output.tmp" 2>/dev/null; then
             [ "$(wc -c <"$output.tmp" | awk '{ print $1 }')" -le 1048576 ] || fail "operation response exceeded 1 MiB"
             mv "$output.tmp" "$output"
             status=$(jq -r '.status // empty' "$output")
@@ -190,8 +190,8 @@ poll_operation() {
 cursor_sample() {
     phase=$1
     page=$(mktemp "$evidence/.audit-$phase.XXXXXX") || return 1
-    if ! curl --fail --silent --show-error --max-time 10 --cacert "$DOCKPILOT_CA_FILE" \
-        "$DOCKPILOT_AUDIT_URL/$agent_id/audit?limit=500" >"$page"; then
+    if ! curl --fail --silent --show-error --max-time 10 --cacert "$DOCKLATTICE_CA_FILE" \
+        "$DOCKLATTICE_AUDIT_URL/$agent_id/audit?limit=500" >"$page"; then
         rm -f "$page"
         return 1
     fi
@@ -222,8 +222,8 @@ record_audit_visibility() {
     deadline=$(( $(date +%s) + 15 ))
     page=$(mktemp "$evidence/.audit-visible.XXXXXX") || fail "cannot create bounded Audit polling file"
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        if curl --fail --silent --show-error --max-time 5 --cacert "$DOCKPILOT_CA_FILE" \
-            "$DOCKPILOT_AUDIT_URL/$agent_id/audit?limit=500" >"$page" 2>/dev/null; then
+        if curl --fail --silent --show-error --max-time 5 --cacert "$DOCKLATTICE_CA_FILE" \
+            "$DOCKLATTICE_AUDIT_URL/$agent_id/audit?limit=500" >"$page" 2>/dev/null; then
             occurred_at=$(jq -r --arg operation "$operation_id" '[.events[] | select(.operation_id == $operation)][-1].occurred_at // empty' "$page")
             if [ -n "$occurred_at" ]; then
                 occurred_ns=$(date -u -d "$occurred_at" +%s%N) || fail "canonical Audit occurrence time is invalid"
@@ -255,27 +255,27 @@ sample_tree_io() {
 
 sample_all_io() {
     phase=$1
-    sample_tree_io "$DOCKPILOT_AGENT_CONTAINER" /var/lib/dockpilot/audit-wal wal "$phase"
-    sample_tree_io "$DOCKPILOT_AGENT_CONTAINER" /var/lib/dockpilot/backups backup "$phase"
-    sample_tree_io "$DOCKPILOT_AGENT_CONTAINER" /var/lib/dockpilot/restore-journal restore-journal "$phase"
-    sample_tree_io "$DOCKPILOT_SERVER_CONTAINER" /var/lib/dockpilot server-state "$phase"
-    directories=$(find "$DOCKPILOT_PROJECT_ROOT" -type d 2>/dev/null | awk 'END { print NR+0 }')
+    sample_tree_io "$DOCKLATTICE_AGENT_CONTAINER" /var/lib/docklattice/audit-wal wal "$phase"
+    sample_tree_io "$DOCKLATTICE_AGENT_CONTAINER" /var/lib/docklattice/backups backup "$phase"
+    sample_tree_io "$DOCKLATTICE_AGENT_CONTAINER" /var/lib/docklattice/restore-journal restore-journal "$phase"
+    sample_tree_io "$DOCKLATTICE_SERVER_CONTAINER" /var/lib/docklattice server-state "$phase"
+    directories=$(find "$DOCKLATTICE_PROJECT_ROOT" -type d 2>/dev/null | awk 'END { print NR+0 }')
     printf '%s\tdiscovery\t0\t%s\t%s\n' "$(now_iso)" "$directories" "$phase" >>"$io_evidence"
 }
 
 sample_all_io start
 
-docker exec "$DOCKPILOT_AGENT_CONTAINER" /bin/sh -c '
-  root=$1; base="$root/.dockpilot-resource-discovery"; mkdir -p "$base"
+docker exec "$DOCKLATTICE_AGENT_CONTAINER" /bin/sh -c '
+  root=$1; base="$root/.docklattice-resource-discovery"; mkdir -p "$base"
   i=0; while [ "$i" -lt 1200 ]; do mkdir -p "$base/d-$i"; i=$((i+1)); done
   i=0; while [ "$i" -lt 32768 ]; do printf "# resource padding\n"; i=$((i+1)); done >"$root/.env"
-' sh "$DOCKPILOT_PROJECT_ROOT"
+' sh "$DOCKLATTICE_PROJECT_ROOT"
 
 observe_compose() {
     operation_id=$1
     while [ ! -e "$stop_compose" ]; do
         at=$(now_iso)
-        docker top "$DOCKPILOT_AGENT_CONTAINER" -eo pid,ppid,comm,args 2>/dev/null |
+        docker top "$DOCKLATTICE_AGENT_CONTAINER" -eo pid,ppid,comm,args 2>/dev/null |
             awk -v at="$at" -v operation="$operation_id" 'NR > 1 && ($0 ~ /docker-compose/ || $0 ~ /docker compose/) { printf "%s\t%s\t%s\tdocker-compose\t%s\n", at, $1, $2, operation }' \
             >>"$compose_evidence" || true
         sleep 0.02
@@ -288,7 +288,7 @@ compose_observer_pid=$!
 remember_pid "$compose_observer_pid"
 compose_body=$(jq -cn --arg id "$compose_operation" --arg agent "$agent_id" --arg project "$project_uid" \
     '{operation_id:$id,agent_id:$agent,project_uid:$project,kind:"compose.up"}')
-api_request POST "$DOCKPILOT_BASE_URL/api/v1/operations" "$compose_body" "$evidence/compose-operation.accepted.json"
+api_request POST "$DOCKLATTICE_BASE_URL/api/v1/operations" "$compose_body" "$evidence/compose-operation.accepted.json"
 record_latency P0 operation_accept "$API_LATENCY_MS" accepted
 poll_operation "$compose_operation" "$evidence/compose-operation.final.json"
 record_audit_visibility "$compose_operation"
@@ -297,7 +297,7 @@ cursor_sample start || fail "cannot read initial canonical Audit cursor"
 wait "$compose_observer_pid" 2>/dev/null || true
 [ "$(awk 'END { print NR+0 }' "$compose_evidence")" -ge 2 ] || fail "real docker compose child process was not observed"
 
-compose_containers=$(docker ps -q --filter "label=com.docker.compose.project=$DOCKPILOT_COMPOSE_PROJECT" | sort)
+compose_containers=$(docker ps -q --filter "label=com.docker.compose.project=$DOCKLATTICE_COMPOSE_PROJECT" | sort)
 [ "$(printf '%s\n' "$compose_containers" | awk 'NF { count++ } END { print count+0 }')" -ge 1 ] || fail "Compose did not start its fixture container"
 for compose_container in $compose_containers; do
     [ "$(docker inspect --format '{{.Image}}' "$compose_container")" = "$(docker image inspect --format '{{.Id}}' "$RESOURCE_FIXTURE_IMAGE")" ] ||
@@ -308,7 +308,7 @@ done
 # Their bounded local Docker logs are removed by the driver cleanup.
 i=1
 while [ "$i" -le 6 ]; do
-    docker run --pull never -d --name "$prefix-load-$i" --label "io.dockpilot.resource-driver=$prefix" \
+    docker run --pull never -d --name "$prefix-load-$i" --label "io.docklattice.resource-driver=$prefix" \
         --log-driver local --log-opt max-size=2m --log-opt max-file=1 --log-opt compress=false \
         --entrypoint /bin/sh "$RESOURCE_FIXTURE_IMAGE" -c \
         'line=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; while :; do i=0; while [ "$i" -lt 1000 ]; do printf "%s\n" "$line"; i=$((i+1)); done; sleep 1; done' \
@@ -318,7 +318,7 @@ done
 # --no-trunc is required: these IDs are sent as the live-stream container_id,
 # and the Server accepts only a canonical 64-character container ID. A truncated
 # 12-character ID is rejected with HTTP 400 before any stream opens.
-containers=$(docker ps -q --no-trunc --filter "label=io.dockpilot.resource-driver=$prefix" --filter "name=$prefix-load-" | sort)
+containers=$(docker ps -q --no-trunc --filter "label=io.docklattice.resource-driver=$prefix" --filter "name=$prefix-load-" | sort)
 [ "$(printf '%s\n' "$containers" | awk 'NF { count++ } END { print count+0 }')" -eq 6 ] || fail "did not start exactly six bounded log/stat emitters"
 container_list=$(printf '%s\n' "$containers" | tr '\n' ' ')
 
@@ -329,7 +329,7 @@ container_list=$(printf '%s\n' "$containers" | tr '\n' ' ')
 # that no Metrics produced.
 matrix_evidence="$evidence/matrix-evidence.jsonl"
 matrix_capability=$(jq -r --arg id "$agent_id" \
-    '[.hosts[] | select(.id == $id) | .capabilities.metrics.enabled] | first // false' "$DOCKPILOT_DASHBOARD_FILE")
+    '[.hosts[] | select(.id == $id) | .capabilities.metrics.enabled] | first // false' "$DOCKLATTICE_DASHBOARD_FILE")
 [ "$matrix_capability" = true ] || fail "Agent does not report the metrics_matrix capability; a Matrix-active trial is impossible"
 matrix_idle_streams=0
 matrix_idle_at=$(now_iso)
@@ -350,25 +350,25 @@ start_stream() {
         # frame, not a status code.
         output="$evidence/matrix.sse"
         rate_args=
-        url="$DOCKPILOT_BASE_URL/api/v1/live/matrix?agent_id=$agent_id"
+        url="$DOCKLATTICE_BASE_URL/api/v1/live/matrix?agent_id=$agent_id"
     elif [ "$kind" = slow-log ]; then
         output="$evidence/slow-log.sse"
         rate_args="--limit-rate 1k"
-        url="$DOCKPILOT_BASE_URL/api/v1/live/logs?agent_id=$agent_id&container_id=$container&follow=true&tail=0&stdout=true&stderr=true"
+        url="$DOCKLATTICE_BASE_URL/api/v1/live/logs?agent_id=$agent_id&container_id=$container&follow=true&tail=0&stdout=true&stderr=true"
     elif [ "$kind" = log ]; then
         output=/dev/null
         rate_args=
-        url="$DOCKPILOT_BASE_URL/api/v1/live/logs?agent_id=$agent_id&container_id=$container&follow=true&tail=0&stdout=true&stderr=true"
+        url="$DOCKLATTICE_BASE_URL/api/v1/live/logs?agent_id=$agent_id&container_id=$container&follow=true&tail=0&stdout=true&stderr=true"
     else
         output=/dev/null
         rate_args=
-        url="$DOCKPILOT_BASE_URL/api/v1/live/stats?agent_id=$agent_id&container_id=$container"
+        url="$DOCKLATTICE_BASE_URL/api/v1/live/stats?agent_id=$agent_id&container_id=$container"
     fi
     (
         rc=0
         # rate_args is a fixed driver option, never user input.
         # shellcheck disable=SC2086
-        curl --silent --show-error --max-time "$seconds" --cacert "$DOCKPILOT_CA_FILE" $rate_args \
+        curl --silent --show-error --max-time "$seconds" --cacert "$DOCKLATTICE_CA_FILE" $rate_args \
             -o "$output" -w 'http_code=%{http_code}\nbytes=%{size_download}\n' "$url" >"$status_file" 2>"$status_file.stderr" || rc=$?
         printf 'curl_exit=%s\n' "$rc" >>"$status_file"
     ) &
@@ -409,7 +409,7 @@ generate_audit_events() {
     i=1
     while [ "$i" -le "$audit_churn_count" ]; do
         name="$prefix-audit-$i"
-        if id=$(docker create --pull never --name "$name" --label "io.dockpilot.resource-driver=$prefix" \
+        if id=$(docker create --pull never --name "$name" --label "io.docklattice.resource-driver=$prefix" \
             --entrypoint /bin/sh "$RESOURCE_FIXTURE_IMAGE" -c 'exit 0' 2>/dev/null) &&
             docker start -a "$id" >/dev/null 2>&1 && docker rm "$id" >/dev/null 2>&1; then
             printf '%s\t%s\tPASS\n' "$i" "$id" >>"$audit_churn"
@@ -429,13 +429,13 @@ run_stream_churn() {
     i=1
     while [ "$i" -le 40 ]; do
         if [ $((i % 2)) -eq 0 ]; then
-            url="$DOCKPILOT_BASE_URL/api/v1/live/stats?agent_id=$agent_id&container_id=$first_container"
+            url="$DOCKLATTICE_BASE_URL/api/v1/live/stats?agent_id=$agent_id&container_id=$first_container"
         else
-            url="$DOCKPILOT_BASE_URL/api/v1/live/logs?agent_id=$agent_id&container_id=$first_container&follow=true&tail=0"
+            url="$DOCKLATTICE_BASE_URL/api/v1/live/logs?agent_id=$agent_id&container_id=$first_container&follow=true&tail=0"
         fi
         (
             rc=0
-            code=$(curl --silent --max-time 1 --cacert "$DOCKPILOT_CA_FILE" -o /dev/null -w '%{http_code}' "$url") || rc=$?
+            code=$(curl --silent --max-time 1 --cacert "$DOCKLATTICE_CA_FILE" -o /dev/null -w '%{http_code}' "$url") || rc=$?
             printf '%s\t%s\t%s\n' "$i" "$code" "$rc" >"$evidence/stream-churn-$i.status"
         ) &
         if [ $((i % 8)) -eq 0 ]; then wait; fi
@@ -455,9 +455,9 @@ remember_pid "$stream_churn_pid"
 # interactive query while the bulk/live streams and Audit writes are active.
 i=1
 while [ "$i" -le 10 ]; do
-    api_request GET "$DOCKPILOT_BASE_URL/api/v1/dashboard" '' "$evidence/.api-dashboard-$i"
+    api_request GET "$DOCKLATTICE_BASE_URL/api/v1/dashboard" '' "$evidence/.api-dashboard-$i"
     record_latency P2 heartbeat_dashboard "$API_LATENCY_MS" success
-    api_request GET "$DOCKPILOT_BASE_URL/api/v1/hosts/$agent_id/containers" '' "$evidence/.api-containers-$i"
+    api_request GET "$DOCKLATTICE_BASE_URL/api/v1/hosts/$agent_id/containers" '' "$evidence/.api-containers-$i"
     record_latency P2 container_query "$API_LATENCY_MS" success
     sleep 2
     i=$((i + 1))
@@ -474,11 +474,11 @@ churn_successes=$(awk -F '\t' '$2 == "200" { count++ } END { print count+0 }' "$
 # pre-restore configuration snapshot, and the restore journal/commit path.
 backup_operation="resource-backup-create-$trial-$$"
 backup_body=$(jq -cn --arg id "$backup_operation" '{operation_id:$id,relative_paths:["compose.yaml",".env"]}')
-api_request POST "$DOCKPILOT_BASE_URL/api/v1/projects/$project_uid/backups" "$backup_body" "$evidence/backup-create.accepted.json"
+api_request POST "$DOCKLATTICE_BASE_URL/api/v1/projects/$project_uid/backups" "$backup_body" "$evidence/backup-create.accepted.json"
 record_latency P0 backup_accept "$API_LATENCY_MS" accepted
 poll_operation "$backup_operation" "$evidence/backup-create.final.json"
 record_audit_visibility "$backup_operation"
-api_request GET "$DOCKPILOT_BASE_URL/api/v1/projects/$project_uid/backups" '' "$evidence/backups.before-restore.json"
+api_request GET "$DOCKLATTICE_BASE_URL/api/v1/projects/$project_uid/backups" '' "$evidence/backups.before-restore.json"
 backup_id=$(jq -r '[.[] | select(.trigger == "manual")][0].backup_id // empty' "$evidence/backups.before-restore.json")
 [ -n "$backup_id" ] || fail "manual backup metadata is missing"
 
@@ -491,7 +491,7 @@ restore_stop="$evidence/.stop-restore-$prefix"
 # roughly 200 ms, which is slower than the whole restore. A single exec running
 # the poll loop inside the Agent samples at millisecond granularity instead.
 observe_restore_journal() {
-    docker exec "$DOCKPILOT_AGENT_CONTAINER" /bin/sh -c '
+    docker exec "$DOCKLATTICE_AGENT_CONTAINER" /bin/sh -c '
         path=$1
         while :; do
             if [ -d "$path" ]; then
@@ -500,7 +500,7 @@ observe_restore_journal() {
             else
                 printf "0\t0\n"
             fi
-        done' sh /var/lib/dockpilot/restore-journal 2>/dev/null |
+        done' sh /var/lib/docklattice/restore-journal 2>/dev/null |
     while IFS="$(printf '\t')" read -r bytes files; do
         [ -e "$restore_stop" ] && break
         printf '%s\t%s\t%s\t%s\t%s\n' "$(now_iso)" restore-journal "$bytes" "$files" active >>"$io_evidence"
@@ -518,25 +518,25 @@ while [ "$(awk -F '\t' '$2 == "restore-journal" && $5 == "active" { count++ } EN
     [ "$(date +%s)" -lt "$observer_ready_deadline" ] || fail "restore journal observer never produced a sample"
     sleep 1
 done
-api_request POST "$DOCKPILOT_BASE_URL/api/v1/projects/$project_uid/backups/$backup_id/restore" "$restore_body" "$evidence/backup-restore.accepted.json"
+api_request POST "$DOCKLATTICE_BASE_URL/api/v1/projects/$project_uid/backups/$backup_id/restore" "$restore_body" "$evidence/backup-restore.accepted.json"
 record_latency P0 restore_accept "$API_LATENCY_MS" accepted
 poll_operation "$restore_operation" "$evidence/backup-restore.final.json"
 record_audit_visibility "$restore_operation"
 : >"$restore_stop"
 wait "$restore_observer_pid" 2>/dev/null || true
 rm -f "$restore_stop"
-api_request GET "$DOCKPILOT_BASE_URL/api/v1/projects/$project_uid/backups" '' "$evidence/backups.after-restore.json"
+api_request GET "$DOCKLATTICE_BASE_URL/api/v1/projects/$project_uid/backups" '' "$evidence/backups.after-restore.json"
 jq -e 'any(.[]; .trigger == "manual") and any(.[]; .trigger == "pre_restore")' "$evidence/backups.after-restore.json" >/dev/null ||
     fail "backup restore did not create a pre-restore snapshot"
 
 discovery_operation="resource-discovery-$trial-$$"
 discovery_body=$(jq -cn --arg id "$discovery_operation" --arg agent "$agent_id" \
     '{operation_id:$id,agent_id:$agent,kind:"discovery.rescan"}')
-api_request POST "$DOCKPILOT_BASE_URL/api/v1/operations" "$discovery_body" "$evidence/discovery.accepted.json"
+api_request POST "$DOCKLATTICE_BASE_URL/api/v1/operations" "$discovery_body" "$evidence/discovery.accepted.json"
 record_latency P0 discovery_accept "$API_LATENCY_MS" accepted
 poll_operation "$discovery_operation" "$evidence/discovery.final.json"
 record_audit_visibility "$discovery_operation"
-api_request GET "$DOCKPILOT_BASE_URL/api/v1/dashboard" '' "$evidence/dashboard.after-discovery.json"
+api_request GET "$DOCKLATTICE_BASE_URL/api/v1/dashboard" '' "$evidence/dashboard.after-discovery.json"
 directories_seen=$(jq -r --arg agent "$agent_id" '.hosts[] | select(.id == $agent) | .project_scan.directories_seen // 0' "$evidence/dashboard.after-discovery.json")
 [ "$directories_seen" -ge 1200 ] || fail "real discovery scan did not observe the bounded directory fixture"
 
@@ -544,7 +544,7 @@ directories_seen=$(jq -r --arg agent "$agent_id" '.hosts[] | select(.id == $agen
 # ALREADY_TERMINAL result and no mutation. Ten samples make p99 meaningful.
 i=1
 while [ "$i" -le 20 ]; do
-    api_request POST "$DOCKPILOT_BASE_URL/api/v1/agents/$agent_id/operations/$compose_operation/cancel" '{}' "$evidence/.api-cancel-$i"
+    api_request POST "$DOCKLATTICE_BASE_URL/api/v1/agents/$agent_id/operations/$compose_operation/cancel" '{}' "$evidence/.api-cancel-$i"
     outcome=$(jq -r '.outcome // empty' "$evidence/.api-cancel-$i")
     [ "$outcome" = ALREADY_TERMINAL ] || fail "completed-operation cancel returned $outcome"
     record_latency P0 cancel_ack "$API_LATENCY_MS" "$outcome"
@@ -581,12 +581,12 @@ done
 for pid in $stream_pids; do kill -TERM "$pid" >/dev/null 2>&1 || true; done
 for pid in $stream_pids; do wait "$pid" 2>/dev/null || true; done
 cursor_sample before_reconnect || fail "cannot sample Audit cursor before reconnect"
-"$DOCKPILOT_AGENT_RECONNECT_HELPER" >"$evidence/agent-reconnect.container-id"
+"$DOCKLATTICE_AGENT_RECONNECT_HELPER" >"$evidence/agent-reconnect.container-id"
 reconnected=0
 deadline=$(( $(date +%s) + 60 ))
 while [ "$(date +%s)" -lt "$deadline" ]; do
-    if curl --fail --silent --show-error --max-time 5 --cacert "$DOCKPILOT_CA_FILE" \
-        "$DOCKPILOT_BASE_URL/api/v1/dashboard" >"$evidence/.api-reconnect.tmp" 2>/dev/null &&
+    if curl --fail --silent --show-error --max-time 5 --cacert "$DOCKLATTICE_CA_FILE" \
+        "$DOCKLATTICE_BASE_URL/api/v1/dashboard" >"$evidence/.api-reconnect.tmp" 2>/dev/null &&
         jq -e --arg agent "$agent_id" '(.hosts | length) == 1 and .hosts[0].id == $agent and .hosts[0].state == "ACTIVE" and .hosts[0].capabilities.connection.enabled == true' \
             "$evidence/.api-reconnect.tmp" >/dev/null 2>&1; then
         mv "$evidence/.api-reconnect.tmp" "$evidence/dashboard.after-reconnect.json"
@@ -600,7 +600,7 @@ done
 # Generate post-reconnect events and require durable/ACK cursor advancement.
 i=1
 while [ "$i" -le 10 ]; do
-    docker run --pull never --rm --name "$prefix-reconnect-$i" --label "io.dockpilot.resource-driver=$prefix" \
+    docker run --pull never --rm --name "$prefix-reconnect-$i" --label "io.docklattice.resource-driver=$prefix" \
         --entrypoint /bin/sh "$RESOURCE_FIXTURE_IMAGE" -c 'exit 0' >/dev/null
     i=$((i + 1))
 done

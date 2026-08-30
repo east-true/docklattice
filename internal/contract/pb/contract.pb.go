@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.12
 // 	protoc        (unknown)
-// source: dockpilot/prototype/v1/contract.proto
+// source: docklattice/prototype/v1/contract.proto
 
-// dockpilot.prototype.v1은 Transport Prototype(부록 A)의 논리 페이로드
+// docklattice.prototype.v1은 Transport Prototype(부록 A)의 논리 페이로드
 // 정의다. 두 후보는 동일한 직렬화 형식을 쓴다(부록 A.7 통제 변수).
 //
 // 이 파일에는 전송 기술에 종속된 것이 들어가지 않는다. gRPC service 정의는
@@ -63,11 +63,11 @@ func (x CancelReason) String() string {
 }
 
 func (CancelReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_dockpilot_prototype_v1_contract_proto_enumTypes[0].Descriptor()
+	return file_docklattice_prototype_v1_contract_proto_enumTypes[0].Descriptor()
 }
 
 func (CancelReason) Type() protoreflect.EnumType {
-	return &file_dockpilot_prototype_v1_contract_proto_enumTypes[0]
+	return &file_docklattice_prototype_v1_contract_proto_enumTypes[0]
 }
 
 func (x CancelReason) Number() protoreflect.EnumNumber {
@@ -76,7 +76,7 @@ func (x CancelReason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CancelReason.Descriptor instead.
 func (CancelReason) EnumDescriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{0}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{0}
 }
 
 // ADR §9.4의 응답 집합이다.
@@ -122,11 +122,11 @@ func (x CancelResult) String() string {
 }
 
 func (CancelResult) Descriptor() protoreflect.EnumDescriptor {
-	return file_dockpilot_prototype_v1_contract_proto_enumTypes[1].Descriptor()
+	return file_docklattice_prototype_v1_contract_proto_enumTypes[1].Descriptor()
 }
 
 func (CancelResult) Type() protoreflect.EnumType {
-	return &file_dockpilot_prototype_v1_contract_proto_enumTypes[1]
+	return &file_docklattice_prototype_v1_contract_proto_enumTypes[1]
 }
 
 func (x CancelResult) Number() protoreflect.EnumNumber {
@@ -135,7 +135,7 @@ func (x CancelResult) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CancelResult.Descriptor instead.
 func (CancelResult) EnumDescriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{1}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{1}
 }
 
 // ADR §8.6의 phase다.
@@ -181,11 +181,11 @@ func (x OperationPhase) String() string {
 }
 
 func (OperationPhase) Descriptor() protoreflect.EnumDescriptor {
-	return file_dockpilot_prototype_v1_contract_proto_enumTypes[2].Descriptor()
+	return file_docklattice_prototype_v1_contract_proto_enumTypes[2].Descriptor()
 }
 
 func (OperationPhase) Type() protoreflect.EnumType {
-	return &file_dockpilot_prototype_v1_contract_proto_enumTypes[2]
+	return &file_docklattice_prototype_v1_contract_proto_enumTypes[2]
 }
 
 func (x OperationPhase) Number() protoreflect.EnumNumber {
@@ -194,7 +194,7 @@ func (x OperationPhase) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use OperationPhase.Descriptor instead.
 func (OperationPhase) EnumDescriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{2}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{2}
 }
 
 // ADR §9.2의 cancel mode다.
@@ -234,11 +234,11 @@ func (x CancelMode) String() string {
 }
 
 func (CancelMode) Descriptor() protoreflect.EnumDescriptor {
-	return file_dockpilot_prototype_v1_contract_proto_enumTypes[3].Descriptor()
+	return file_docklattice_prototype_v1_contract_proto_enumTypes[3].Descriptor()
 }
 
 func (CancelMode) Type() protoreflect.EnumType {
-	return &file_dockpilot_prototype_v1_contract_proto_enumTypes[3]
+	return &file_docklattice_prototype_v1_contract_proto_enumTypes[3]
 }
 
 func (x CancelMode) Number() protoreflect.EnumNumber {
@@ -247,7 +247,7 @@ func (x CancelMode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CancelMode.Descriptor instead.
 func (CancelMode) EnumDescriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{3}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{3}
 }
 
 type GapReason int32
@@ -283,11 +283,11 @@ func (x GapReason) String() string {
 }
 
 func (GapReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_dockpilot_prototype_v1_contract_proto_enumTypes[4].Descriptor()
+	return file_docklattice_prototype_v1_contract_proto_enumTypes[4].Descriptor()
 }
 
 func (GapReason) Type() protoreflect.EnumType {
-	return &file_dockpilot_prototype_v1_contract_proto_enumTypes[4]
+	return &file_docklattice_prototype_v1_contract_proto_enumTypes[4]
 }
 
 func (x GapReason) Number() protoreflect.EnumNumber {
@@ -296,7 +296,7 @@ func (x GapReason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GapReason.Descriptor instead.
 func (GapReason) EnumDescriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{4}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{4}
 }
 
 type Precision int32
@@ -332,11 +332,11 @@ func (x Precision) String() string {
 }
 
 func (Precision) Descriptor() protoreflect.EnumDescriptor {
-	return file_dockpilot_prototype_v1_contract_proto_enumTypes[5].Descriptor()
+	return file_docklattice_prototype_v1_contract_proto_enumTypes[5].Descriptor()
 }
 
 func (Precision) Type() protoreflect.EnumType {
-	return &file_dockpilot_prototype_v1_contract_proto_enumTypes[5]
+	return &file_docklattice_prototype_v1_contract_proto_enumTypes[5]
 }
 
 func (x Precision) Number() protoreflect.EnumNumber {
@@ -345,7 +345,7 @@ func (x Precision) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Precision.Descriptor instead.
 func (Precision) EnumDescriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{5}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{5}
 }
 
 type RegisterRequest struct {
@@ -358,7 +358,7 @@ type RegisterRequest struct {
 
 func (x *RegisterRequest) Reset() {
 	*x = RegisterRequest{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[0]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -370,7 +370,7 @@ func (x *RegisterRequest) String() string {
 func (*RegisterRequest) ProtoMessage() {}
 
 func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[0]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -383,7 +383,7 @@ func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterRequest.ProtoReflect.Descriptor instead.
 func (*RegisterRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{0}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *RegisterRequest) GetAgentId() string {
@@ -411,7 +411,7 @@ type RegisterResponse struct {
 
 func (x *RegisterResponse) Reset() {
 	*x = RegisterResponse{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[1]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -423,7 +423,7 @@ func (x *RegisterResponse) String() string {
 func (*RegisterResponse) ProtoMessage() {}
 
 func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[1]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -436,7 +436,7 @@ func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterResponse.ProtoReflect.Descriptor instead.
 func (*RegisterResponse) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{1}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *RegisterResponse) GetSessionId() string {
@@ -469,7 +469,7 @@ type HeartbeatRequest struct {
 
 func (x *HeartbeatRequest) Reset() {
 	*x = HeartbeatRequest{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[2]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -481,7 +481,7 @@ func (x *HeartbeatRequest) String() string {
 func (*HeartbeatRequest) ProtoMessage() {}
 
 func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[2]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -494,7 +494,7 @@ func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatRequest.ProtoReflect.Descriptor instead.
 func (*HeartbeatRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{2}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *HeartbeatRequest) GetSentAtUnixNano() int64 {
@@ -514,7 +514,7 @@ type HeartbeatResponse struct {
 
 func (x *HeartbeatResponse) Reset() {
 	*x = HeartbeatResponse{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[3]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -526,7 +526,7 @@ func (x *HeartbeatResponse) String() string {
 func (*HeartbeatResponse) ProtoMessage() {}
 
 func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[3]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -539,7 +539,7 @@ func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
 func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{3}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *HeartbeatResponse) GetSentAtUnixNano() int64 {
@@ -570,7 +570,7 @@ type Capability struct {
 
 func (x *Capability) Reset() {
 	*x = Capability{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[4]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -582,7 +582,7 @@ func (x *Capability) String() string {
 func (*Capability) ProtoMessage() {}
 
 func (x *Capability) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[4]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -595,7 +595,7 @@ func (x *Capability) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Capability.ProtoReflect.Descriptor instead.
 func (*Capability) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{4}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Capability) GetFsWrite() bool {
@@ -629,14 +629,14 @@ func (x *Capability) GetDockerApiVersion() string {
 type CancelOperationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OperationId   string                 `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
-	Reason        CancelReason           `protobuf:"varint,2,opt,name=reason,proto3,enum=dockpilot.prototype.v1.CancelReason" json:"reason,omitempty"`
+	Reason        CancelReason           `protobuf:"varint,2,opt,name=reason,proto3,enum=docklattice.prototype.v1.CancelReason" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CancelOperationRequest) Reset() {
 	*x = CancelOperationRequest{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[5]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -648,7 +648,7 @@ func (x *CancelOperationRequest) String() string {
 func (*CancelOperationRequest) ProtoMessage() {}
 
 func (x *CancelOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[5]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -661,7 +661,7 @@ func (x *CancelOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOperationRequest.ProtoReflect.Descriptor instead.
 func (*CancelOperationRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{5}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CancelOperationRequest) GetOperationId() string {
@@ -680,7 +680,7 @@ func (x *CancelOperationRequest) GetReason() CancelReason {
 
 type CancelOperationResponse struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
-	Result              CancelResult           `protobuf:"varint,1,opt,name=result,proto3,enum=dockpilot.prototype.v1.CancelResult" json:"result,omitempty"`
+	Result              CancelResult           `protobuf:"varint,1,opt,name=result,proto3,enum=docklattice.prototype.v1.CancelResult" json:"result,omitempty"`
 	RequestedAtUnixNano int64                  `protobuf:"varint,2,opt,name=requested_at_unix_nano,json=requestedAtUnixNano,proto3" json:"requested_at_unix_nano,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
@@ -688,7 +688,7 @@ type CancelOperationResponse struct {
 
 func (x *CancelOperationResponse) Reset() {
 	*x = CancelOperationResponse{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[6]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -700,7 +700,7 @@ func (x *CancelOperationResponse) String() string {
 func (*CancelOperationResponse) ProtoMessage() {}
 
 func (x *CancelOperationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[6]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -713,7 +713,7 @@ func (x *CancelOperationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOperationResponse.ProtoReflect.Descriptor instead.
 func (*CancelOperationResponse) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{6}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CancelOperationResponse) GetResult() CancelResult {
@@ -738,7 +738,7 @@ type OperationProgressRequest struct {
 
 func (x *OperationProgressRequest) Reset() {
 	*x = OperationProgressRequest{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[7]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -750,7 +750,7 @@ func (x *OperationProgressRequest) String() string {
 func (*OperationProgressRequest) ProtoMessage() {}
 
 func (x *OperationProgressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[7]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -763,7 +763,7 @@ func (x *OperationProgressRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperationProgressRequest.ProtoReflect.Descriptor instead.
 func (*OperationProgressRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{7}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{7}
 }
 
 // ADR §8.6: Server는 가장 높은 operation_revision만 반영한다.
@@ -771,8 +771,8 @@ type OperationProgressEvent struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	OperationId        string                 `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
 	OperationRevision  uint64                 `protobuf:"varint,2,opt,name=operation_revision,json=operationRevision,proto3" json:"operation_revision,omitempty"`
-	Phase              OperationPhase         `protobuf:"varint,3,opt,name=phase,proto3,enum=dockpilot.prototype.v1.OperationPhase" json:"phase,omitempty"`
-	CancelMode         CancelMode             `protobuf:"varint,4,opt,name=cancel_mode,json=cancelMode,proto3,enum=dockpilot.prototype.v1.CancelMode" json:"cancel_mode,omitempty"`
+	Phase              OperationPhase         `protobuf:"varint,3,opt,name=phase,proto3,enum=docklattice.prototype.v1.OperationPhase" json:"phase,omitempty"`
+	CancelMode         CancelMode             `protobuf:"varint,4,opt,name=cancel_mode,json=cancelMode,proto3,enum=docklattice.prototype.v1.CancelMode" json:"cancel_mode,omitempty"`
 	OccurredAtUnixNano int64                  `protobuf:"varint,5,opt,name=occurred_at_unix_nano,json=occurredAtUnixNano,proto3" json:"occurred_at_unix_nano,omitempty"`
 	Detail             string                 `protobuf:"bytes,6,opt,name=detail,proto3" json:"detail,omitempty"`
 	Terminal           bool                   `protobuf:"varint,7,opt,name=terminal,proto3" json:"terminal,omitempty"`
@@ -783,7 +783,7 @@ type OperationProgressEvent struct {
 
 func (x *OperationProgressEvent) Reset() {
 	*x = OperationProgressEvent{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[8]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -795,7 +795,7 @@ func (x *OperationProgressEvent) String() string {
 func (*OperationProgressEvent) ProtoMessage() {}
 
 func (x *OperationProgressEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[8]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -808,7 +808,7 @@ func (x *OperationProgressEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperationProgressEvent.ProtoReflect.Descriptor instead.
 func (*OperationProgressEvent) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{8}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *OperationProgressEvent) GetOperationId() string {
@@ -879,7 +879,7 @@ type Cursor struct {
 
 func (x *Cursor) Reset() {
 	*x = Cursor{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[9]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -891,7 +891,7 @@ func (x *Cursor) String() string {
 func (*Cursor) ProtoMessage() {}
 
 func (x *Cursor) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[9]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -904,7 +904,7 @@ func (x *Cursor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Cursor.ProtoReflect.Descriptor instead.
 func (*Cursor) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{9}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Cursor) GetIncarnation() uint64 {
@@ -936,7 +936,7 @@ type AuditRecord struct {
 
 func (x *AuditRecord) Reset() {
 	*x = AuditRecord{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[10]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -948,7 +948,7 @@ func (x *AuditRecord) String() string {
 func (*AuditRecord) ProtoMessage() {}
 
 func (x *AuditRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[10]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -961,7 +961,7 @@ func (x *AuditRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditRecord.ProtoReflect.Descriptor instead.
 func (*AuditRecord) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{10}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *AuditRecord) GetAgentId() string {
@@ -1021,7 +1021,7 @@ type SyncAuditMessage struct {
 
 func (x *SyncAuditMessage) Reset() {
 	*x = SyncAuditMessage{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[11]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1033,7 +1033,7 @@ func (x *SyncAuditMessage) String() string {
 func (*SyncAuditMessage) ProtoMessage() {}
 
 func (x *SyncAuditMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[11]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1046,7 +1046,7 @@ func (x *SyncAuditMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncAuditMessage.ProtoReflect.Descriptor instead.
 func (*SyncAuditMessage) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{11}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *SyncAuditMessage) GetBody() isSyncAuditMessage_Body {
@@ -1116,7 +1116,7 @@ type CoverageChanged struct {
 
 func (x *CoverageChanged) Reset() {
 	*x = CoverageChanged{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[12]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1128,7 +1128,7 @@ func (x *CoverageChanged) String() string {
 func (*CoverageChanged) ProtoMessage() {}
 
 func (x *CoverageChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[12]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1141,7 +1141,7 @@ func (x *CoverageChanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CoverageChanged.ProtoReflect.Descriptor instead.
 func (*CoverageChanged) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{12}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CoverageChanged) GetCoverageRevision() uint64 {
@@ -1163,7 +1163,7 @@ type SyncAuditAck struct {
 
 func (x *SyncAuditAck) Reset() {
 	*x = SyncAuditAck{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[13]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1175,7 +1175,7 @@ func (x *SyncAuditAck) String() string {
 func (*SyncAuditAck) ProtoMessage() {}
 
 func (x *SyncAuditAck) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[13]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1188,7 +1188,7 @@ func (x *SyncAuditAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncAuditAck.ProtoReflect.Descriptor instead.
 func (*SyncAuditAck) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{13}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SyncAuditAck) GetAuditArchiveId() string {
@@ -1225,7 +1225,7 @@ type AckResult struct {
 
 func (x *AckResult) Reset() {
 	*x = AckResult{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[14]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1237,7 +1237,7 @@ func (x *AckResult) String() string {
 func (*AckResult) ProtoMessage() {}
 
 func (x *AckResult) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[14]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1250,7 +1250,7 @@ func (x *AckResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AckResult.ProtoReflect.Descriptor instead.
 func (*AckResult) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{14}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *AckResult) GetAccepted() bool {
@@ -1286,15 +1286,15 @@ type CoverageRange struct {
 	Incarnation   uint64                 `protobuf:"varint,1,opt,name=incarnation,proto3" json:"incarnation,omitempty"`
 	FromSeq       uint64                 `protobuf:"varint,2,opt,name=from_seq,json=fromSeq,proto3" json:"from_seq,omitempty"`
 	ToSeq         uint64                 `protobuf:"varint,3,opt,name=to_seq,json=toSeq,proto3" json:"to_seq,omitempty"`
-	Reason        GapReason              `protobuf:"varint,4,opt,name=reason,proto3,enum=dockpilot.prototype.v1.GapReason" json:"reason,omitempty"`
-	Precision     Precision              `protobuf:"varint,5,opt,name=precision,proto3,enum=dockpilot.prototype.v1.Precision" json:"precision,omitempty"`
+	Reason        GapReason              `protobuf:"varint,4,opt,name=reason,proto3,enum=docklattice.prototype.v1.GapReason" json:"reason,omitempty"`
+	Precision     Precision              `protobuf:"varint,5,opt,name=precision,proto3,enum=docklattice.prototype.v1.Precision" json:"precision,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CoverageRange) Reset() {
 	*x = CoverageRange{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[15]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1306,7 +1306,7 @@ func (x *CoverageRange) String() string {
 func (*CoverageRange) ProtoMessage() {}
 
 func (x *CoverageRange) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[15]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1319,7 +1319,7 @@ func (x *CoverageRange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CoverageRange.ProtoReflect.Descriptor instead.
 func (*CoverageRange) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{15}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CoverageRange) GetIncarnation() uint64 {
@@ -1365,7 +1365,7 @@ type GetAuditCoverageRequest struct {
 
 func (x *GetAuditCoverageRequest) Reset() {
 	*x = GetAuditCoverageRequest{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[16]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1377,7 +1377,7 @@ func (x *GetAuditCoverageRequest) String() string {
 func (*GetAuditCoverageRequest) ProtoMessage() {}
 
 func (x *GetAuditCoverageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[16]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1390,7 +1390,7 @@ func (x *GetAuditCoverageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAuditCoverageRequest.ProtoReflect.Descriptor instead.
 func (*GetAuditCoverageRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{16}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{16}
 }
 
 type AuditCoverageSnapshot struct {
@@ -1406,7 +1406,7 @@ type AuditCoverageSnapshot struct {
 
 func (x *AuditCoverageSnapshot) Reset() {
 	*x = AuditCoverageSnapshot{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[17]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1418,7 +1418,7 @@ func (x *AuditCoverageSnapshot) String() string {
 func (*AuditCoverageSnapshot) ProtoMessage() {}
 
 func (x *AuditCoverageSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[17]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1431,7 +1431,7 @@ func (x *AuditCoverageSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditCoverageSnapshot.ProtoReflect.Descriptor instead.
 func (*AuditCoverageSnapshot) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{17}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *AuditCoverageSnapshot) GetAgentId() string {
@@ -1480,7 +1480,7 @@ type EchoRequest struct {
 
 func (x *EchoRequest) Reset() {
 	*x = EchoRequest{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[18]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1492,7 +1492,7 @@ func (x *EchoRequest) String() string {
 func (*EchoRequest) ProtoMessage() {}
 
 func (x *EchoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[18]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1505,7 +1505,7 @@ func (x *EchoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EchoRequest.ProtoReflect.Descriptor instead.
 func (*EchoRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{18}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *EchoRequest) GetPayloadSize() uint32 {
@@ -1532,7 +1532,7 @@ type EchoResponse struct {
 
 func (x *EchoResponse) Reset() {
 	*x = EchoResponse{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[19]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1544,7 +1544,7 @@ func (x *EchoResponse) String() string {
 func (*EchoResponse) ProtoMessage() {}
 
 func (x *EchoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[19]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1557,7 +1557,7 @@ func (x *EchoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EchoResponse.ProtoReflect.Descriptor instead.
 func (*EchoResponse) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{19}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *EchoResponse) GetPayload() []byte {
@@ -1586,7 +1586,7 @@ type StreamLogsRequest struct {
 
 func (x *StreamLogsRequest) Reset() {
 	*x = StreamLogsRequest{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[20]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1598,7 +1598,7 @@ func (x *StreamLogsRequest) String() string {
 func (*StreamLogsRequest) ProtoMessage() {}
 
 func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[20]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1611,7 +1611,7 @@ func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamLogsRequest.ProtoReflect.Descriptor instead.
 func (*StreamLogsRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{20}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *StreamLogsRequest) GetStreamId() string {
@@ -1650,7 +1650,7 @@ type LogChunk struct {
 
 func (x *LogChunk) Reset() {
 	*x = LogChunk{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[21]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1662,7 +1662,7 @@ func (x *LogChunk) String() string {
 func (*LogChunk) ProtoMessage() {}
 
 func (x *LogChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[21]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1675,7 +1675,7 @@ func (x *LogChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogChunk.ProtoReflect.Descriptor instead.
 func (*LogChunk) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{21}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *LogChunk) GetStreamId() string {
@@ -1722,7 +1722,7 @@ type OperationOutputRequest struct {
 
 func (x *OperationOutputRequest) Reset() {
 	*x = OperationOutputRequest{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[22]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1734,7 +1734,7 @@ func (x *OperationOutputRequest) String() string {
 func (*OperationOutputRequest) ProtoMessage() {}
 
 func (x *OperationOutputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[22]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1747,7 +1747,7 @@ func (x *OperationOutputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperationOutputRequest.ProtoReflect.Descriptor instead.
 func (*OperationOutputRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{22}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *OperationOutputRequest) GetOperationId() string {
@@ -1770,7 +1770,7 @@ type OperationOutputChunk struct {
 
 func (x *OperationOutputChunk) Reset() {
 	*x = OperationOutputChunk{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[23]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1782,7 +1782,7 @@ func (x *OperationOutputChunk) String() string {
 func (*OperationOutputChunk) ProtoMessage() {}
 
 func (x *OperationOutputChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[23]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1795,7 +1795,7 @@ func (x *OperationOutputChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OperationOutputChunk.ProtoReflect.Descriptor instead.
 func (*OperationOutputChunk) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{23}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *OperationOutputChunk) GetOperationId() string {
@@ -1843,7 +1843,7 @@ type StreamStatsRequest struct {
 
 func (x *StreamStatsRequest) Reset() {
 	*x = StreamStatsRequest{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[24]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1855,7 +1855,7 @@ func (x *StreamStatsRequest) String() string {
 func (*StreamStatsRequest) ProtoMessage() {}
 
 func (x *StreamStatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[24]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1868,7 +1868,7 @@ func (x *StreamStatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamStatsRequest.ProtoReflect.Descriptor instead.
 func (*StreamStatsRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{24}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *StreamStatsRequest) GetTargets() []string {
@@ -1903,7 +1903,7 @@ type StatsSample struct {
 
 func (x *StatsSample) Reset() {
 	*x = StatsSample{}
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[25]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1915,7 +1915,7 @@ func (x *StatsSample) String() string {
 func (*StatsSample) ProtoMessage() {}
 
 func (x *StatsSample) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_v1_contract_proto_msgTypes[25]
+	mi := &file_docklattice_prototype_v1_contract_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1928,7 +1928,7 @@ func (x *StatsSample) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatsSample.ProtoReflect.Descriptor instead.
 func (*StatsSample) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_v1_contract_proto_rawDescGZIP(), []int{25}
+	return file_docklattice_prototype_v1_contract_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *StatsSample) GetTarget() string {
@@ -2001,46 +2001,46 @@ func (x *StatsSample) GetPadding() []byte {
 	return nil
 }
 
-var File_dockpilot_prototype_v1_contract_proto protoreflect.FileDescriptor
+var File_docklattice_prototype_v1_contract_proto protoreflect.FileDescriptor
 
-const file_dockpilot_prototype_v1_contract_proto_rawDesc = "" +
+const file_docklattice_prototype_v1_contract_proto_rawDesc = "" +
 	"\n" +
-	"%dockpilot/prototype/v1/contract.proto\x12\x16dockpilot.prototype.v1\"W\n" +
+	"'docklattice/prototype/v1/contract.proto\x12\x18docklattice.prototype.v1\"W\n" +
 	"\x0fRegisterRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12)\n" +
-	"\x10protocol_version\x18\x02 \x01(\rR\x0fprotocolVersion\"\xa0\x01\n" +
+	"\x10protocol_version\x18\x02 \x01(\rR\x0fprotocolVersion\"\xa2\x01\n" +
 	"\x10RegisterResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12)\n" +
-	"\x10protocol_version\x18\x02 \x01(\rR\x0fprotocolVersion\x12B\n" +
+	"\x10protocol_version\x18\x02 \x01(\rR\x0fprotocolVersion\x12D\n" +
 	"\n" +
-	"capability\x18\x03 \x01(\v2\".dockpilot.prototype.v1.CapabilityR\n" +
+	"capability\x18\x03 \x01(\v2$.docklattice.prototype.v1.CapabilityR\n" +
 	"capability\"=\n" +
 	"\x10HeartbeatRequest\x12)\n" +
-	"\x11sent_at_unix_nano\x18\x01 \x01(\x03R\x0esentAtUnixNano\"\x82\x01\n" +
+	"\x11sent_at_unix_nano\x18\x01 \x01(\x03R\x0esentAtUnixNano\"\x84\x01\n" +
 	"\x11HeartbeatResponse\x12)\n" +
-	"\x11sent_at_unix_nano\x18\x01 \x01(\x03R\x0esentAtUnixNano\x12B\n" +
+	"\x11sent_at_unix_nano\x18\x01 \x01(\x03R\x0esentAtUnixNano\x12D\n" +
 	"\n" +
-	"capability\x18\x02 \x01(\v2\".dockpilot.prototype.v1.CapabilityR\n" +
+	"capability\x18\x02 \x01(\v2$.docklattice.prototype.v1.CapabilityR\n" +
 	"capability\"\xb0\x01\n" +
 	"\n" +
 	"Capability\x12\x19\n" +
 	"\bfs_write\x18\x01 \x01(\bR\afsWrite\x12!\n" +
 	"\fcompose_exec\x18\x02 \x01(\bR\vcomposeExec\x126\n" +
 	"\x17bundled_compose_version\x18\x03 \x01(\tR\x15bundledComposeVersion\x12,\n" +
-	"\x12docker_api_version\x18\x04 \x01(\tR\x10dockerApiVersion\"y\n" +
+	"\x12docker_api_version\x18\x04 \x01(\tR\x10dockerApiVersion\"{\n" +
 	"\x16CancelOperationRequest\x12!\n" +
-	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12<\n" +
-	"\x06reason\x18\x02 \x01(\x0e2$.dockpilot.prototype.v1.CancelReasonR\x06reason\"\x8c\x01\n" +
-	"\x17CancelOperationResponse\x12<\n" +
-	"\x06result\x18\x01 \x01(\x0e2$.dockpilot.prototype.v1.CancelResultR\x06result\x123\n" +
+	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12>\n" +
+	"\x06reason\x18\x02 \x01(\x0e2&.docklattice.prototype.v1.CancelReasonR\x06reason\"\x8e\x01\n" +
+	"\x17CancelOperationResponse\x12>\n" +
+	"\x06result\x18\x01 \x01(\x0e2&.docklattice.prototype.v1.CancelResultR\x06result\x123\n" +
 	"\x16requested_at_unix_nano\x18\x02 \x01(\x03R\x13requestedAtUnixNano\"\x1a\n" +
-	"\x18OperationProgressRequest\"\xfd\x02\n" +
+	"\x18OperationProgressRequest\"\x81\x03\n" +
 	"\x16OperationProgressEvent\x12!\n" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12-\n" +
-	"\x12operation_revision\x18\x02 \x01(\x04R\x11operationRevision\x12<\n" +
-	"\x05phase\x18\x03 \x01(\x0e2&.dockpilot.prototype.v1.OperationPhaseR\x05phase\x12C\n" +
-	"\vcancel_mode\x18\x04 \x01(\x0e2\".dockpilot.prototype.v1.CancelModeR\n" +
+	"\x12operation_revision\x18\x02 \x01(\x04R\x11operationRevision\x12>\n" +
+	"\x05phase\x18\x03 \x01(\x0e2(.docklattice.prototype.v1.OperationPhaseR\x05phase\x12E\n" +
+	"\vcancel_mode\x18\x04 \x01(\x0e2$.docklattice.prototype.v1.CancelModeR\n" +
 	"cancelMode\x121\n" +
 	"\x15occurred_at_unix_nano\x18\x05 \x01(\x03R\x12occurredAtUnixNano\x12\x16\n" +
 	"\x06detail\x18\x06 \x01(\tR\x06detail\x12\x1a\n" +
@@ -2055,36 +2055,36 @@ const file_dockpilot_prototype_v1_contract_proto_rawDesc = "" +
 	"\x03seq\x18\x03 \x01(\x04R\x03seq\x121\n" +
 	"\x15occurred_at_unix_nano\x18\x04 \x01(\x03R\x12occurredAtUnixNano\x12\x12\n" +
 	"\x04kind\x18\x05 \x01(\tR\x04kind\x12\x18\n" +
-	"\apayload\x18\x06 \x01(\fR\apayload\"\xf3\x01\n" +
-	"\x10SyncAuditMessage\x12=\n" +
-	"\x06record\x18\x01 \x01(\v2#.dockpilot.prototype.v1.AuditRecordH\x00R\x06record\x12T\n" +
-	"\x10coverage_changed\x18\x02 \x01(\v2'.dockpilot.prototype.v1.CoverageChangedH\x00R\x0fcoverageChanged\x12B\n" +
+	"\apayload\x18\x06 \x01(\fR\apayload\"\xf9\x01\n" +
+	"\x10SyncAuditMessage\x12?\n" +
+	"\x06record\x18\x01 \x01(\v2%.docklattice.prototype.v1.AuditRecordH\x00R\x06record\x12V\n" +
+	"\x10coverage_changed\x18\x02 \x01(\v2).docklattice.prototype.v1.CoverageChangedH\x00R\x0fcoverageChanged\x12D\n" +
 	"\n" +
-	"ack_result\x18\x03 \x01(\v2!.dockpilot.prototype.v1.AckResultH\x00R\tackResultB\x06\n" +
+	"ack_result\x18\x03 \x01(\v2#.docklattice.prototype.v1.AckResultH\x00R\tackResultB\x06\n" +
 	"\x04body\">\n" +
 	"\x0fCoverageChanged\x12+\n" +
-	"\x11coverage_revision\x18\x01 \x01(\x04R\x10coverageRevision\"\xa6\x01\n" +
+	"\x11coverage_revision\x18\x01 \x01(\x04R\x10coverageRevision\"\xa8\x01\n" +
 	"\fSyncAuditAck\x12(\n" +
-	"\x10audit_archive_id\x18\x01 \x01(\tR\x0eauditArchiveId\x126\n" +
-	"\x06cursor\x18\x02 \x01(\v2\x1e.dockpilot.prototype.v1.CursorR\x06cursor\x124\n" +
-	"\x16coverage_revision_seen\x18\x03 \x01(\x04R\x14coverageRevisionSeen\"\xa3\x02\n" +
+	"\x10audit_archive_id\x18\x01 \x01(\tR\x0eauditArchiveId\x128\n" +
+	"\x06cursor\x18\x02 \x01(\v2 .docklattice.prototype.v1.CursorR\x06cursor\x124\n" +
+	"\x16coverage_revision_seen\x18\x03 \x01(\x04R\x14coverageRevisionSeen\"\xa9\x02\n" +
 	"\tAckResult\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\bR\baccepted\x12I\n" +
-	"\bsnapshot\x18\x02 \x01(\v2-.dockpilot.prototype.v1.AuditCoverageSnapshotR\bsnapshot\x12N\n" +
-	"\x0fblocking_ranges\x18\x03 \x03(\v2%.dockpilot.prototype.v1.CoverageRangeR\x0eblockingRanges\x12_\n" +
-	"\x1ccurrent_server_acked_through\x18\x04 \x01(\v2\x1e.dockpilot.prototype.v1.CursorR\x19currentServerAckedThrough\"\xdf\x01\n" +
+	"\baccepted\x18\x01 \x01(\bR\baccepted\x12K\n" +
+	"\bsnapshot\x18\x02 \x01(\v2/.docklattice.prototype.v1.AuditCoverageSnapshotR\bsnapshot\x12P\n" +
+	"\x0fblocking_ranges\x18\x03 \x03(\v2'.docklattice.prototype.v1.CoverageRangeR\x0eblockingRanges\x12a\n" +
+	"\x1ccurrent_server_acked_through\x18\x04 \x01(\v2 .docklattice.prototype.v1.CursorR\x19currentServerAckedThrough\"\xe3\x01\n" +
 	"\rCoverageRange\x12 \n" +
 	"\vincarnation\x18\x01 \x01(\x04R\vincarnation\x12\x19\n" +
 	"\bfrom_seq\x18\x02 \x01(\x04R\afromSeq\x12\x15\n" +
-	"\x06to_seq\x18\x03 \x01(\x04R\x05toSeq\x129\n" +
-	"\x06reason\x18\x04 \x01(\x0e2!.dockpilot.prototype.v1.GapReasonR\x06reason\x12?\n" +
-	"\tprecision\x18\x05 \x01(\x0e2!.dockpilot.prototype.v1.PrecisionR\tprecision\"\x19\n" +
-	"\x17GetAuditCoverageRequest\"\x93\x02\n" +
+	"\x06to_seq\x18\x03 \x01(\x04R\x05toSeq\x12;\n" +
+	"\x06reason\x18\x04 \x01(\x0e2#.docklattice.prototype.v1.GapReasonR\x06reason\x12A\n" +
+	"\tprecision\x18\x05 \x01(\x0e2#.docklattice.prototype.v1.PrecisionR\tprecision\"\x19\n" +
+	"\x17GetAuditCoverageRequest\"\x95\x02\n" +
 	"\x15AuditCoverageSnapshot\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12+\n" +
 	"\x11coverage_revision\x18\x02 \x01(\x04R\x10coverageRevision\x123\n" +
-	"\x16generated_at_unix_nano\x18\x03 \x01(\x03R\x13generatedAtUnixNano\x129\n" +
-	"\x04gaps\x18\x04 \x03(\v2%.dockpilot.prototype.v1.CoverageRangeR\x04gaps\x12B\n" +
+	"\x16generated_at_unix_nano\x18\x03 \x01(\x03R\x13generatedAtUnixNano\x12;\n" +
+	"\x04gaps\x18\x04 \x03(\v2'.docklattice.prototype.v1.CoverageRangeR\x04gaps\x12B\n" +
 	"\x1dcoverage_unknown_incarnations\x18\x05 \x03(\x04R\x1bcoverageUnknownIncarnations\"[\n" +
 	"\vEchoRequest\x12!\n" +
 	"\fpayload_size\x18\x01 \x01(\rR\vpayloadSize\x12)\n" +
@@ -2161,73 +2161,73 @@ const file_dockpilot_prototype_v1_contract_proto_rawDesc = "" +
 	"\tPrecision\x12\x19\n" +
 	"\x15PRECISION_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fPRECISION_EXACT\x10\x01\x12\x17\n" +
-	"\x13PRECISION_COALESCED\x10\x02B8Z6github.com/east-true/dockpilot/internal/contract/pb;pbb\x06proto3"
+	"\x13PRECISION_COALESCED\x10\x02B:Z8github.com/east-true/docklattice/internal/contract/pb;pbb\x06proto3"
 
 var (
-	file_dockpilot_prototype_v1_contract_proto_rawDescOnce sync.Once
-	file_dockpilot_prototype_v1_contract_proto_rawDescData []byte
+	file_docklattice_prototype_v1_contract_proto_rawDescOnce sync.Once
+	file_docklattice_prototype_v1_contract_proto_rawDescData []byte
 )
 
-func file_dockpilot_prototype_v1_contract_proto_rawDescGZIP() []byte {
-	file_dockpilot_prototype_v1_contract_proto_rawDescOnce.Do(func() {
-		file_dockpilot_prototype_v1_contract_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_dockpilot_prototype_v1_contract_proto_rawDesc), len(file_dockpilot_prototype_v1_contract_proto_rawDesc)))
+func file_docklattice_prototype_v1_contract_proto_rawDescGZIP() []byte {
+	file_docklattice_prototype_v1_contract_proto_rawDescOnce.Do(func() {
+		file_docklattice_prototype_v1_contract_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_docklattice_prototype_v1_contract_proto_rawDesc), len(file_docklattice_prototype_v1_contract_proto_rawDesc)))
 	})
-	return file_dockpilot_prototype_v1_contract_proto_rawDescData
+	return file_docklattice_prototype_v1_contract_proto_rawDescData
 }
 
-var file_dockpilot_prototype_v1_contract_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_dockpilot_prototype_v1_contract_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
-var file_dockpilot_prototype_v1_contract_proto_goTypes = []any{
-	(CancelReason)(0),                // 0: dockpilot.prototype.v1.CancelReason
-	(CancelResult)(0),                // 1: dockpilot.prototype.v1.CancelResult
-	(OperationPhase)(0),              // 2: dockpilot.prototype.v1.OperationPhase
-	(CancelMode)(0),                  // 3: dockpilot.prototype.v1.CancelMode
-	(GapReason)(0),                   // 4: dockpilot.prototype.v1.GapReason
-	(Precision)(0),                   // 5: dockpilot.prototype.v1.Precision
-	(*RegisterRequest)(nil),          // 6: dockpilot.prototype.v1.RegisterRequest
-	(*RegisterResponse)(nil),         // 7: dockpilot.prototype.v1.RegisterResponse
-	(*HeartbeatRequest)(nil),         // 8: dockpilot.prototype.v1.HeartbeatRequest
-	(*HeartbeatResponse)(nil),        // 9: dockpilot.prototype.v1.HeartbeatResponse
-	(*Capability)(nil),               // 10: dockpilot.prototype.v1.Capability
-	(*CancelOperationRequest)(nil),   // 11: dockpilot.prototype.v1.CancelOperationRequest
-	(*CancelOperationResponse)(nil),  // 12: dockpilot.prototype.v1.CancelOperationResponse
-	(*OperationProgressRequest)(nil), // 13: dockpilot.prototype.v1.OperationProgressRequest
-	(*OperationProgressEvent)(nil),   // 14: dockpilot.prototype.v1.OperationProgressEvent
-	(*Cursor)(nil),                   // 15: dockpilot.prototype.v1.Cursor
-	(*AuditRecord)(nil),              // 16: dockpilot.prototype.v1.AuditRecord
-	(*SyncAuditMessage)(nil),         // 17: dockpilot.prototype.v1.SyncAuditMessage
-	(*CoverageChanged)(nil),          // 18: dockpilot.prototype.v1.CoverageChanged
-	(*SyncAuditAck)(nil),             // 19: dockpilot.prototype.v1.SyncAuditAck
-	(*AckResult)(nil),                // 20: dockpilot.prototype.v1.AckResult
-	(*CoverageRange)(nil),            // 21: dockpilot.prototype.v1.CoverageRange
-	(*GetAuditCoverageRequest)(nil),  // 22: dockpilot.prototype.v1.GetAuditCoverageRequest
-	(*AuditCoverageSnapshot)(nil),    // 23: dockpilot.prototype.v1.AuditCoverageSnapshot
-	(*EchoRequest)(nil),              // 24: dockpilot.prototype.v1.EchoRequest
-	(*EchoResponse)(nil),             // 25: dockpilot.prototype.v1.EchoResponse
-	(*StreamLogsRequest)(nil),        // 26: dockpilot.prototype.v1.StreamLogsRequest
-	(*LogChunk)(nil),                 // 27: dockpilot.prototype.v1.LogChunk
-	(*OperationOutputRequest)(nil),   // 28: dockpilot.prototype.v1.OperationOutputRequest
-	(*OperationOutputChunk)(nil),     // 29: dockpilot.prototype.v1.OperationOutputChunk
-	(*StreamStatsRequest)(nil),       // 30: dockpilot.prototype.v1.StreamStatsRequest
-	(*StatsSample)(nil),              // 31: dockpilot.prototype.v1.StatsSample
+var file_docklattice_prototype_v1_contract_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_docklattice_prototype_v1_contract_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_docklattice_prototype_v1_contract_proto_goTypes = []any{
+	(CancelReason)(0),                // 0: docklattice.prototype.v1.CancelReason
+	(CancelResult)(0),                // 1: docklattice.prototype.v1.CancelResult
+	(OperationPhase)(0),              // 2: docklattice.prototype.v1.OperationPhase
+	(CancelMode)(0),                  // 3: docklattice.prototype.v1.CancelMode
+	(GapReason)(0),                   // 4: docklattice.prototype.v1.GapReason
+	(Precision)(0),                   // 5: docklattice.prototype.v1.Precision
+	(*RegisterRequest)(nil),          // 6: docklattice.prototype.v1.RegisterRequest
+	(*RegisterResponse)(nil),         // 7: docklattice.prototype.v1.RegisterResponse
+	(*HeartbeatRequest)(nil),         // 8: docklattice.prototype.v1.HeartbeatRequest
+	(*HeartbeatResponse)(nil),        // 9: docklattice.prototype.v1.HeartbeatResponse
+	(*Capability)(nil),               // 10: docklattice.prototype.v1.Capability
+	(*CancelOperationRequest)(nil),   // 11: docklattice.prototype.v1.CancelOperationRequest
+	(*CancelOperationResponse)(nil),  // 12: docklattice.prototype.v1.CancelOperationResponse
+	(*OperationProgressRequest)(nil), // 13: docklattice.prototype.v1.OperationProgressRequest
+	(*OperationProgressEvent)(nil),   // 14: docklattice.prototype.v1.OperationProgressEvent
+	(*Cursor)(nil),                   // 15: docklattice.prototype.v1.Cursor
+	(*AuditRecord)(nil),              // 16: docklattice.prototype.v1.AuditRecord
+	(*SyncAuditMessage)(nil),         // 17: docklattice.prototype.v1.SyncAuditMessage
+	(*CoverageChanged)(nil),          // 18: docklattice.prototype.v1.CoverageChanged
+	(*SyncAuditAck)(nil),             // 19: docklattice.prototype.v1.SyncAuditAck
+	(*AckResult)(nil),                // 20: docklattice.prototype.v1.AckResult
+	(*CoverageRange)(nil),            // 21: docklattice.prototype.v1.CoverageRange
+	(*GetAuditCoverageRequest)(nil),  // 22: docklattice.prototype.v1.GetAuditCoverageRequest
+	(*AuditCoverageSnapshot)(nil),    // 23: docklattice.prototype.v1.AuditCoverageSnapshot
+	(*EchoRequest)(nil),              // 24: docklattice.prototype.v1.EchoRequest
+	(*EchoResponse)(nil),             // 25: docklattice.prototype.v1.EchoResponse
+	(*StreamLogsRequest)(nil),        // 26: docklattice.prototype.v1.StreamLogsRequest
+	(*LogChunk)(nil),                 // 27: docklattice.prototype.v1.LogChunk
+	(*OperationOutputRequest)(nil),   // 28: docklattice.prototype.v1.OperationOutputRequest
+	(*OperationOutputChunk)(nil),     // 29: docklattice.prototype.v1.OperationOutputChunk
+	(*StreamStatsRequest)(nil),       // 30: docklattice.prototype.v1.StreamStatsRequest
+	(*StatsSample)(nil),              // 31: docklattice.prototype.v1.StatsSample
 }
-var file_dockpilot_prototype_v1_contract_proto_depIdxs = []int32{
-	10, // 0: dockpilot.prototype.v1.RegisterResponse.capability:type_name -> dockpilot.prototype.v1.Capability
-	10, // 1: dockpilot.prototype.v1.HeartbeatResponse.capability:type_name -> dockpilot.prototype.v1.Capability
-	0,  // 2: dockpilot.prototype.v1.CancelOperationRequest.reason:type_name -> dockpilot.prototype.v1.CancelReason
-	1,  // 3: dockpilot.prototype.v1.CancelOperationResponse.result:type_name -> dockpilot.prototype.v1.CancelResult
-	2,  // 4: dockpilot.prototype.v1.OperationProgressEvent.phase:type_name -> dockpilot.prototype.v1.OperationPhase
-	3,  // 5: dockpilot.prototype.v1.OperationProgressEvent.cancel_mode:type_name -> dockpilot.prototype.v1.CancelMode
-	16, // 6: dockpilot.prototype.v1.SyncAuditMessage.record:type_name -> dockpilot.prototype.v1.AuditRecord
-	18, // 7: dockpilot.prototype.v1.SyncAuditMessage.coverage_changed:type_name -> dockpilot.prototype.v1.CoverageChanged
-	20, // 8: dockpilot.prototype.v1.SyncAuditMessage.ack_result:type_name -> dockpilot.prototype.v1.AckResult
-	15, // 9: dockpilot.prototype.v1.SyncAuditAck.cursor:type_name -> dockpilot.prototype.v1.Cursor
-	23, // 10: dockpilot.prototype.v1.AckResult.snapshot:type_name -> dockpilot.prototype.v1.AuditCoverageSnapshot
-	21, // 11: dockpilot.prototype.v1.AckResult.blocking_ranges:type_name -> dockpilot.prototype.v1.CoverageRange
-	15, // 12: dockpilot.prototype.v1.AckResult.current_server_acked_through:type_name -> dockpilot.prototype.v1.Cursor
-	4,  // 13: dockpilot.prototype.v1.CoverageRange.reason:type_name -> dockpilot.prototype.v1.GapReason
-	5,  // 14: dockpilot.prototype.v1.CoverageRange.precision:type_name -> dockpilot.prototype.v1.Precision
-	21, // 15: dockpilot.prototype.v1.AuditCoverageSnapshot.gaps:type_name -> dockpilot.prototype.v1.CoverageRange
+var file_docklattice_prototype_v1_contract_proto_depIdxs = []int32{
+	10, // 0: docklattice.prototype.v1.RegisterResponse.capability:type_name -> docklattice.prototype.v1.Capability
+	10, // 1: docklattice.prototype.v1.HeartbeatResponse.capability:type_name -> docklattice.prototype.v1.Capability
+	0,  // 2: docklattice.prototype.v1.CancelOperationRequest.reason:type_name -> docklattice.prototype.v1.CancelReason
+	1,  // 3: docklattice.prototype.v1.CancelOperationResponse.result:type_name -> docklattice.prototype.v1.CancelResult
+	2,  // 4: docklattice.prototype.v1.OperationProgressEvent.phase:type_name -> docklattice.prototype.v1.OperationPhase
+	3,  // 5: docklattice.prototype.v1.OperationProgressEvent.cancel_mode:type_name -> docklattice.prototype.v1.CancelMode
+	16, // 6: docklattice.prototype.v1.SyncAuditMessage.record:type_name -> docklattice.prototype.v1.AuditRecord
+	18, // 7: docklattice.prototype.v1.SyncAuditMessage.coverage_changed:type_name -> docklattice.prototype.v1.CoverageChanged
+	20, // 8: docklattice.prototype.v1.SyncAuditMessage.ack_result:type_name -> docklattice.prototype.v1.AckResult
+	15, // 9: docklattice.prototype.v1.SyncAuditAck.cursor:type_name -> docklattice.prototype.v1.Cursor
+	23, // 10: docklattice.prototype.v1.AckResult.snapshot:type_name -> docklattice.prototype.v1.AuditCoverageSnapshot
+	21, // 11: docklattice.prototype.v1.AckResult.blocking_ranges:type_name -> docklattice.prototype.v1.CoverageRange
+	15, // 12: docklattice.prototype.v1.AckResult.current_server_acked_through:type_name -> docklattice.prototype.v1.Cursor
+	4,  // 13: docklattice.prototype.v1.CoverageRange.reason:type_name -> docklattice.prototype.v1.GapReason
+	5,  // 14: docklattice.prototype.v1.CoverageRange.precision:type_name -> docklattice.prototype.v1.Precision
+	21, // 15: docklattice.prototype.v1.AuditCoverageSnapshot.gaps:type_name -> docklattice.prototype.v1.CoverageRange
 	16, // [16:16] is the sub-list for method output_type
 	16, // [16:16] is the sub-list for method input_type
 	16, // [16:16] is the sub-list for extension type_name
@@ -2235,12 +2235,12 @@ var file_dockpilot_prototype_v1_contract_proto_depIdxs = []int32{
 	0,  // [0:16] is the sub-list for field type_name
 }
 
-func init() { file_dockpilot_prototype_v1_contract_proto_init() }
-func file_dockpilot_prototype_v1_contract_proto_init() {
-	if File_dockpilot_prototype_v1_contract_proto != nil {
+func init() { file_docklattice_prototype_v1_contract_proto_init() }
+func file_docklattice_prototype_v1_contract_proto_init() {
+	if File_docklattice_prototype_v1_contract_proto != nil {
 		return
 	}
-	file_dockpilot_prototype_v1_contract_proto_msgTypes[11].OneofWrappers = []any{
+	file_docklattice_prototype_v1_contract_proto_msgTypes[11].OneofWrappers = []any{
 		(*SyncAuditMessage_Record)(nil),
 		(*SyncAuditMessage_CoverageChanged)(nil),
 		(*SyncAuditMessage_AckResult)(nil),
@@ -2249,18 +2249,18 @@ func file_dockpilot_prototype_v1_contract_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dockpilot_prototype_v1_contract_proto_rawDesc), len(file_dockpilot_prototype_v1_contract_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_docklattice_prototype_v1_contract_proto_rawDesc), len(file_docklattice_prototype_v1_contract_proto_rawDesc)),
 			NumEnums:      6,
 			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_dockpilot_prototype_v1_contract_proto_goTypes,
-		DependencyIndexes: file_dockpilot_prototype_v1_contract_proto_depIdxs,
-		EnumInfos:         file_dockpilot_prototype_v1_contract_proto_enumTypes,
-		MessageInfos:      file_dockpilot_prototype_v1_contract_proto_msgTypes,
+		GoTypes:           file_docklattice_prototype_v1_contract_proto_goTypes,
+		DependencyIndexes: file_docklattice_prototype_v1_contract_proto_depIdxs,
+		EnumInfos:         file_docklattice_prototype_v1_contract_proto_enumTypes,
+		MessageInfos:      file_docklattice_prototype_v1_contract_proto_msgTypes,
 	}.Build()
-	File_dockpilot_prototype_v1_contract_proto = out.File
-	file_dockpilot_prototype_v1_contract_proto_goTypes = nil
-	file_dockpilot_prototype_v1_contract_proto_depIdxs = nil
+	File_docklattice_prototype_v1_contract_proto = out.File
+	file_docklattice_prototype_v1_contract_proto_goTypes = nil
+	file_docklattice_prototype_v1_contract_proto_depIdxs = nil
 }

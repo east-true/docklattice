@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	AgentRoleLabel      = "io.dockpilot.role"
+	AgentRoleLabel      = "io.docklattice.role"
 	AgentRoleValue      = "agent"
 	ComposeProjectLabel = "com.docker.compose.project"
 )

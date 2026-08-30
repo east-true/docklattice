@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/serverstore"
+	"github.com/east-true/docklattice/internal/serverstore"
 )
 
 const (

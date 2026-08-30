@@ -20,7 +20,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
     go build -mod=readonly -trimpath -buildvcs=false \
-    -ldflags='-s -w -buildid=' -o /out/dockpilot ./cmd/dockpilot
+    -ldflags='-s -w -buildid=' -o /out/docklattice ./cmd/docklattice
 
 # The Docker Official Image is used only as an immutable source for the Docker
 # CLI and its CA bundle. Buildx and its bundled Compose plugin are not copied.
@@ -45,8 +45,8 @@ FROM compose-${TARGETARCH} AS compose
 # result keeps the runtime stages free of any RUN, so a cross-architecture
 # release build needs no target emulation at all.
 FROM --platform=$BUILDPLATFORM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS rootfs
-RUN addgroup -S -g 65532 dockpilot && \
-    adduser -S -D -H -u 65532 -G dockpilot dockpilot && \
+RUN addgroup -S -g 65532 docklattice && \
+    adduser -S -D -H -u 65532 -G docklattice docklattice && \
     mkdir -p /skel/state
 
 # License text is architecture-independent, so this stage also runs natively.
@@ -64,53 +64,53 @@ ADD --checksum=sha256:b7dca0a6b01fa7365e4892877a6321179ee343d72ee87a96cfc222141b
 FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS server
 ARG VERSION=dev
 ARG REVISION=unknown
-LABEL org.opencontainers.image.title="Dockpilot Server" \
-      org.opencontainers.image.description="Dockpilot central control plane" \
-      org.opencontainers.image.source="https://github.com/east-true/dockpilot" \
+LABEL org.opencontainers.image.title="DockLattice Server" \
+      org.opencontainers.image.description="DockLattice central control plane" \
+      org.opencontainers.image.source="https://github.com/east-true/docklattice" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.licenses="Apache-2.0" \
-      io.dockpilot.role="server" \
-      io.dockpilot.ports="8080/tcp,8443/tcp"
+      io.docklattice.role="server" \
+      io.docklattice.ports="8080/tcp,8443/tcp"
 # The listening ports are recorded as a label rather than with EXPOSE. BuildKit
 # renders the EXPOSE history entry from a parser node that embeds a heap
 # address, so an image carrying EXPOSE gets a different config digest on every
 # build and cannot satisfy the reproducible-build gate.
 COPY --from=rootfs /etc/passwd /etc/group /etc/
-COPY --from=rootfs --chown=65532:65532 --chmod=0700 /skel/state /var/lib/dockpilot
-COPY --from=build --chmod=0555 /out/dockpilot /usr/local/bin/dockpilot
-COPY LICENSE NOTICE /licenses/Dockpilot/
+COPY --from=rootfs --chown=65532:65532 --chmod=0700 /skel/state /var/lib/docklattice
+COPY --from=build --chmod=0555 /out/docklattice /usr/local/bin/docklattice
+COPY LICENSE NOTICE /licenses/DockLattice/
 COPY distribution/IMAGE-LICENSES.md /licenses/README.md
 USER 65532:65532
-VOLUME ["/var/lib/dockpilot"]
-ENTRYPOINT ["/usr/local/bin/dockpilot"]
+VOLUME ["/var/lib/docklattice"]
+ENTRYPOINT ["/usr/local/bin/docklattice"]
 CMD ["server", "--listen", "0.0.0.0:8080", "--agent-listen", "0.0.0.0:8443", "--allow-public-bind"]
 
 FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS agent
 ARG VERSION=dev
 ARG REVISION=unknown
-LABEL org.opencontainers.image.title="Dockpilot Agent" \
-      org.opencontainers.image.description="Dockpilot Docker host Container Agent" \
-      org.opencontainers.image.source="https://github.com/east-true/dockpilot" \
+LABEL org.opencontainers.image.title="DockLattice Agent" \
+      org.opencontainers.image.description="DockLattice Docker host Container Agent" \
+      org.opencontainers.image.source="https://github.com/east-true/docklattice" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.licenses="Apache-2.0" \
-      io.dockpilot.role="agent" \
-      io.dockpilot.docker-cli.version="29.7.2" \
-      io.dockpilot.compose.version="5.5.0"
+      io.docklattice.role="agent" \
+      io.docklattice.docker-cli.version="29.7.2" \
+      io.docklattice.compose.version="5.5.0"
 COPY --from=rootfs /etc/passwd /etc/group /etc/
-COPY --from=rootfs --chown=65532:65532 --chmod=0700 /skel/state /var/lib/dockpilot
-COPY --from=rootfs --chown=65532:65532 --chmod=0700 /skel/state /var/lib/dockpilot/docker-config
-COPY --from=build --chmod=0555 /out/dockpilot /usr/local/bin/dockpilot
+COPY --from=rootfs --chown=65532:65532 --chmod=0700 /skel/state /var/lib/docklattice
+COPY --from=rootfs --chown=65532:65532 --chmod=0700 /skel/state /var/lib/docklattice/docker-config
+COPY --from=build --chmod=0555 /out/docklattice /usr/local/bin/docklattice
 COPY --from=docker-cli --chmod=0555 /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=compose --chmod=0555 /docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 COPY --from=licenses /licenses /licenses
-COPY LICENSE NOTICE /licenses/Dockpilot/
+COPY LICENSE NOTICE /licenses/DockLattice/
 COPY distribution/IMAGE-LICENSES.md /licenses/README.md
-ENV HOME=/var/lib/dockpilot \
-    DOCKER_CONFIG=/var/lib/dockpilot/docker-config
+ENV HOME=/var/lib/docklattice \
+    DOCKER_CONFIG=/var/lib/docklattice/docker-config
 USER 65532:65532
-VOLUME ["/var/lib/dockpilot"]
-ENTRYPOINT ["/usr/local/bin/dockpilot"]
+VOLUME ["/var/lib/docklattice"]
+ENTRYPOINT ["/usr/local/bin/docklattice"]
 CMD ["agent"]

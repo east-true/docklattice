@@ -18,22 +18,22 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	pb "github.com/east-true/dockpilot/internal/producttransport/pb"
+	pb "github.com/east-true/docklattice/internal/producttransport/pb"
 )
 
-const productALPN = "dockpilot-product-grpc/1"
+const productALPN = "docklattice-product-grpc/1"
 
 const (
-	heartbeatMethod            = "/dockpilot.product.v1.AgentControl/Heartbeat"
-	queryMethod                = "/dockpilot.product.v1.AgentControl/Query"
-	operationMethod            = "/dockpilot.product.v1.AgentControl/StartOperation"
-	getOperationMethod         = "/dockpilot.product.v1.AgentControl/GetOperation"
-	cancelOperationMethod      = "/dockpilot.product.v1.AgentControl/CancelOperation"
-	listActiveOperationsMethod = "/dockpilot.product.v1.AgentControl/ListActiveOperations"
-	auditMethod                = "/dockpilot.product.v1.AgentControl/SyncAudit"
-	logsMethod                 = "/dockpilot.product.v1.AgentControl/StreamLogs"
-	statsMethod                = "/dockpilot.product.v1.AgentControl/StreamStats"
-	metricsMatrixMethod        = "/dockpilot.product.v1.AgentControl/StreamMetricsMatrix"
+	heartbeatMethod            = "/docklattice.product.v1.AgentControl/Heartbeat"
+	queryMethod                = "/docklattice.product.v1.AgentControl/Query"
+	operationMethod            = "/docklattice.product.v1.AgentControl/StartOperation"
+	getOperationMethod         = "/docklattice.product.v1.AgentControl/GetOperation"
+	cancelOperationMethod      = "/docklattice.product.v1.AgentControl/CancelOperation"
+	listActiveOperationsMethod = "/docklattice.product.v1.AgentControl/ListActiveOperations"
+	auditMethod                = "/docklattice.product.v1.AgentControl/SyncAudit"
+	logsMethod                 = "/docklattice.product.v1.AgentControl/StreamLogs"
+	statsMethod                = "/docklattice.product.v1.AgentControl/StreamStats"
+	metricsMatrixMethod        = "/docklattice.product.v1.AgentControl/StreamMetricsMatrix"
 )
 
 const (
@@ -273,7 +273,7 @@ func (a *ServerAcceptor) Accept(ctx context.Context) (ControlSession, error) {
 	}
 	info.SourceIP = remoteIP(raw.RemoteAddr())
 	dialer := &singleConnDialer{conn: conn}
-	client, err := grpc.NewClient("passthrough:///dockpilot-product-agent",
+	client, err := grpc.NewClient("passthrough:///docklattice-product-agent",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(dialer.DialContext),
 		grpc.WithDefaultCallOptions(
@@ -1618,7 +1618,7 @@ func auditRPCHandler(service any, stream grpc.ServerStream) error {
 }
 
 var agentControlServiceDesc = grpc.ServiceDesc{
-	ServiceName: "dockpilot.product.v1.AgentControl",
+	ServiceName: "docklattice.product.v1.AgentControl",
 	HandlerType: (*agentServiceAPI)(nil),
 	Methods: []grpc.MethodDesc{
 		{MethodName: "Heartbeat", Handler: heartbeatRPCHandler},

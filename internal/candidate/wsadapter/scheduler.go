@@ -5,8 +5,8 @@ import (
 	"net"
 	"sync/atomic"
 
-	"github.com/east-true/dockpilot/internal/scheduling"
-	"github.com/east-true/dockpilot/internal/transport"
+	"github.com/east-true/docklattice/internal/scheduling"
+	"github.com/east-true/docklattice/internal/transport"
 )
 
 // scheduler owns the only connection writer, while scheduling.Arbiter owns the

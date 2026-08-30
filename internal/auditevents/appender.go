@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/auditgen"
-	"github.com/east-true/dockpilot/internal/auditwal"
+	"github.com/east-true/docklattice/internal/auditgen"
+	"github.com/east-true/docklattice/internal/auditwal"
 )
 
 var ErrAppenderUnavailable = errors.New("AUDIT_APPENDER_UNAVAILABLE")

@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/agentid"
-	"github.com/east-true/dockpilot/internal/backup"
-	"github.com/east-true/dockpilot/internal/composeconfig"
-	"github.com/east-true/dockpilot/internal/composeexec"
-	"github.com/east-true/dockpilot/internal/composesource"
-	"github.com/east-true/dockpilot/internal/discovery"
-	"github.com/east-true/dockpilot/internal/projectmodel"
-	"github.com/east-true/dockpilot/internal/safefile"
+	"github.com/east-true/docklattice/internal/agentid"
+	"github.com/east-true/docklattice/internal/backup"
+	"github.com/east-true/docklattice/internal/composeconfig"
+	"github.com/east-true/docklattice/internal/composeexec"
+	"github.com/east-true/docklattice/internal/composesource"
+	"github.com/east-true/docklattice/internal/discovery"
+	"github.com/east-true/docklattice/internal/projectmodel"
+	"github.com/east-true/docklattice/internal/safefile"
 )
 
 type fakeScanner struct {
@@ -449,7 +449,7 @@ func TestPeriodicRescanAuditsChangedFilesEvenWhenComposeEvaluationFails(t *testi
 		reported = append([]ExternalConfigChange(nil), changes...)
 		return nil
 	})
-	if err == nil || !strings.Contains(err.Error(), "invalid Compose configuration") {
+	if err == nil || !IsPublishedDegraded(err) || !strings.Contains(err.Error(), "invalid Compose configuration") {
 		t.Fatalf("periodic scan error=%v", err)
 	}
 	projects, _ := catalog.Snapshot()
@@ -564,6 +564,48 @@ func TestTruncatedScanPreservesUnseenAsNonExecutableStale(t *testing.T) {
 	}
 }
 
+func TestTruncatedFilesystemErrorPublishesVerifiedProjects(t *testing.T) {
+	agentID, _ := agentid.New()
+	scanErr := &discovery.ScanError{Code: discovery.CodePermissionDenied, Path: "/srv/blocked", Err: os.ErrPermission}
+	scanner := &fakeScanner{
+		results: []discovery.Result{{
+			Files:     []discovery.File{file("/srv", "/srv/verified/compose.yml", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")},
+			Truncated: true, StopReason: discovery.StopPermissionDenied, DirectoriesSeen: 2, LastScannedPath: "/srv/blocked",
+		}},
+		errors: []error{scanErr},
+	}
+	catalog, _ := New(agentID, scanner, &fakeEvaluator{}, func(string) (bool, string) { return true, "" })
+	err := catalog.Rescan(context.Background())
+	if err == nil || !IsPublishedDegraded(err) || !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("truncated filesystem error=%v", err)
+	}
+	projects, status := catalog.Snapshot()
+	if len(projects) != 1 || projects[0].WorkingDir != "/srv/verified" || !projects[0].ComposeExecutable ||
+		!status.Truncated || status.StopReason != discovery.StopPermissionDenied || status.LastScannedPath != "/srv/blocked" {
+		t.Fatalf("projects=%#v status=%#v", projects, status)
+	}
+}
+
+func TestCanceledTruncatedScanDoesNotPublish(t *testing.T) {
+	agentID, _ := agentid.New()
+	scanner := &fakeScanner{
+		results: []discovery.Result{{
+			Files:     []discovery.File{file("/srv", "/srv/partial/compose.yml", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")},
+			Truncated: true, StopReason: discovery.StopContextCanceled, DirectoriesSeen: 1, LastScannedPath: "/srv/partial",
+		}},
+		errors: []error{context.Canceled},
+	}
+	catalog, _ := New(agentID, scanner, &fakeEvaluator{}, func(string) (bool, string) { return true, "" })
+	err := catalog.Rescan(context.Background())
+	if !errors.Is(err, context.Canceled) || IsPublishedDegraded(err) {
+		t.Fatalf("canceled scan error=%v", err)
+	}
+	projects, status := catalog.Snapshot()
+	if len(projects) != 0 || !status.ScannedAt.IsZero() {
+		t.Fatalf("canceled scan published projects=%#v status=%#v", projects, status)
+	}
+}
+
 func TestSafetyDegradedRootIsVisibleButNeverEvaluated(t *testing.T) {
 	agentID, _ := agentid.New()
 	scanner := &fakeScanner{results: []discovery.Result{{Files: []discovery.File{
@@ -593,6 +635,8 @@ func TestFailedCleanScanDoesNotReplacePreviousCatalog(t *testing.T) {
 	before, _ := catalog.Snapshot()
 	if err := catalog.Rescan(context.Background()); err == nil {
 		t.Fatal("failed scan succeeded")
+	} else if IsPublishedDegraded(err) {
+		t.Fatalf("clean failed scan was marked as published degradation: %v", err)
 	}
 	after, _ := catalog.Snapshot()
 	if len(before) != 1 || len(after) != 1 || before[0].UID != after[0].UID {

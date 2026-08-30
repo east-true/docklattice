@@ -8,8 +8,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/east-true/dockpilot/internal/producttransport"
-	pb "github.com/east-true/dockpilot/internal/producttransport/pb"
+	"github.com/east-true/docklattice/internal/producttransport"
+	pb "github.com/east-true/docklattice/internal/producttransport/pb"
 )
 
 // scalingFrame builds one host's frame at a given container count, shaped like
@@ -24,7 +24,7 @@ func scalingFrame(containers int) (producttransport.MetricsMatrixFrame, map[stri
 			ContainersRunning: uint32(containers), ContainersTotal: uint32(containers),
 			Filesystems: []producttransport.ManagedFilesystem{
 				{Path: "/srv/projects", TotalBytes: 500 << 30, FreeBytes: 200 << 30},
-				{Path: "/var/lib/dockpilot", TotalBytes: 500 << 30, FreeBytes: 200 << 30},
+				{Path: "/var/lib/docklattice", TotalBytes: 500 << 30, FreeBytes: 200 << 30},
 			},
 		},
 	}

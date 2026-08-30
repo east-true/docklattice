@@ -8,7 +8,7 @@ set -eu
 # reached the release path.
 #
 # "Release path" is not a directory: it is the transitive dependency graph of
-# the single binary the Dockerfile builds (./cmd/dockpilot). Auditing the graph
+# the single binary the Dockerfile builds (./cmd/docklattice). Auditing the graph
 # rather than a directory means the disposable Appendix A prototype under
 # cmd/transport-prototype, internal/candidate, and internal/contract is out of
 # scope for the right reason - the release binary does not link it - and it
@@ -26,13 +26,13 @@ command -v go >/dev/null 2>&1 || {
     exit 1
 }
 
-release_binary=./cmd/dockpilot
+release_binary=./cmd/docklattice
 module=$(go list -m)
 
 # The Dockerfile must build exactly the binary this audit covers.
 # The go build invocation spans several continuation lines, so match the
 # target itself and confirm it is the only cmd/ package the image builds.
-grep -F -- "-o /out/dockpilot $release_binary" Dockerfile >/dev/null || {
+grep -F -- "-o /out/docklattice $release_binary" Dockerfile >/dev/null || {
     printf 'release scope verification failed: Dockerfile does not build %s\n' "$release_binary" >&2
     exit 1
 }
@@ -123,10 +123,10 @@ check 'metrics history / timeseries storage' \
     'metric[_a-z]*history|timeseries|time_series|metric[_a-z]*retention'
 check 'discovery max_depth' \
     'discovery[_a-z]*max[_ ]?depth|max[_ ]?depth[_a-z]*discovery'
-check '.dockpilotignore file support' \
-    'dockpilotignore'
+check '.docklatticeignore file support' \
+    'docklatticeignore'
 check 'discovery boundary marker' \
-    'boundary[_ -]?marker|dockpilotroot'
+    'boundary[_ -]?marker|docklatticeroot'
 check 'Native Agent packaging' \
     'native[_ -]?agent'
 check 'Key Rotation' \

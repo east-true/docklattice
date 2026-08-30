@@ -6,8 +6,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/east-true/dockpilot/internal/agentprojects"
-	"github.com/east-true/dockpilot/internal/safefile"
+	"github.com/east-true/docklattice/internal/agentprojects"
+	"github.com/east-true/docklattice/internal/safefile"
 )
 
 // SafeFiles resolves only a catalog-owned project UID, then delegates all

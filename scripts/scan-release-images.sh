@@ -65,8 +65,8 @@ generate_reports() {
     platform=$4
     architecture=${platform#linux/}
     subject=$image@$digest
-    sbom=$asset_dir/dockpilot-$component-$architecture.cdx.json
-    vulnerabilities=$asset_dir/dockpilot-$component-$architecture.vulnerabilities.json
+    sbom=$asset_dir/docklattice-$component-$architecture.cdx.json
+    vulnerabilities=$asset_dir/docklattice-$component-$architecture.vulnerabilities.json
 
     trivy image \
         --platform "$platform" \

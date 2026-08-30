@@ -16,12 +16,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/east-true/dockpilot/internal/agentprojects"
-	"github.com/east-true/dockpilot/internal/backup"
-	"github.com/east-true/dockpilot/internal/composeexec"
-	"github.com/east-true/dockpilot/internal/dockeradapter"
-	"github.com/east-true/dockpilot/internal/producttransport"
-	"github.com/east-true/dockpilot/internal/safefile"
+	"github.com/east-true/docklattice/internal/agentprojects"
+	"github.com/east-true/docklattice/internal/backup"
+	"github.com/east-true/docklattice/internal/composeexec"
+	"github.com/east-true/docklattice/internal/dockeradapter"
+	"github.com/east-true/docklattice/internal/producttransport"
+	"github.com/east-true/docklattice/internal/safefile"
 )
 
 const (
@@ -1179,6 +1179,28 @@ func projectResponse(project agentprojects.Project, recoveryBlocked bool) Projec
 		FilesystemWritable: project.FilesystemWritable, CapabilityReason: project.CapabilityReason, Stale: project.Stale,
 		RestoreRecoveryRequired: recoveryBlocked,
 	}
+	result.SourceReferences = make([]SourceReference, len(project.SourceReferences))
+	for index, reference := range project.SourceReferences {
+		result.SourceReferences[index] = SourceReference{
+			Kind: reference.Kind, Path: reference.Path, Accessible: reference.Accessible, ReadOnly: reference.ReadOnly,
+		}
+	}
+	// ComposeFiles, Services, EnvFiles, resources, and policy decisions are one
+	// effective-Compose metadata unit at the Server trust boundary. Discovery
+	// can safely publish file facts for a project whose Compose evaluation
+	// failed, but it must not publish a partial metadata unit that strict Server
+	// validation will reject as internally inconsistent.
+	if len(project.ServiceModels) == 0 {
+		sort.Slice(result.Files, func(i, j int) bool { return result.Files[i].Path < result.Files[j].Path })
+		sort.Strings(result.IncludedWorkDirs)
+		sort.Slice(result.SourceReferences, func(left, right int) bool {
+			if result.SourceReferences[left].Kind != result.SourceReferences[right].Kind {
+				return result.SourceReferences[left].Kind < result.SourceReferences[right].Kind
+			}
+			return result.SourceReferences[left].Path < result.SourceReferences[right].Path
+		})
+		return result
+	}
 	result.ComposeFiles = make([]string, 0, len(project.ComposeFiles))
 	for _, path := range project.ComposeFiles {
 		relative, err := filepath.Rel(project.WorkingDir, path)
@@ -1219,12 +1241,6 @@ func projectResponse(project agentprojects.Project, recoveryBlocked bool) Projec
 	result.Configs = make([]ResourceSource, len(project.Configs))
 	for index, source := range project.Configs {
 		result.Configs[index] = ResourceSource(source)
-	}
-	result.SourceReferences = make([]SourceReference, len(project.SourceReferences))
-	for index, reference := range project.SourceReferences {
-		result.SourceReferences[index] = SourceReference{
-			Kind: reference.Kind, Path: reference.Path, Accessible: reference.Accessible, ReadOnly: reference.ReadOnly,
-		}
 	}
 	sort.Slice(result.Files, func(i, j int) bool { return result.Files[i].Path < result.Files[j].Path })
 	sort.Strings(result.Services)

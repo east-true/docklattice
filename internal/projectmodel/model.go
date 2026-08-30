@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/east-true/dockpilot/internal/agentid"
+	"github.com/east-true/docklattice/internal/agentid"
 )
 
 var ErrInvalidFact = errors.New("invalid project discovery fact")

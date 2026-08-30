@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/east-true/dockpilot/internal/experiment"
-	"github.com/east-true/dockpilot/internal/metrics"
+	"github.com/east-true/docklattice/internal/experiment"
+	"github.com/east-true/docklattice/internal/metrics"
 )
 
 type Check struct {

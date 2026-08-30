@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/east-true/dockpilot/internal/producttransport"
+	"github.com/east-true/docklattice/internal/producttransport"
 )
 
 // A Handler whose stream handlers were never installed answers, rather than

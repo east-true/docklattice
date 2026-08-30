@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/east-true/dockpilot/internal/transport"
+	"github.com/east-true/docklattice/internal/transport"
 )
 
 // The weighted cycle protects P0/P1 while still giving bounded opportunities

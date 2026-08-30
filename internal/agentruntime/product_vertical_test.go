@@ -15,19 +15,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/agentsafety"
-	"github.com/east-true/dockpilot/internal/agentstorage"
-	"github.com/east-true/dockpilot/internal/auditevents"
-	"github.com/east-true/dockpilot/internal/auditgen"
-	"github.com/east-true/dockpilot/internal/auditwal"
-	"github.com/east-true/dockpilot/internal/backup"
-	"github.com/east-true/dockpilot/internal/composeconfig"
-	"github.com/east-true/dockpilot/internal/composeexec"
-	"github.com/east-true/dockpilot/internal/diskbudget"
-	"github.com/east-true/dockpilot/internal/dockeradapter"
-	"github.com/east-true/dockpilot/internal/operation"
-	"github.com/east-true/dockpilot/internal/producttransport"
-	"github.com/east-true/dockpilot/internal/projectmodel"
+	"github.com/east-true/docklattice/internal/agentsafety"
+	"github.com/east-true/docklattice/internal/agentstorage"
+	"github.com/east-true/docklattice/internal/auditevents"
+	"github.com/east-true/docklattice/internal/auditgen"
+	"github.com/east-true/docklattice/internal/auditwal"
+	"github.com/east-true/docklattice/internal/backup"
+	"github.com/east-true/docklattice/internal/composeconfig"
+	"github.com/east-true/docklattice/internal/composeexec"
+	"github.com/east-true/docklattice/internal/discovery"
+	"github.com/east-true/docklattice/internal/diskbudget"
+	"github.com/east-true/docklattice/internal/dockeradapter"
+	"github.com/east-true/docklattice/internal/operation"
+	"github.com/east-true/docklattice/internal/producttransport"
+	"github.com/east-true/docklattice/internal/projectmodel"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/client"
@@ -74,8 +75,8 @@ func (engine *verticalMobyEngine) ContainerList(context.Context, client.Containe
 	}
 	return client.ContainerListResult{Items: []container.Summary{
 		{
-			ID: verticalAgentID, Names: []string{"/dockpilot-agent"}, Image: "dockpilot:test", State: container.StateRunning,
-			Labels: map[string]string{agentsafety.AgentRoleLabel: agentsafety.AgentRoleValue, agentsafety.ComposeProjectLabel: "dockpilot"},
+			ID: verticalAgentID, Names: []string{"/docklattice-agent"}, Image: "docklattice:test", State: container.StateRunning,
+			Labels: map[string]string{agentsafety.AgentRoleLabel: agentsafety.AgentRoleValue, agentsafety.ComposeProjectLabel: "docklattice"},
 			Mounts: mounts,
 		},
 		{ID: verticalWorkloadID, Names: []string{"/workload"}, Image: "workload:test", State: container.StateRunning},
@@ -200,6 +201,140 @@ func TestProductionAdapterBootAssemblesCompleteProductHandler(t *testing.T) {
 	}
 	if !closed {
 		t.Fatal("Runtime.Close did not close production Moby Engine")
+	}
+}
+
+func TestProductionBootKeepsVerifiedProductAvailableAfterPartialDiscoveryFailure(t *testing.T) {
+	server := newCredentialServer(t)
+	stateRoot := t.TempDir()
+	projectRoot := t.TempDir()
+	if err := os.Chmod(stateRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(projectRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	verified := filepath.Join(projectRoot, "a-verified")
+	blocked := filepath.Join(projectRoot, "z-blocked")
+	if err := os.Mkdir(verified, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(verified, "compose.yaml"), []byte("services:\n  app:\n    image: example/app\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(blocked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(blocked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blocked, 0o700) })
+	if _, err := os.ReadDir(blocked); err == nil {
+		t.Skip("test process can read mode-000 directories")
+	}
+
+	var diagnostics strings.Builder
+	config := testConfig(stateRoot, server)
+	config.Diagnostics = &diagnostics
+	config.ProjectRoots = []string{projectRoot}
+	config.projectEvaluator = verticalProjectEvaluator{}
+	moby := &verticalMobyEngine{projectRoot: projectRoot}
+	config.DockerOpen = func(identity dockeradapter.IdentityProvider) (Docker, error) {
+		return dockeradapter.New(moby, identity, dockeradapter.MinimumAPIVersion)
+	}
+
+	runtime, err := Boot(context.Background(), config)
+	if err != nil {
+		t.Fatalf("Boot rejected a published partial discovery result: %v", err)
+	}
+	defer runtime.Close(context.Background())
+	if !strings.Contains(diagnostics.String(), "event=discovery_scan_failed") ||
+		!strings.Contains(diagnostics.String(), "event=boot_ready") || strings.Contains(diagnostics.String(), "event=boot_failed") {
+		t.Fatalf("partial discovery diagnostics:\n%s", diagnostics.String())
+	}
+
+	capability, err := runtime.handler.Heartbeat(context.Background(), producttransport.SessionInfo{
+		AgentID: runtime.startup.AgentID, Incarnation: runtime.startup.CurrentIncarnation,
+		CredentialID: runtime.credential.CredentialID, ServerIdentityID: runtime.credential.ServerIdentityID,
+	}, server.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !capability.ConnectionReady || !capability.DockerReady || !capability.ComposeReady || !capability.MetricsMatrix {
+		t.Fatalf("partial discovery disabled unrelated product capabilities: %+v", capability)
+	}
+
+	response, err := runtime.handler.(producttransport.QueryHandler).Query(
+		context.Background(), producttransport.SessionInfo{}, producttransport.QueryRequest{Kind: "project.list"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot struct {
+		Projects []struct {
+			WorkingDir        string `json:"working_dir"`
+			ComposeExecutable bool   `json:"compose_executable"`
+		} `json:"projects"`
+		Status struct {
+			Truncated       bool   `json:"truncated"`
+			StopReason      string `json:"stop_reason"`
+			LastScannedPath string `json:"last_scanned_path"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal(response.Payload, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Projects) != 1 || snapshot.Projects[0].WorkingDir != verified || !snapshot.Projects[0].ComposeExecutable ||
+		!snapshot.Status.Truncated || snapshot.Status.StopReason != string(discovery.StopPermissionDenied) || snapshot.Status.LastScannedPath != blocked {
+		t.Fatalf("partial discovery snapshot=%+v", snapshot)
+	}
+	if _, ok := runtime.handler.(producttransport.LogStreamHandler); !ok {
+		t.Fatal("partial discovery removed Container log handling")
+	}
+}
+
+func TestProductionBootDisablesComposeWhenEveryProjectEvaluationFails(t *testing.T) {
+	server := newCredentialServer(t)
+	stateRoot := t.TempDir()
+	projectRoot := t.TempDir()
+	if err := os.Chmod(stateRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(projectRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(projectRoot, "compose.yaml"),
+		[]byte("services:\n  app:\n    image: example/app\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	config := testConfig(stateRoot, server)
+	config.ProjectRoots = []string{projectRoot}
+	config.projectEvaluator = failingProjectEvaluator{}
+	moby := &verticalMobyEngine{projectRoot: projectRoot}
+	config.DockerOpen = func(identity dockeradapter.IdentityProvider) (Docker, error) {
+		return dockeradapter.New(moby, identity, dockeradapter.MinimumAPIVersion)
+	}
+
+	runtime, err := Boot(context.Background(), config)
+	if err != nil {
+		t.Fatalf("Boot rejected a safely published degraded project: %v", err)
+	}
+	defer runtime.Close(context.Background())
+
+	capability, err := runtime.handler.Heartbeat(context.Background(), producttransport.SessionInfo{
+		AgentID: runtime.startup.AgentID, Incarnation: runtime.startup.CurrentIncarnation,
+		CredentialID: runtime.credential.CredentialID, ServerIdentityID: runtime.credential.ServerIdentityID,
+	}, server.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !capability.ConnectionReady || !capability.DockerReady || capability.ComposeReady || !capability.MetricsMatrix ||
+		capability.Reason != "project discovery failed" {
+		t.Fatalf("all Compose evaluations failed but capability=%+v", capability)
 	}
 }
 
@@ -437,6 +572,12 @@ func (verticalProjectEvaluator) Evaluate(_ context.Context, workingDir string, f
 	}, Services: []string{"app"}}, nil
 }
 
+type failingProjectEvaluator struct{}
+
+func (failingProjectEvaluator) Evaluate(context.Context, string, []string) (composeconfig.Result, error) {
+	return composeconfig.Result{}, errors.New("Docker Compose plugin unavailable")
+}
+
 type verticalRestoreJournal struct {
 	Version              int                   `json:"version"`
 	OperationID          string                `json:"operation_id"`
@@ -515,7 +656,7 @@ func TestProductionBootRecoversBackupJournalsAndKeepsProjectFailuresIsolated(t *
 
 	preparing := project("preparing")
 	preparingBackup := createSnapshot(preparing, "snapshot-preparing")
-	preparingStage := ".dockpilot-restore-preparing.tmp"
+	preparingStage := ".docklattice-restore-preparing.tmp"
 	if err := os.WriteFile(filepath.Join(preparing.WorkingDir, preparingStage), []byte("candidate"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +672,7 @@ func TestProductionBootRecoversBackupJournalsAndKeepsProjectFailuresIsolated(t *
 	if err := os.WriteFile(filepath.Join(partial.WorkingDir, "compose.yaml"), []byte("partially restored\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	partialStage := ".dockpilot-restore-partial.tmp"
+	partialStage := ".docklattice-restore-partial.tmp"
 	if err := os.WriteFile(filepath.Join(partial.WorkingDir, partialStage), []byte("remaining staged data"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1002,7 +1143,7 @@ func (verticalMobyCore) ServerVersion(context.Context, client.ServerVersionOptio
 }
 func (verticalMobyCore) ContainerList(context.Context, client.ContainerListOptions) (client.ContainerListResult, error) {
 	return client.ContainerListResult{Items: []container.Summary{{
-		ID: verticalAgentID, Names: []string{"/dockpilot-agent"},
+		ID: verticalAgentID, Names: []string{"/docklattice-agent"},
 		Labels: map[string]string{agentsafety.AgentRoleLabel: agentsafety.AgentRoleValue},
 	}}}, nil
 }

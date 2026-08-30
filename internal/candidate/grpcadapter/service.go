@@ -10,12 +10,12 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	pb "github.com/east-true/dockpilot/internal/candidate/grpcadapter/pb"
-	"github.com/east-true/dockpilot/internal/transport"
+	pb "github.com/east-true/docklattice/internal/candidate/grpcadapter/pb"
+	"github.com/east-true/docklattice/internal/transport"
 )
 
 const (
-	serviceName   = "dockpilot.prototype.grpc.v1.ReverseTransport"
+	serviceName   = "docklattice.prototype.grpc.v1.ReverseTransport"
 	unaryMethod   = "/" + serviceName + "/Unary"
 	receiveMethod = "/" + serviceName + "/Receive"
 	duplexMethod  = "/" + serviceName + "/Duplex"

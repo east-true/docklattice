@@ -1,21 +1,21 @@
-# Dockpilot Design System
+# DockLattice Design System
 
 **Status:** Final UI/UX design direction for implementation review  
-**Scope:** First-party Dockpilot Web UI  
+**Scope:** First-party DockLattice Web UI
 **Theme:** Light-first, dense operational workbench
 
 ## 1. Product design principles
 
-Dockpilot is a Docker operations console for multiple Docker hosts on an internal network. It is not a generic SaaS dashboard, host-OS monitoring suite, alerting product, or Docker CLI replacement.
+DockLattice is a Docker operations console for multiple Docker hosts on an internal network. It is not a generic SaaS dashboard, host-OS monitoring suite, alerting product, or Docker CLI replacement.
 
 The UI should answer, in order:
 
 1. Where should I look?
 2. Which Docker/Compose object is involved?
 3. What is its current state and evidence?
-4. What Dockpilot-supported action is safe and available next?
+4. What DockLattice-supported action is safe and available next?
 
-Use Docker terminology first. Use Dockpilot terminology only for Dockpilot concepts.
+Use Docker terminology first. Use DockLattice terminology only for DockLattice concepts.
 
 Preferred UI nouns:
 
@@ -34,11 +34,11 @@ Preferred UI nouns:
 - Backup
 - Discovery
 
-Avoid introducing `Fleet`, `Workload`, `Stack`, `Runtime`, or `Environment` as Dockpilot UI labels where Docker has a more precise term.
+Avoid introducing `Fleet`, `Workload`, `Stack`, `Runtime`, or `Environment` as DockLattice UI labels where Docker has a more precise term.
 
 ## 2. Brand
 
-Dockpilot's product identity is the **Dockpilot wordmark**. Do not introduce an official decorative logo mark in the application shell.
+DockLattice's product identity is the **DockLattice wordmark**. Do not introduce an official decorative logo mark in the application shell.
 
 ### Primary palette
 
@@ -86,7 +86,7 @@ Sidebar | Main content | optional right details panel
 Sidebar contains only:
 
 ```text
-Dockpilot
+DockLattice
 Search…
 Home
 
@@ -173,7 +173,7 @@ These labels are part of the product contract:
 Inventory/Home snapshot     Checked 14:52
 Discovery                   Last completed scan 14:47
 Container stats             Live · sample 1s ago
-Docker logs                 Docker Engine logs · Not retained by Dockpilot Server
+Docker logs                 Docker Engine logs · Not retained by DockLattice Server
 Audit / Activity            Stored audit history
 Last-known stale value      Last checked 14:32 · current state unavailable
 ```
@@ -192,7 +192,7 @@ Use these terms consistently:
 - `Excluded by profile`: Compose Service is ignored because none of its profiles are active
 - `One-off`: Container created as a one-off Compose run
 - `Orphan`: Container remains but no service exists in the current effective Compose model
-- `No baseline`: no authoritative Dockpilot baseline exists for comparison
+- `No baseline`: no authoritative DockLattice baseline exists for comparison
 - `Last known`: a past successful observation, not current state
 
 Do not collapse Audit gap and Audit continuity uncertainty into one generic health state.
@@ -227,7 +227,7 @@ Live tables update values without constantly moving rows.
 - 768–1023px: collapsible Sidebar, key columns retained, optional horizontal table scroll
 - <768px: navigation drawer, single-column detail; details panel becomes full-page
 
-Dockpilot remains desktop-first.
+DockLattice remains desktop-first.
 
 ## 14. Product boundaries
 
@@ -243,4 +243,4 @@ Do not add:
 - decorative dashboard charts
 - generic Settings without a real product capability
 
-Docker-provided **inspection data** should be exposed when operationally useful. Docker-supported **mutations** must be separately adopted as Dockpilot operations before appearing in UI.
+Docker-provided **inspection data** should be exposed when operationally useful. Docker-supported **mutations** must be separately adopted as DockLattice operations before appearing in UI.

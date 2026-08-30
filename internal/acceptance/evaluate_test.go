@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/experiment"
-	"github.com/east-true/dockpilot/internal/metrics"
+	"github.com/east-true/docklattice/internal/experiment"
+	"github.com/east-true/docklattice/internal/metrics"
 )
 
 func TestMissingEvidenceFails(t *testing.T) {
