@@ -604,6 +604,31 @@ func TestOperationRequiresStrictBoundedJSONAndReturnsAccepted(t *testing.T) {
 	}
 }
 
+func TestOperationCollectionSupportsBoundedReadAndRejectsUnsupportedMethods(t *testing.T) {
+	backend := &testBackend{operationList: OperationList{Operations: []Operation{{
+		ID: "op-1", Status: "success", Revision: 2,
+	}}}}
+	handler := newTestHandler(t, backend)
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/operations?limit=5", nil))
+	if response.Code != http.StatusOK || backend.operationListRequest.Limit != 5 || !strings.Contains(response.Body.String(), `"operation_id":"op-1"`) {
+		t.Fatalf("GET collection = %d %q request=%+v", response.Code, response.Body.String(), backend.operationListRequest)
+	}
+
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPatch, "/api/v1/operations", nil))
+	if response.Code != http.StatusMethodNotAllowed || !strings.Contains(response.Body.String(), "METHOD_NOT_ALLOWED") {
+		t.Fatalf("PATCH collection = %d %q", response.Code, response.Body.String())
+	}
+
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/operations?limit=0", nil))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("GET collection with invalid limit = %d %q", response.Code, response.Body.String())
+	}
+}
+
 func TestOperationLookupAndCancelRoutesAreStrictAndUnambiguous(t *testing.T) {
 	backend := &testBackend{
 		op: Operation{ID: "op-1", Status: "running", Revision: 2},

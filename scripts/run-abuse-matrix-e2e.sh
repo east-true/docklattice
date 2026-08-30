@@ -773,10 +773,13 @@ if selected request-abuse; then
             '{operation_id:$id,agent_id:$agent,kind:"discovery.rescan",unexpected_field:"x"}')" \
         "$evidence_dir/request-abuse.unknown-field.json")
     check unknown-field 400 "$status"
-    status=$(api_status GET "$base_url/api/v1/operations" '' "$evidence_dir/request-abuse.method.json")
+    # GET is the bounded Operation Center read surface. Exercise an actually
+    # unsupported collection method so this gate tracks the current API
+    # contract instead of mistaking a legitimate read for a mutation hole.
+    status=$(api_status PATCH "$base_url/api/v1/operations" '' "$evidence_dir/request-abuse.method.json")
     case "$status" in
         404|405) printf 'wrong-method\t404-or-405\t%s\n' "$status" >>"$evidence_dir/request-abuse.results.tsv" ;;
-        *) fail "request-abuse: GET on the operations collection answered HTTP $status" ;;
+        *) fail "request-abuse: PATCH on the operations collection answered HTTP $status" ;;
     esac
     status=$(api_status GET "$base_url/api/v1/hosts/$agent_id/audit?limit=0" '' \
         "$evidence_dir/request-abuse.limit.json")
