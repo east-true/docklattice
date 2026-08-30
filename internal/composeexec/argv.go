@@ -53,7 +53,7 @@ type Project struct {
 	Files      []string
 	Name       string
 	// Services is the bounded effective Compose model used by the Agent to
-	// enforce Dockpilot's no-build mutation policy. Build metadata never becomes
+	// enforce DockLattice's no-build mutation policy. Build metadata never becomes
 	// an executable build surface.
 	Services []Service
 	// EnvFile is an Agent-resolved validation-only override. It is never
@@ -139,7 +139,7 @@ func BuildArgs(spec Spec) ([]string, error) {
 
 	switch spec.Operation {
 	case OperationUp:
-		// Dockpilot v1 never builds Images. This flag is unconditional rather
+		// DockLattice v1 never builds Images. This flag is unconditional rather
 		// than caller-selectable so no API path can accidentally opt into build.
 		args = append(args, "--detach", "--no-build")
 		if spec.Flags.RemoveOrphans {

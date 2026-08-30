@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/producttransport"
+	"github.com/east-true/docklattice/internal/producttransport"
 )
 
 type blockingMatrixSender struct {

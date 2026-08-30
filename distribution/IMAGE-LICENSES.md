@@ -1,10 +1,10 @@
 # Container image notices
 
-The Dockpilot Agent image contains these explicitly bundled programs:
+The DockLattice Agent image contains these explicitly bundled programs:
 
 | Component | Pinned release | License | Bundled text and upstream source |
 |---|---:|---|---|
-| Dockpilot | image label `org.opencontainers.image.version` | Apache-2.0 | `/licenses/Dockpilot/` |
+| DockLattice | image label `org.opencontainers.image.version` | Apache-2.0 | `/licenses/DockLattice/` |
 | Docker CLI | 29.7.2 | Apache-2.0 | `/licenses/docker-cli/`; [`v29.7.2` source](https://github.com/docker/cli/tree/v29.7.2) |
 | Docker Compose | 5.5.0 | Apache-2.0 | `/licenses/docker-compose/`; [`v5.5.0` source](https://github.com/docker/compose/tree/v5.5.0) |
 

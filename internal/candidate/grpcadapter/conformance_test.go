@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/transport"
-	"github.com/east-true/dockpilot/internal/transport/conformance"
+	"github.com/east-true/docklattice/internal/transport"
+	"github.com/east-true/docklattice/internal/transport/conformance"
 )
 
 func TestConformance(t *testing.T) { conformance.Run(t, testFactory(t)) }
@@ -66,7 +66,7 @@ func testTLS(t *testing.T) (*tls.Config, *tls.Config) {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "dockpilot-prototype"},
+		Subject:      pkix.Name{CommonName: "docklattice-prototype"},
 		NotBefore:    time.Now().Add(-time.Minute),
 		NotAfter:     time.Now().Add(time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,

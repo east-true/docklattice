@@ -8,7 +8,7 @@ remains authoritative if they ever disagree.
 ## What DEGRADED_STORAGE means
 
 It is not an outage and not a failure of the Agent. It is a declared state in
-which Dockpilot stops creating new durable bytes so that it can still close the
+which DockLattice stops creating new durable bytes so that it can still close the
 recovery boundary of work already in flight and keep the minimum record needed
 to explain what happened.
 
@@ -46,17 +46,17 @@ storage_degraded_reason: FILESYSTEM_FREE_LOW
                        | BOTH
 ```
 
-- **`AGENT_STATE_BUDGET_EXCEEDED`** - Dockpilot's own state under
-  `/var/lib/dockpilot` exceeded its budget. Dockpilot's automatic eviction is
+- **`AGENT_STATE_BUDGET_EXCEEDED`** - DockLattice's own state under
+  `/var/lib/docklattice` exceeded its budget. DockLattice's automatic eviction is
   the primary remedy; raising the budget is the deliberate alternative.
 - **`FILESYSTEM_FREE_LOW`** - the host filesystem is short of space. This can
-  be entirely unrelated to Dockpilot. **If files outside Dockpilot filled the
+  be entirely unrelated to DockLattice. **If files outside DockLattice filled the
   disk, the Agent cleaning its own state may not clear the state, and that is
-  intended behaviour.** The remedy is host filesystem cleanup. Dockpilot never
+  intended behaviour.** The remedy is host filesystem cleanup. DockLattice never
   deletes arbitrary host files.
 - **`BOTH`** - resolve both; exit requires both conditions.
 
-## What Dockpilot evicts on its own
+## What DockLattice evicts on its own
 
 Before declaring the state, the Agent evicts in an order that discards
 irreversible data last:
@@ -72,7 +72,7 @@ irreversible data last:
 ```
 
 **Manual backups are never deleted automatically.** A backup the user created
-explicitly is not something Dockpilot removes silently. Deleting one is an
+explicitly is not something DockLattice removes silently. Deleting one is an
 operator action.
 
 Operation output tails are evictable under pressure, but the minimum result
@@ -96,7 +96,7 @@ These are allowed because they write no new Agent configuration file, need no
 automatic snapshot, may themselves be what frees space or restores service, and
 can still record minimal operation state and Managed Audit from the 64 MiB
 emergency reserve. Blocking the ability to restart a service on a full disk
-would make Dockpilot an obstacle to incident response.
+would make DockLattice an obstacle to incident response.
 
 Each one must still pass the **Durable Admission Check** before acceptance: is
 there room to record the minimal operation record, the Managed Audit record,
@@ -109,7 +109,7 @@ requiring large staging.
 
 `compose.pull` is rejected because pulling a large image adds data to Docker
 storage and worsens the shortage. `compose.up` is *not* transformed to avoid
-its image pulls - Dockpilot shows the storage warning and returns the Docker or
+its image pulls - DockLattice shows the storage warning and returns the Docker or
 Compose result unchanged.
 
 ## Procedure
@@ -118,12 +118,12 @@ Compose result unchanged.
    Agent's capability reason in the API.
 2. **If `AGENT_STATE_BUDGET_EXCEEDED`**: list backups for the affected host and
    delete manual backups that are no longer needed. Automatic eviction has
-   already removed everything it is permitted to remove, so remaining Dockpilot
+   already removed everything it is permitted to remove, so remaining DockLattice
    state is either protected (newest snapshot per project, manual backups) or
    durable metadata. Raising `AgentStateMaxBytes` is the alternative and takes
    effect on Agent restart.
-3. **If `FILESYSTEM_FREE_LOW`**: free host filesystem space outside Dockpilot.
-   Use `docker system df` to see what Docker itself holds. Dockpilot will not
+3. **If `FILESYSTEM_FREE_LOW`**: free host filesystem space outside DockLattice.
+   Use `docker system df` to see what Docker itself holds. DockLattice will not
    delete host files for you.
 4. **Bring free space past the exit floor**, not merely past the entry floor:
    `max(1.2 GiB, 6%)` free and Agent state at or below 90% of the budget.

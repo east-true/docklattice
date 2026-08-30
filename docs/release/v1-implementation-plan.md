@@ -1,4 +1,4 @@
-# Dockpilot v1 implementation plan
+# DockLattice v1 implementation plan
 
 Status: completed 2026-08-19; retained as historical release context
 
@@ -222,7 +222,7 @@ complete.
   `internal/serverbootstrap/filesystem_audit_test.go`).
 - Release-scope audit over the release binary's dependency graph
   (`scripts/verify-release-scope.sh`, 29 checks, 40 packages): no OPTIONAL,
-  FUTURE, or DO NOT BUILD behaviour reaches `./cmd/dockpilot`.
+  FUTURE, or DO NOT BUILD behaviour reaches `./cmd/docklattice`.
 - Go dependency license material (`scripts/generate-license-inventory.sh`, 33
   modules).
 - Reproducible multi-platform release build: two independent runs of

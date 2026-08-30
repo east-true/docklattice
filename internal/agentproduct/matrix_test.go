@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/dockeradapter"
-	"github.com/east-true/dockpilot/internal/livestats"
-	"github.com/east-true/dockpilot/internal/producttransport"
+	"github.com/east-true/docklattice/internal/dockeradapter"
+	"github.com/east-true/docklattice/internal/livestats"
+	"github.com/east-true/docklattice/internal/producttransport"
 )
 
 func containerID(letter string) string { return strings.Repeat(letter, 64) }
@@ -500,12 +500,12 @@ func TestOnlyContainerEventsCostAListing(t *testing.T) {
 func TestOneUnreadablePathDoesNotHideTheOthers(t *testing.T) {
 	workload := dockerWorkload{
 		docker: &fakeMatrixDocker{info: dockeradapter.EngineInfo{CPUCapacity: 2}},
-		paths:  []string{"/srv/projects", "/srv/other", "/var/lib/dockpilot"},
+		paths:  []string{"/srv/projects", "/srv/other", "/var/lib/docklattice"},
 		probe: func(path string) (filesystemUsage, error) {
 			switch path {
 			case "/srv/other":
 				return filesystemUsage{}, errors.New("no such file or directory")
-			case "/var/lib/dockpilot":
+			case "/var/lib/docklattice":
 				// Same device as /srv/projects: one filesystem, one row.
 				return filesystemUsage{Device: 64, TotalBytes: 100, FreeBytes: 40}, nil
 			default:
@@ -533,7 +533,7 @@ func TestOneUnreadablePathDoesNotHideTheOthers(t *testing.T) {
 }
 
 // TestManagedFilesystemsAreNotAMountInventory pins the boundary. The host row
-// answers how much room Dockpilot has where it writes; it does not enumerate
+// answers how much room DockLattice has where it writes; it does not enumerate
 // the host's mounts, and a path is reported only because it was configured.
 func TestManagedFilesystemsAreNotAMountInventory(t *testing.T) {
 	var probed []string

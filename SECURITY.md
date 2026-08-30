@@ -20,7 +20,7 @@ generic severity label.
 
 ## Threat model
 
-Dockpilot is designed for an **internal network**. Knowing what it does and does
+DockLattice is designed for an **internal network**. Knowing what it does and does
 not defend against is more useful than a list of features.
 
 ### What v1 does not protect
@@ -33,7 +33,7 @@ every connected Docker host.
 Because of that, the Server binds to `127.0.0.1` by default and refuses a
 non-loopback bind without an explicit `--allow-public-bind`. That default is not
 a security control — it exists so that exposing the port is a decision someone
-makes, rather than something that happens by accident. Put Dockpilot behind an
+makes, rather than something that happens by accident. Put DockLattice behind an
 authenticating reverse proxy, or reach it over a tunnel or VPN.
 
 For the Server image, the loopback boundary is the host-side Docker publish
@@ -47,7 +47,7 @@ protect every browser/API path with authentication.
 operator provides.
 
 **An Agent controls its host's Docker daemon.** Access to `/var/run/docker.sock`
-is equivalent to root on that host. Dockpilot reduces the blast radius — the
+is equivalent to root on that host. DockLattice reduces the blast radius — the
 Agent process runs as UID/GID 65532, holds the socket only through a
 supplementary group, and contains no shell-command execution wrapper — but it
 cannot make socket access safe. Treat every Agent host as being as trusted as

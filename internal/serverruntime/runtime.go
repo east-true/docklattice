@@ -15,14 +15,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/auditstore"
-	"github.com/east-true/dockpilot/internal/auditsync"
-	"github.com/east-true/dockpilot/internal/producttransport"
-	"github.com/east-true/dockpilot/internal/registration"
-	"github.com/east-true/dockpilot/internal/registrationhttp"
-	"github.com/east-true/dockpilot/internal/serverapi"
-	"github.com/east-true/dockpilot/internal/serverbootstrap"
-	"github.com/east-true/dockpilot/internal/webui"
+	"github.com/east-true/docklattice/internal/auditstore"
+	"github.com/east-true/docklattice/internal/auditsync"
+	"github.com/east-true/docklattice/internal/producttransport"
+	"github.com/east-true/docklattice/internal/registration"
+	"github.com/east-true/docklattice/internal/registrationhttp"
+	"github.com/east-true/docklattice/internal/serverapi"
+	"github.com/east-true/docklattice/internal/serverbootstrap"
+	"github.com/east-true/docklattice/internal/webui"
 )
 
 const acceptWorkers = 4

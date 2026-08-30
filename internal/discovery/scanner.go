@@ -1,4 +1,4 @@
-// Package discovery implements the filesystem half of Dockpilot Compose
+// Package discovery implements the filesystem half of DockLattice Compose
 // discovery. Docker label collection, project merging, and compose config
 // evaluation intentionally live outside this package.
 package discovery
@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	productconfig "github.com/east-true/dockpilot/internal/config"
+	productconfig "github.com/east-true/docklattice/internal/config"
 )
 
 const (
@@ -34,7 +34,7 @@ var defaultIgnoredDirectories = map[string]struct{}{
 	"build":        {},
 }
 
-// The order mirrors Docker Compose's default discovery contract. Dockpilot
+// The order mirrors Docker Compose's default discovery contract. DockLattice
 // always passes explicit --file arguments after discovery, so it must select
 // the same single base file and optional default override that Compose would
 // have selected implicitly. Passing every filename found in a directory would

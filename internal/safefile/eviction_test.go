@@ -17,11 +17,11 @@ func TestReclaimAbandonedStagingIsExactAndSymlinkSafe(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = root.Close() })
-	stage := filepath.Join(dir, ".dockpilot-stage-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	stage := filepath.Join(dir, ".docklattice-stage-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	if err := os.WriteFile(stage, []byte("1234567"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	restoreStage := filepath.Join(dir, ".dockpilot-restore-operation-000.tmp")
+	restoreStage := filepath.Join(dir, ".docklattice-restore-operation-000.tmp")
 	if err := os.WriteFile(restoreStage, []byte("must remain"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestReclaimAbandonedStagingIsExactAndSymlinkSafe(t *testing.T) {
 	if err := os.WriteFile(target, []byte("survive"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	link := filepath.Join(dir, ".dockpilot-stage-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	link := filepath.Join(dir, ".docklattice-stage-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}

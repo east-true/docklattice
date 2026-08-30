@@ -3,7 +3,7 @@ set -eu
 
 # Untrusted-input and invariant-violation matrix. The browser-facing HTTP API is
 # the product's one untrusted surface, and a project directory is written by
-# people outside Dockpilot. Every case here sends something the product must
+# people outside DockLattice. Every case here sends something the product must
 # refuse, and asserts the refusal rather than the absence of a crash.
 #
 # Cases and the contract each one checks:
@@ -117,9 +117,9 @@ for image in "$server_image" "$agent_image" "$fixture_image"; do
     [ "$(docker image inspect --format '{{.Id}}' "$image")" = "$image" ] ||
         fail "preflight: image reference did not resolve to its exact requested ID: $image"
 done
-[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$server_image")" = "Dockpilot Server" ] ||
+[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$server_image")" = "DockLattice Server" ] ||
     fail "preflight: Server image is not the production Server target"
-[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$agent_image")" = "Dockpilot Agent" ] ||
+[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$agent_image")" = "DockLattice Agent" ] ||
     fail "preflight: Agent image is not the production Agent target"
 server_version=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$server_image")
 agent_version=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$agent_image")
@@ -138,7 +138,7 @@ runtime_base=${TMPDIR:-/tmp}
 case "$runtime_base" in /*) ;; *) fail "preflight: TMPDIR must be absolute" ;; esac
 [ -d "$runtime_base" ] || fail "preflight: TMPDIR does not exist"
 
-prefix="dockpilot-abuse-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+prefix="docklattice-abuse-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 umask 077
 artifact_created=0
 runtime=
@@ -167,7 +167,7 @@ remove_compose_objects() {
 
 scrub_runtime() {
     [ -n "${runtime:-}" ] && [ -d "$runtime" ] || return 0
-    case "$runtime" in "$runtime_base"/dockpilot-abuse.*) ;; *) return 1 ;; esac
+    case "$runtime" in "$runtime_base"/docklattice-abuse.*) ;; *) return 1 ;; esac
     docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
         -v "$runtime:/abuse-runtime" "$server_image" \
         -c 'rm -rf /abuse-runtime/server /abuse-runtime/agent /abuse-runtime/bootstrap /abuse-runtime/projects /abuse-runtime/projects-second /abuse-runtime/projects-protected /abuse-runtime/replay /abuse-runtime/first-use /abuse-runtime/stranger' \
@@ -223,8 +223,8 @@ cleanup() {
 trap cleanup EXIT
 trap 'failure_reason="harness interrupted by signal"; exit 130' HUP INT TERM
 
-runtime=$(mktemp -d "$runtime_base/dockpilot-abuse.XXXXXXXX")
-case "$runtime" in "$runtime_base"/dockpilot-abuse.*) ;; *) fail "mktemp returned an unexpected runtime root" ;; esac
+runtime=$(mktemp -d "$runtime_base/docklattice-abuse.XXXXXXXX")
+case "$runtime" in "$runtime_base"/docklattice-abuse.*) ;; *) fail "mktemp returned an unexpected runtime root" ;; esac
 chmod 0700 "$runtime"
 mkdir "$evidence_dir"
 chmod 0700 "$evidence_dir"
@@ -291,7 +291,7 @@ docker network create --subnet "$(harness_subnet)" "$network" >"$evidence_dir/ne
 start_server() {
     docker run --pull never -d --name "$server" --network "$network" --network-alias server \
         --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-        -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/dockpilot:rw" "$server_image" \
+        -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/docklattice:rw" "$server_image" \
         server --listen 0.0.0.0:8080 --agent-listen 0.0.0.0:8443 --allow-public-bind
 }
 
@@ -403,8 +403,8 @@ wait_active_host() {
 
 issue_token() {
     docker run --pull never --rm --user 65532:65532 \
-        -v "$runtime/server:/var/lib/dockpilot:rw" "$server_image" \
-        server issue-token --state-dir /var/lib/dockpilot --ttl 15m \
+        -v "$runtime/server:/var/lib/docklattice:rw" "$server_image" \
+        server issue-token --state-dir /var/lib/docklattice --ttl 15m \
         >"$runtime/bootstrap/join-token" 2>"$evidence_dir/issue-token.stderr"
     [ "$(wc -c <"$runtime/bootstrap/join-token" | awk '{ print $1 }')" -gt 1 ] || fail "Join Token CLI produced no token"
     docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
@@ -416,19 +416,19 @@ issue_token() {
 start_agent() {
     with_token=$1
     if [ "$with_token" = true ]; then
-        token_args="--join-token-file /var/lib/dockpilot/join-token"
+        token_args="--join-token-file /var/lib/docklattice/join-token"
     else
         token_args=
     fi
     # shellcheck disable=SC2086
     docker run --pull never -d --name "$agent" --network "$network" \
         --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-        --group-add "$socket_gid" --label io.dockpilot.role=agent \
+        --group-add "$socket_gid" --label io.docklattice.role=agent \
         -v /var/run/docker.sock:/var/run/docker.sock:rw \
-        -v "$runtime/agent:/var/lib/dockpilot:rw" \
+        -v "$runtime/agent:/var/lib/docklattice:rw" \
         -v "$runtime/projects:$runtime/projects:rw" "$agent_image" agent \
         --server server:8443 --registration-url https://server:8080 \
-        --server-ca /var/lib/dockpilot/server-ca.crt $token_args \
+        --server-ca /var/lib/docklattice/server-ca.crt $token_args \
         --display-name abuse-agent --self-container-name "$agent" \
         --project-root "$runtime/projects"
 }
@@ -837,12 +837,12 @@ if selected token-single-use; then
         state=$2
         docker run --pull never -d --name "$name" --network "$network" \
             --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-            --group-add "$socket_gid" --label io.dockpilot.role=agent \
+            --group-add "$socket_gid" --label io.docklattice.role=agent \
             -v /var/run/docker.sock:/var/run/docker.sock:rw \
-            -v "$runtime/$state:/var/lib/dockpilot:rw" "$agent_image" agent \
+            -v "$runtime/$state:/var/lib/docklattice:rw" "$agent_image" agent \
             --server server:8443 --registration-url https://server:8080 \
-            --server-ca /var/lib/dockpilot/server-ca.crt \
-            --join-token-file /var/lib/dockpilot/join-token \
+            --server-ca /var/lib/docklattice/server-ca.crt \
+            --join-token-file /var/lib/docklattice/join-token \
             --display-name "abuse-$state" --self-container-name "$name"
     }
 
@@ -914,12 +914,12 @@ if selected wrong-server-ca; then
     hosts_before=$(jq -r '.hosts | length' "$evidence_dir/wrong-server-ca.before.json")
     docker run --pull never -d --name "$stranger" --network "$network" \
         --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-        --group-add "$socket_gid" --label io.dockpilot.role=agent \
+        --group-add "$socket_gid" --label io.docklattice.role=agent \
         -v /var/run/docker.sock:/var/run/docker.sock:rw \
-        -v "$runtime/stranger:/var/lib/dockpilot:rw" "$agent_image" agent \
+        -v "$runtime/stranger:/var/lib/docklattice:rw" "$agent_image" agent \
         --server server:8443 --registration-url https://server:8080 \
-        --server-ca /var/lib/dockpilot/server-ca.crt \
-        --join-token-file /var/lib/dockpilot/join-token \
+        --server-ca /var/lib/docklattice/server-ca.crt \
+        --join-token-file /var/lib/docklattice/join-token \
         --display-name abuse-stranger --self-container-name "$stranger" \
         >"$evidence_dir/wrong-server-ca.container-id"
     # Give it a generous window to prove it cannot get in, then confirm the
@@ -1124,12 +1124,12 @@ if selected non-identical-bind; then
     # Same host directory, deliberately a different path inside the container.
     docker run --pull never -d --name "$agent" --network "$network" \
         --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-        --group-add "$socket_gid" --label io.dockpilot.role=agent \
+        --group-add "$socket_gid" --label io.docklattice.role=agent \
         -v /var/run/docker.sock:/var/run/docker.sock:rw \
-        -v "$runtime/agent:/var/lib/dockpilot:rw" \
+        -v "$runtime/agent:/var/lib/docklattice:rw" \
         -v "$runtime/projects:/elsewhere/projects:rw" "$agent_image" agent \
         --server server:8443 --registration-url https://server:8080 \
-        --server-ca /var/lib/dockpilot/server-ca.crt \
+        --server-ca /var/lib/docklattice/server-ca.crt \
         --display-name abuse-agent --self-container-name "$agent" \
         --project-root /elsewhere/projects \
         >"$evidence_dir/non-identical-bind.container-id"
@@ -1203,13 +1203,13 @@ EOF
     # shellcheck disable=SC2086
     docker run --pull never -d --name "$agent" --network "$network" \
         --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-        --group-add "$socket_gid" --label io.dockpilot.role=agent \
+        --group-add "$socket_gid" --label io.docklattice.role=agent \
         -v /var/run/docker.sock:/var/run/docker.sock:rw \
-        -v "$runtime/agent:/var/lib/dockpilot:rw" \
+        -v "$runtime/agent:/var/lib/docklattice:rw" \
         -v "$runtime/projects:$runtime/projects:rw" \
         -v "$runtime/projects-second:$runtime/projects-second:rw" "$agent_image" agent \
         --server server:8443 --registration-url https://server:8080 \
-        --server-ca /var/lib/dockpilot/server-ca.crt \
+        --server-ca /var/lib/docklattice/server-ca.crt \
         --display-name abuse-agent --self-container-name "$agent" \
         --project-root "$runtime/projects" --project-root "$runtime/projects-second" \
         >"$evidence_dir/name-collision.container-id"
@@ -1270,16 +1270,16 @@ EOF
     # would set, and are what IdentifySelf reads to build its protection set.
     docker run --pull never -d --name "$agent" --network "$network" \
         --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-        --group-add "$socket_gid" --label io.dockpilot.role=agent \
+        --group-add "$socket_gid" --label io.docklattice.role=agent \
         --label "com.docker.compose.project=$protected_project" \
         --label com.docker.compose.service=agent \
         --label com.docker.compose.container-number=1 \
         -v /var/run/docker.sock:/var/run/docker.sock:rw \
-        -v "$runtime/agent:/var/lib/dockpilot:rw" \
+        -v "$runtime/agent:/var/lib/docklattice:rw" \
         -v "$runtime/projects:$runtime/projects:rw" \
         -v "$runtime/projects-protected:$runtime/projects-protected:rw" "$agent_image" agent \
         --server server:8443 --registration-url https://server:8080 \
-        --server-ca /var/lib/dockpilot/server-ca.crt \
+        --server-ca /var/lib/docklattice/server-ca.crt \
         --display-name abuse-agent --self-container-name "$agent" \
         --project-root "$runtime/projects" --project-root "$runtime/projects-protected" \
         >"$evidence_dir/protected-compose-project.container-id"

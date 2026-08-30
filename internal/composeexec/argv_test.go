@@ -115,7 +115,7 @@ func TestBuildArgsSupportsOnlyNamedOperationsAndTheirTargets(t *testing.T) {
 
 func TestBuildArgsSupportsAgentResolvedEnvFileForConfigValidation(t *testing.T) {
 	spec := validSpec(OperationConfig)
-	spec.Project.EnvFile = "/proc/123/fd/7/.dockpilot-stage-env"
+	spec.Project.EnvFile = "/proc/123/fd/7/.docklattice-stage-env"
 	spec.Flags.ConfigOutput = ConfigOutputQuiet
 	args, err := BuildArgs(spec)
 	if err != nil {

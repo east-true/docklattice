@@ -32,9 +32,9 @@ runtime=${2:-}
 [ -n "$phase" ] && [ -n "$runtime" ] || fail "usage: $0 setup|verify RUNTIME_DIR [SERVER_IMAGE AGENT_IMAGE FIXTURE_IMAGE]"
 case "$runtime" in /*) ;; *) fail "runtime directory must be absolute" ;; esac
 
-server=dockpilot-powercut-server
-agent=dockpilot-powercut-agent
-network=dockpilot-powercut-net
+server=docklattice-powercut-server
+agent=docklattice-powercut-agent
+network=docklattice-powercut-net
 state_file=$runtime/power-cut-state.env
 secret_marker=POWERCUT-SECRET-DO-NOT-LEAK
 
@@ -145,14 +145,14 @@ setup)
         [ "$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null)" = "$image" ] ||
             fail "image reference did not resolve to its exact requested ID: $image"
     done
-    [ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$server_image")" = "Dockpilot Server" ] ||
-        fail "the Server image is not a Dockpilot Server image"
-    [ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$agent_image")" = "Dockpilot Agent" ] ||
-        fail "the Agent image is not a Dockpilot Agent image"
+    [ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$server_image")" = "DockLattice Server" ] ||
+        fail "the Server image is not a DockLattice Server image"
+    [ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$agent_image")" = "DockLattice Agent" ] ||
+        fail "the Agent image is not a DockLattice Agent image"
 
     mkdir -p "$runtime"
     mkdir "$runtime/server" "$runtime/server/tls" "$runtime/agent" "$runtime/bootstrap" "$runtime/projects" "$runtime/evidence"
-    compose_project=dockpilot-powercut-fixture
+    compose_project=docklattice-powercut-fixture
     socket_gid=$(stat -c '%g' /var/run/docker.sock)
     openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
         -subj '/CN=server' -addext 'subjectAltName=DNS:server,IP:127.0.0.1' \
@@ -186,14 +186,14 @@ EOF
     docker run --pull never -d --name "$server" --network "$network" --network-alias server \
         --restart unless-stopped \
         --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-        -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/dockpilot:rw" "$server_image" \
+        -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/docklattice:rw" "$server_image" \
         server --listen 0.0.0.0:8080 --agent-listen 0.0.0.0:8443 --allow-public-bind >/dev/null
     resolve_base_url
     wait_server_ready
 
     docker run --pull never --rm --user 65532:65532 \
-        -v "$runtime/server:/var/lib/dockpilot:rw" "$server_image" \
-        server issue-token --state-dir /var/lib/dockpilot --ttl 15m \
+        -v "$runtime/server:/var/lib/docklattice:rw" "$server_image" \
+        server issue-token --state-dir /var/lib/docklattice --ttl 15m \
         >"$runtime/bootstrap/join-token" 2>"$runtime/evidence/issue-token.stderr"
     [ "$(wc -c <"$runtime/bootstrap/join-token" | awk '{ print $1 }')" -gt 1 ] || fail "Join Token CLI produced no token"
     docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
@@ -206,11 +206,11 @@ EOF
         --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
         --group-add "$socket_gid" \
         -v /var/run/docker.sock:/var/run/docker.sock:rw \
-        -v "$runtime/agent:/var/lib/dockpilot:rw" \
+        -v "$runtime/agent:/var/lib/docklattice:rw" \
         -v "$runtime/projects:$runtime/projects:rw" "$agent_image" agent \
         --server server:8443 --registration-url https://server:8080 \
-        --server-ca /var/lib/dockpilot/server-ca.crt \
-        --join-token-file /var/lib/dockpilot/join-token \
+        --server-ca /var/lib/docklattice/server-ca.crt \
+        --join-token-file /var/lib/docklattice/join-token \
         --display-name powercut-agent --self-container-name "$agent" \
         --project-root "$runtime/projects" >/dev/null
 

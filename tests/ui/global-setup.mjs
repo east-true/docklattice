@@ -14,7 +14,7 @@ export default async function globalSetup(config) {
 
   throw new Error(
     [
-      "No usable Chromium browser was found for the Dockpilot UI tests.",
+      "No usable Chromium browser was found for the DockLattice UI tests.",
       "Run `npm run test:ui:install` once, or set PLAYWRIGHT_EXECUTABLE_PATH to an installed Chrome or Chromium executable.",
       `Expected Playwright Chromium at: ${chromium.executablePath()}`,
     ].join("\n"),

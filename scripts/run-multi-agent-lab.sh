@@ -123,9 +123,9 @@ for image in "$server_image" "$agent_image" "$fixture_image" "$dind_image"; do
     [ "$(docker image inspect --format '{{.Id}}' "$image")" = "$image" ] ||
         fail "preflight: image reference did not resolve to its exact requested ID: $image"
 done
-[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$server_image")" = "Dockpilot Server" ] ||
+[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$server_image")" = "DockLattice Server" ] ||
     fail "preflight: Server image is not the production Server target"
-[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$agent_image")" = "Dockpilot Agent" ] ||
+[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$agent_image")" = "DockLattice Agent" ] ||
     fail "preflight: Agent image is not the production Agent target"
 server_revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$server_image")
 [ "$server_revision" = "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$agent_image")" ] ||
@@ -138,14 +138,14 @@ runtime_base=${TMPDIR:-/tmp}
 # project name and as the label value the harness filters on. Lowercasing it
 # here keeps those two the same string; a mixed-case prefix silently matches
 # nothing.
-prefix=$(printf 'dockpilot-lab-%s-%s' "$(date -u +%Y%m%dT%H%M%SZ)" "$$" | tr '[:upper:]' '[:lower:]')
-lab_label="io.dockpilot.lab=$prefix"
+prefix=$(printf 'docklattice-lab-%s-%s' "$(date -u +%Y%m%dT%H%M%SZ)" "$$" | tr '[:upper:]' '[:lower:]')
+lab_label="io.docklattice.lab=$prefix"
 umask 077
 artifact_created=0
 runtime=
 server="$prefix-server"
 network="$prefix-net"
-fixture_root=/srv/dockpilot-fixture
+fixture_root=/srv/docklattice-fixture
 completed=0
 failure_reason="lab did not complete"
 failure_reason_file=
@@ -238,7 +238,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'failure_reason="lab interrupted by signal"; exit 130' HUP INT TERM
 
-runtime=$(mktemp -d "$runtime_base/dockpilot-lab.XXXXXXXX")
+runtime=$(mktemp -d "$runtime_base/docklattice-lab.XXXXXXXX")
 chmod 0700 "$runtime"
 mkdir "$evidence_dir"
 chmod 0700 "$evidence_dir"
@@ -297,7 +297,7 @@ start_server() {
     docker run --pull never -d --name "$server" --network "$network" --network-alias server \
         --label "$lab_label" \
         --log-driver local --log-opt max-size=1m --log-opt max-file=2 --log-opt compress=false \
-        -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/dockpilot:rw" "$server_image" \
+        -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/docklattice:rw" "$server_image" \
         server --listen 0.0.0.0:8080 --agent-listen 0.0.0.0:8443 --allow-public-bind
 }
 
@@ -323,8 +323,8 @@ server_ip() {
 
 issue_token() {
     docker run --pull never --rm --user 65532:65532 --label "$lab_label" \
-        -v "$runtime/server:/var/lib/dockpilot:rw" "$server_image" \
-        server issue-token --state-dir /var/lib/dockpilot --ttl 60m \
+        -v "$runtime/server:/var/lib/docklattice:rw" "$server_image" \
+        server issue-token --state-dir /var/lib/docklattice --ttl 60m \
         2>>"$evidence_dir/issue-token.stderr"
 }
 
@@ -342,7 +342,7 @@ start_host() {
         --log-driver local --log-opt max-size=1m --log-opt max-file=2 --log-opt compress=false \
         -e DOCKER_TLS_CERTDIR= \
         -v "$name-fixture:$fixture_root" \
-        -v "$name-state:/var/lib/dockpilot-agent" \
+        -v "$name-state:/var/lib/docklattice-agent" \
         --entrypoint /bin/sh "$dind_image" -c \
         'mkdir -p /var/run; while :; do dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs >>/var/log/dockerd.log 2>&1; echo "dockerd exited, restarting" >>/var/log/dockerd.log; sleep 1; done' >/dev/null
 }
@@ -396,7 +396,7 @@ start_host_agent() {
     name=$(host_name "$index")
     token_args=
     if [ "$with_token" = true ]; then
-        token_args="--join-token-file /var/lib/dockpilot/join-token"
+        token_args="--join-token-file /var/lib/docklattice/join-token"
     fi
     # The Agent runs as 65532 and reaches the daemon through the socket's
     # group, exactly as the documented deployment does. Inside a dind host that
@@ -407,11 +407,11 @@ start_host_agent() {
         --group-add $socket_gid \
         --add-host server:$lab_server_ip \
         -v /var/run/docker.sock:/var/run/docker.sock:rw \
-        -v /var/lib/dockpilot-agent:/var/lib/dockpilot:rw \
+        -v /var/lib/docklattice-agent:/var/lib/docklattice:rw \
         -v $fixture_root:$fixture_root:rw \
         $(agent_var inner_agent "$index") agent \
         --server server:8443 --registration-url https://server:8080 \
-        --server-ca /var/lib/dockpilot/server-ca.crt $token_args \
+        --server-ca /var/lib/docklattice/server-ca.crt $token_args \
         --display-name lab-agent-$index --self-container-name dp-agent \
         --project-root $fixture_root >/dev/null"
 }
@@ -582,7 +582,7 @@ done
 i=1
 while [ "$i" -le "$agents" ]; do
     wait_host_daemon "$i" || fail "host $i never started its Docker daemon"
-    inner_agent=$(load_host_image "$i" "$runtime/agent-image.tar" "Dockpilot Agent")
+    inner_agent=$(load_host_image "$i" "$runtime/agent-image.tar" "DockLattice Agent")
     inner_fixture=$(load_host_image "$i" "$runtime/fixture-image.tar" any)
     eval "inner_agent_$i=\$inner_agent"
     eval "inner_fixture_$i=\$inner_fixture"
@@ -600,14 +600,14 @@ services:
 COMPOSE"
     host_exec "$i" "printf 'LAB_SECRET=lab-secret-must-never-be-recorded-$$\\n' >$fixture_root/.env"
     host_exec "$i" "chown -R 65532:65532 $fixture_root; chmod 0777 $fixture_root; chmod 0666 $fixture_root/compose.yaml $fixture_root/.env"
-    host_exec "$i" "mkdir -p /var/lib/dockpilot-agent && chown 65532:65532 /var/lib/dockpilot-agent && chmod 0700 /var/lib/dockpilot-agent"
+    host_exec "$i" "mkdir -p /var/lib/docklattice-agent && chown 65532:65532 /var/lib/docklattice-agent && chmod 0700 /var/lib/docklattice-agent"
     host_exec "$i" "cat >/tmp/server-ca.crt <<'CRT'
 $(cat "$runtime/bootstrap/server-ca.crt")
 CRT"
-    host_exec "$i" "cp /tmp/server-ca.crt /var/lib/dockpilot-agent/server-ca.crt; chown 65532:65532 /var/lib/dockpilot-agent/server-ca.crt; chmod 0600 /var/lib/dockpilot-agent/server-ca.crt"
+    host_exec "$i" "cp /tmp/server-ca.crt /var/lib/docklattice-agent/server-ca.crt; chown 65532:65532 /var/lib/docklattice-agent/server-ca.crt; chmod 0600 /var/lib/docklattice-agent/server-ca.crt"
     token=$(issue_token)
     [ -n "$token" ] || fail "the Server issued no Join Token for host $i"
-    host_exec "$i" "printf '%s\\n' '$token' >/var/lib/dockpilot-agent/join-token; chown 65532:65532 /var/lib/dockpilot-agent/join-token; chmod 0600 /var/lib/dockpilot-agent/join-token"
+    host_exec "$i" "printf '%s\\n' '$token' >/var/lib/docklattice-agent/join-token; chown 65532:65532 /var/lib/docklattice-agent/join-token; chmod 0600 /var/lib/docklattice-agent/join-token"
     i=$((i + 1))
 done
 record hosts_started "$agents"
@@ -1154,13 +1154,13 @@ if selected disk-pressure; then
     victim=2
     [ "$agents" -ge "$victim" ] || victim=1
     # The Agent state volume is filled from inside its own host only.
-    host_exec "$victim" 'df -k /var/lib/dockpilot-agent | tail -1' >"$evidence_dir/disk-pressure.before.txt"
+    host_exec "$victim" 'df -k /var/lib/docklattice-agent | tail -1' >"$evidence_dir/disk-pressure.before.txt"
     # The free-space floor is max(1 GiB, 5%) of a filesystem this lab does not
     # control, and 5% of a developer disk is hundreds of gigabytes. The other
     # trigger is reachable: Agent state above its 2 GiB budget. 3 GiB crosses
     # it with margin and costs a fraction of the I/O.
-    host_exec "$victim" 'dd if=/dev/zero of=/var/lib/dockpilot-agent/lab-ballast bs=1M count=3072 2>/dev/null; true' || true
-    host_exec "$victim" 'df -k /var/lib/dockpilot-agent | tail -1' >"$evidence_dir/disk-pressure.after.txt"
+    host_exec "$victim" 'dd if=/dev/zero of=/var/lib/docklattice-agent/lab-ballast bs=1M count=3072 2>/dev/null; true' || true
+    host_exec "$victim" 'df -k /var/lib/docklattice-agent | tail -1' >"$evidence_dir/disk-pressure.after.txt"
     degraded=0
     deadline=$(( $(date +%s) + 300 ))
     while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -1195,7 +1195,7 @@ if selected disk-pressure; then
         i=$((i + 1))
     done
     record disk_pressure_others_unaffected PASS
-    host_exec "$victim" 'rm -f /var/lib/dockpilot-agent/lab-ballast' || true
+    host_exec "$victim" 'rm -f /var/lib/docklattice-agent/lab-ballast' || true
     wait_hosts_active "$agents" "$evidence_dir/disk-pressure.recovered.json" 300 ||
         fail "disk-pressure: the fleet did not settle after the pressure was released"
     record disk_pressure_recovered PASS
@@ -1238,8 +1238,8 @@ while [ "$i" -le "$agents" ]; do
        .coverage.ack.seq < .coverage.delivery_next.seq)' "$evidence_dir/final.audit-$i.json" >/dev/null ||
         fail "final: Agent $i's acknowledged cursor passed the Server delivery cursor"
 
-    # Docker's view and Dockpilot's view of that host must agree, and the file
-    # Dockpilot reads must be the file on the host's disk.
+    # Docker's view and DockLattice's view of that host must agree, and the file
+    # DockLattice reads must be the file on the host's disk.
     host_exec "$i" "docker ps --format '{{.ID}}'" >"$evidence_dir/final.docker-$i.txt" || true
     api GET "$base_url/api/v1/projects/$uid/files?path=compose.yaml" '' "$evidence_dir/final.file-$i.json"
     on_disk=$(host_exec "$i" "sha256sum $fixture_root/compose.yaml | cut -d' ' -f1" | tr -d '\r\n')
@@ -1248,11 +1248,11 @@ while [ "$i" -le "$agents" ]; do
         fail "final: Agent $i reported compose.yaml as $reported, its host says $on_disk"
 
     # No restore journal or staging orphan.
-    host_exec "$i" 'docker exec dp-agent /bin/sh -c "ls -A /var/lib/dockpilot/restore-journal 2>/dev/null" || true' \
+    host_exec "$i" 'docker exec dp-agent /bin/sh -c "ls -A /var/lib/docklattice/restore-journal 2>/dev/null" || true' \
         >"$evidence_dir/final.restore-journal-$i.txt" 2>&1 || true
     [ ! -s "$evidence_dir/final.restore-journal-$i.txt" ] ||
         fail "final: a restore journal survived on Agent $i"
-    host_exec "$i" "ls -A $fixture_root | grep -e '^\.dockpilot-' || true" \
+    host_exec "$i" "ls -A $fixture_root | grep -e '^\.docklattice-' || true" \
         >"$evidence_dir/final.staging-$i.txt" 2>&1 || true
     [ ! -s "$evidence_dir/final.staging-$i.txt" ] ||
         fail "final: staging files were orphaned on Agent $i"

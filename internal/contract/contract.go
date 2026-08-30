@@ -4,7 +4,7 @@
 // 두 후보가 이것을 그대로 쓴다. 이 목록 밖의 기능은 구현하지 않는다.
 package contract
 
-import "github.com/east-true/dockpilot/internal/transport"
+import "github.com/east-true/docklattice/internal/transport"
 
 // 부록 A.4의 Method 이름이다. 전송 기술에 따라 달라지지 않는다.
 const (

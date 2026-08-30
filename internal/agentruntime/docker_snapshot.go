@@ -10,9 +10,9 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/east-true/dockpilot/internal/auditevents"
-	"github.com/east-true/dockpilot/internal/auditgen"
-	"github.com/east-true/dockpilot/internal/dockeradapter"
+	"github.com/east-true/docklattice/internal/auditevents"
+	"github.com/east-true/docklattice/internal/auditgen"
+	"github.com/east-true/docklattice/internal/dockeradapter"
 )
 
 const dockerSnapshotOncePrefix = "docker-snapshot:"

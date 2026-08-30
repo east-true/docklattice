@@ -15,11 +15,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/east-true/dockpilot/internal/operation"
-	"github.com/east-true/dockpilot/internal/producttransport"
-	"github.com/east-true/dockpilot/internal/projectmodel"
-	"github.com/east-true/dockpilot/internal/serverstore"
-	"github.com/east-true/dockpilot/internal/webui"
+	"github.com/east-true/docklattice/internal/operation"
+	"github.com/east-true/docklattice/internal/producttransport"
+	"github.com/east-true/docklattice/internal/projectmodel"
+	"github.com/east-true/docklattice/internal/serverstore"
+	"github.com/east-true/docklattice/internal/webui"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

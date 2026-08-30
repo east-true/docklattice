@@ -1,13 +1,13 @@
 syntax = "proto3";
 
-// dockpilot.prototype.v1은 Transport Prototype(부록 A)의 논리 페이로드
+// docklattice.prototype.v1은 Transport Prototype(부록 A)의 논리 페이로드
 // 정의다. 두 후보는 동일한 직렬화 형식을 쓴다(부록 A.7 통제 변수).
 //
 // 이 파일에는 전송 기술에 종속된 것이 들어가지 않는다. gRPC service 정의는
 // 후보 A adapter 안에만 존재한다.
-package dockpilot.prototype.v1;
+package docklattice.prototype.v1;
 
-option go_package = "github.com/east-true/dockpilot/internal/contract/pb;pb";
+option go_package = "github.com/east-true/docklattice/internal/contract/pb;pb";
 
 // ---------------------------------------------------------------------------
 // P0 Control

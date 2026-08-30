@@ -1,5 +1,5 @@
 // Package experiment is the one-shot Transport Prototype load driver from ADR
-// Appendix A. It is not production Dockpilot code.
+// Appendix A. It is not production DockLattice code.
 package experiment
 
 import "time"

@@ -12,7 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/east-true/dockpilot/internal/auditgen"
+	"github.com/east-true/docklattice/internal/auditgen"
 )
 
 const (

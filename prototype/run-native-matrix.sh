@@ -22,8 +22,8 @@ control_dir="$artifact_root/control"
 mkdir -p "$control_dir"
 binary="$control_dir/transport-prototype"
 if [[ ${2:-} != --one && ! -x "$binary" ]]; then
-  GOCACHE=${GOCACHE:-/tmp/dockpilot-prototype-go-cache} \
-  GOMODCACHE=${GOMODCACHE:-/tmp/dockpilot-prototype-go-mod} \
+  GOCACHE=${GOCACHE:-/tmp/docklattice-prototype-go-cache} \
+  GOMODCACHE=${GOMODCACHE:-/tmp/docklattice-prototype-go-mod} \
   "$go_binary" build -trimpath -o "$binary" "$repo_dir/cmd/transport-prototype"
 elif [[ ! -x "$binary" ]]; then
   echo "preserved prototype binary is missing: $binary" >&2
@@ -177,8 +177,8 @@ run_trial() {
     echo "SKIP completed trial: $candidate/$condition/scenario-$scenario/$label/trial-$trial"
     return
   fi
-  if [[ "$condition" == netem && ${DOCKPILOT_IN_NETNS:-0} != 1 ]]; then
-    unshare --user --map-root-user --net env DOCKPILOT_IN_NETNS=1 \
+  if [[ "$condition" == netem && ${DOCKLATTICE_IN_NETNS:-0} != 1 ]]; then
+    unshare --user --map-root-user --net env DOCKLATTICE_IN_NETNS=1 \
       "$0" "$artifact_root" --one "$candidate" "$condition" "$scenario" "$trial" "$rate" "$agents" "$pause" "$label" "$baseline"
     return
   fi

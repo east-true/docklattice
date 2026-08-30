@@ -71,13 +71,13 @@ The fourth argument is deliberately required. An idle Server and Agent must
 never be mistaken for Phase 8 evidence. The harness supplies these variables:
 
 ```text
-DOCKPILOT_BASE_URL
-DOCKPILOT_CA_FILE
-DOCKPILOT_DASHBOARD_FILE
-DOCKPILOT_PROJECT_ROOT
-DOCKPILOT_COMPOSE_PROJECT
-DOCKPILOT_SERVER_CONTAINER
-DOCKPILOT_AGENT_CONTAINER
+DOCKLATTICE_BASE_URL
+DOCKLATTICE_CA_FILE
+DOCKLATTICE_DASHBOARD_FILE
+DOCKLATTICE_PROJECT_ROOT
+DOCKLATTICE_COMPOSE_PROJECT
+DOCKLATTICE_SERVER_CONTAINER
+DOCKLATTICE_AGENT_CONTAINER
 RESOURCE_CASE_SECONDS
 RESOURCE_VERDICT_FILE
 ```
@@ -179,8 +179,8 @@ source_revision        ab87bf2e9281724fcc114216f1e8d51d8311f4a3
 kernel                 Linux 7.0.0-29-generic x86_64
 docker_server_version  29.7.2
 cgroup                 v2, systemd driver
-server_image           dockpilot-server:m1
-agent_image            dockpilot-agent:m1
+server_image           docklattice-server:m1
+agent_image            docklattice-agent:m1
 repetitions            3
 case_seconds           600
 sample_seconds         2

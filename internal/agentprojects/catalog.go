@@ -13,13 +13,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/backup"
-	"github.com/east-true/dockpilot/internal/composeconfig"
-	"github.com/east-true/dockpilot/internal/composeexec"
-	"github.com/east-true/dockpilot/internal/composesource"
-	"github.com/east-true/dockpilot/internal/discovery"
-	"github.com/east-true/dockpilot/internal/projectmodel"
-	"github.com/east-true/dockpilot/internal/safefile"
+	"github.com/east-true/docklattice/internal/backup"
+	"github.com/east-true/docklattice/internal/composeconfig"
+	"github.com/east-true/docklattice/internal/composeexec"
+	"github.com/east-true/docklattice/internal/composesource"
+	"github.com/east-true/docklattice/internal/discovery"
+	"github.com/east-true/docklattice/internal/projectmodel"
+	"github.com/east-true/docklattice/internal/safefile"
 )
 
 type Scanner interface {
@@ -180,7 +180,7 @@ func (c *Catalog) Rescan(ctx context.Context) error {
 // section 7.7. It compares the new verified key-file hashes with the prior
 // catalog and invokes observer before publishing the new comparison point.
 // Targeted post-operation refreshes intentionally use RescanProject instead,
-// so Dockpilot's own successful writes never become OBSERVED events.
+// so DockLattice's own successful writes never become OBSERVED events.
 func (c *Catalog) RescanForExternalChanges(ctx context.Context, observer ExternalChangeObserver) error {
 	if observer == nil {
 		return errors.New("agentprojects: external change observer is required")

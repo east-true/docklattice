@@ -1,4 +1,4 @@
-# Dockpilot documentation
+# DockLattice documentation
 
 Use this page as the stable entry point. Permanent contracts and operator
 procedures live here; completed gap reports, review prompts, and handoff notes
@@ -12,7 +12,7 @@ bug.
 
 | You want to… | Start here | Then read |
 |---|---|---|
-| Understand Dockpilot | [Concepts](concepts.md) | [Architecture](architecture.md) |
+| Understand DockLattice | [Concepts](concepts.md) | [Architecture](architecture.md) |
 | Install or operate it | [Operations index](operations/README.md) | [Supported environments](operations/supported-environments.md), [Installation](operations/install.md), [Internal-network trial installation](operations/internal-network-install.md) |
 | Use or integrate the API | [HTTP API](operations/api.md) | [Interface freeze](interface-freeze.md) |
 | Maintain the browser UI | [Product and UI contracts](design/README.md) | [Web UI acceptance](design/web-ui-acceptance.md) |

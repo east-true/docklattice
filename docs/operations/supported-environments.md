@@ -1,6 +1,6 @@
 # Supported and unsupported environments
 
-This is the v1 release-gate statement of where Dockpilot is supported. It
+This is the v1 release-gate statement of where DockLattice is supported. It
 restates architecture sections 3.1, 6, and 14 for operators; the architecture
 record remains authoritative if the two ever disagree.
 
@@ -25,7 +25,7 @@ record remains authoritative if the two ever disagree.
   The Agent negotiates the API version at start-up and reports the engine
   version it actually reached as a capability.
 - Compose is not taken from the host. The Agent image bundles the exact plugin
-  version Dockpilot validated for this release (`io.dockpilot.compose.version`
+  version DockLattice validated for this release (`io.docklattice.compose.version`
   on the Agent image), so host Compose presence, absence, or version does not
   affect behaviour.
 
@@ -45,7 +45,7 @@ record remains authoritative if the two ever disagree.
 
 - The Agent runs separately from the Compose projects it manages.
 - Agent upgrades are performed from the host. Self-protection prevents
-  Dockpilot from replacing its own container; see
+  DockLattice from replacing its own container; see
   [`install.md`](install.md).
 
 ## Not supported in v1

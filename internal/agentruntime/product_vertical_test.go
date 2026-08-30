@@ -15,20 +15,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/agentsafety"
-	"github.com/east-true/dockpilot/internal/agentstorage"
-	"github.com/east-true/dockpilot/internal/auditevents"
-	"github.com/east-true/dockpilot/internal/auditgen"
-	"github.com/east-true/dockpilot/internal/auditwal"
-	"github.com/east-true/dockpilot/internal/backup"
-	"github.com/east-true/dockpilot/internal/composeconfig"
-	"github.com/east-true/dockpilot/internal/composeexec"
-	"github.com/east-true/dockpilot/internal/discovery"
-	"github.com/east-true/dockpilot/internal/diskbudget"
-	"github.com/east-true/dockpilot/internal/dockeradapter"
-	"github.com/east-true/dockpilot/internal/operation"
-	"github.com/east-true/dockpilot/internal/producttransport"
-	"github.com/east-true/dockpilot/internal/projectmodel"
+	"github.com/east-true/docklattice/internal/agentsafety"
+	"github.com/east-true/docklattice/internal/agentstorage"
+	"github.com/east-true/docklattice/internal/auditevents"
+	"github.com/east-true/docklattice/internal/auditgen"
+	"github.com/east-true/docklattice/internal/auditwal"
+	"github.com/east-true/docklattice/internal/backup"
+	"github.com/east-true/docklattice/internal/composeconfig"
+	"github.com/east-true/docklattice/internal/composeexec"
+	"github.com/east-true/docklattice/internal/discovery"
+	"github.com/east-true/docklattice/internal/diskbudget"
+	"github.com/east-true/docklattice/internal/dockeradapter"
+	"github.com/east-true/docklattice/internal/operation"
+	"github.com/east-true/docklattice/internal/producttransport"
+	"github.com/east-true/docklattice/internal/projectmodel"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/client"
@@ -75,8 +75,8 @@ func (engine *verticalMobyEngine) ContainerList(context.Context, client.Containe
 	}
 	return client.ContainerListResult{Items: []container.Summary{
 		{
-			ID: verticalAgentID, Names: []string{"/dockpilot-agent"}, Image: "dockpilot:test", State: container.StateRunning,
-			Labels: map[string]string{agentsafety.AgentRoleLabel: agentsafety.AgentRoleValue, agentsafety.ComposeProjectLabel: "dockpilot"},
+			ID: verticalAgentID, Names: []string{"/docklattice-agent"}, Image: "docklattice:test", State: container.StateRunning,
+			Labels: map[string]string{agentsafety.AgentRoleLabel: agentsafety.AgentRoleValue, agentsafety.ComposeProjectLabel: "docklattice"},
 			Mounts: mounts,
 		},
 		{ID: verticalWorkloadID, Names: []string{"/workload"}, Image: "workload:test", State: container.StateRunning},
@@ -605,7 +605,7 @@ func TestProductionBootRecoversBackupJournalsAndKeepsProjectFailuresIsolated(t *
 
 	preparing := project("preparing")
 	preparingBackup := createSnapshot(preparing, "snapshot-preparing")
-	preparingStage := ".dockpilot-restore-preparing.tmp"
+	preparingStage := ".docklattice-restore-preparing.tmp"
 	if err := os.WriteFile(filepath.Join(preparing.WorkingDir, preparingStage), []byte("candidate"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -621,7 +621,7 @@ func TestProductionBootRecoversBackupJournalsAndKeepsProjectFailuresIsolated(t *
 	if err := os.WriteFile(filepath.Join(partial.WorkingDir, "compose.yaml"), []byte("partially restored\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	partialStage := ".dockpilot-restore-partial.tmp"
+	partialStage := ".docklattice-restore-partial.tmp"
 	if err := os.WriteFile(filepath.Join(partial.WorkingDir, partialStage), []byte("remaining staged data"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1092,7 +1092,7 @@ func (verticalMobyCore) ServerVersion(context.Context, client.ServerVersionOptio
 }
 func (verticalMobyCore) ContainerList(context.Context, client.ContainerListOptions) (client.ContainerListResult, error) {
 	return client.ContainerListResult{Items: []container.Summary{{
-		ID: verticalAgentID, Names: []string{"/dockpilot-agent"},
+		ID: verticalAgentID, Names: []string{"/docklattice-agent"},
 		Labels: map[string]string{agentsafety.AgentRoleLabel: agentsafety.AgentRoleValue},
 	}}}, nil
 }

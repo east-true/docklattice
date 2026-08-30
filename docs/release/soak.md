@@ -1,12 +1,13 @@
 # Long-running soak
 
-Status: Stages 1, 2, and 3 PASS at current `main` revision
-`7249c29a84018ff5a6b2bb351e4a5525ec7840d8`.
+Status: Stages 1, 2, and 3 form a PASS behavioral baseline at revision
+`7249c29a84018ff5a6b2bb351e4a5525ec7840d8`. Revalidation of the renamed
+DockLattice release revision is required before release.
 
 Long-duration soak is **excluded from the v1 Core Interface Freeze gate by
 project decision**. The release campaign adopted all three stages as a
-separate Release Candidate gate, and all three are now established at the
-candidate revision.
+separate Release Candidate gate. All three were established at the pre-rename
+candidate revision recorded below.
 
 Every other gate in this directory injects something and asserts what survives.
 This one injects nothing. It runs the product for hours and asserts that
@@ -129,7 +130,7 @@ behind, so it closes with the same invariant check every hardening scenario
 uses: exactly one ACTIVE Agent, a project lock that is free, no surviving
 restore journal, no staging orphan, Audit coverage whose every gap names its
 source and precision, an acknowledged cursor that never passed the delivery
-cursor, the Compose file on disk matching the digest Dockpilot reports, and the
+cursor, the Compose file on disk matching the digest DockLattice reports, and the
 project secret absent from all recorded evidence.
 
 ## Stages
@@ -148,9 +149,12 @@ A failure at any stage is fixed before the next is attempted. A later stage
 does not re-prove an earlier one; it looks for the slower accumulation the
 shorter run could not resolve.
 
-All three stages have passed.
+All three stages passed at the recorded pre-rename baseline. The identity
+migration changes the executable name, environment variables, filesystem
+paths, image references, labels, and protocol namespace, so those results must
+not be presented as validation of the renamed release revision.
 
-## Recorded execution
+## Recorded execution — pre-rename behavioral baseline
 
 ### Stage 3 - eight-hour mixed overnight soak
 

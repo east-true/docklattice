@@ -1,7 +1,7 @@
 package config
 
 // DefaultsReport is the stable, machine-readable representation emitted by
-// `dockpilot defaults`. Duration fields are strings and byte fields name their
+// `docklattice defaults`. Duration fields are strings and byte fields name their
 // unit so release evidence never has to infer Go's duration or size encoding.
 type DefaultsReport struct {
 	SchemaVersion int                        `json:"schema_version"`

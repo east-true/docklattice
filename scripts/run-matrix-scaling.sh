@@ -53,8 +53,8 @@ for image in "$server_image" "$agent_image" "$fixture_image"; do
 done
 
 run_id=$(date -u +%Y%m%dt%H%M%Sz)-$$
-prefix="dockpilot-scale-$run_id"
-fixture_label="io.dockpilot.scaling-fixture=$run_id"
+prefix="docklattice-scale-$run_id"
+fixture_label="io.docklattice.scaling-fixture=$run_id"
 network="$prefix-net"
 server="$prefix-server"
 agent="$prefix-agent"
@@ -102,7 +102,7 @@ docker run --rm --user 0:0 --entrypoint /bin/sh -v "$runtime:/scale" "$server_im
 docker network create --subnet "198.19.$(( $$ % 250 + 1 )).0/24" "$network" >"$evidence/network.id"
 docker run -d --name "$server" --network "$network" --network-alias server \
     --log-driver local --log-opt max-size=5m --log-opt max-file=1 --log-opt compress=false \
-    -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/dockpilot" "$server_image" \
+    -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/docklattice" "$server_image" \
     server --listen 0.0.0.0:8080 --agent-listen 0.0.0.0:8443 --allow-public-bind \
     >"$evidence/server.container-id"
 server_port=$(docker port "$server" 8080/tcp | awk -F: 'NR == 1 { print $NF }')
@@ -116,8 +116,8 @@ until curl --fail --silent --max-time 3 --cacert "$ca" "$base_url/api/v1/dashboa
     sleep 1
 done
 
-docker run --rm --user 65532:65532 -v "$runtime/server:/var/lib/dockpilot" "$server_image" \
-    server issue-token --state-dir /var/lib/dockpilot --ttl 30m >"$runtime/agent/join-token" 2>"$evidence/issue-token.stderr"
+docker run --rm --user 65532:65532 -v "$runtime/server:/var/lib/docklattice" "$server_image" \
+    server issue-token --state-dir /var/lib/docklattice --ttl 30m >"$runtime/agent/join-token" 2>"$evidence/issue-token.stderr"
 cp "$runtime/bootstrap/server-ca.crt" "$runtime/agent/server-ca.crt"
 docker run --rm --user 0:0 --entrypoint /bin/sh -v "$runtime/agent:/agent" "$server_image" -c \
     'chown -R 65532:65532 /agent; chmod 0700 /agent; chmod 0600 /agent/server-ca.crt /agent/join-token' >/dev/null
@@ -127,10 +127,10 @@ docker run -d --name "$agent" --network "$network" \
     --log-driver local --log-opt max-size=5m --log-opt max-file=1 --log-opt compress=false \
     --group-add "$socket_gid" -e GODEBUG=gctrace=1 \
     -v /var/run/docker.sock:/var/run/docker.sock:rw \
-    -v "$runtime/agent:/var/lib/dockpilot" \
+    -v "$runtime/agent:/var/lib/docklattice" \
     -v "$runtime/projects:$runtime/projects:rw" "$agent_image" agent \
     --server server:8443 --registration-url https://server:8080 \
-    --server-ca /var/lib/dockpilot/server-ca.crt --join-token-file /var/lib/dockpilot/join-token \
+    --server-ca /var/lib/docklattice/server-ca.crt --join-token-file /var/lib/docklattice/join-token \
     --display-name "scaling-agent" --self-container-name "$agent" \
     --project-root "$runtime/projects" >"$evidence/agent.container-id"
 

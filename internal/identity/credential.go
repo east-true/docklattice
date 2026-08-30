@@ -249,7 +249,7 @@ func (credential Credential) signingPayload() ([]byte, error) {
 		return nil, ErrInvalidCredential
 	}
 	var out bytes.Buffer
-	out.WriteString("dockpilot-agent-credential\x00")
+	out.WriteString("docklattice-agent-credential\x00")
 	_ = binary.Write(&out, binary.BigEndian, credential.Version)
 	for _, value := range []string{credential.ServerIdentityID, credential.AgentID, credential.CredentialID, credential.KeyID} {
 		if len(value) > int(^uint32(0)) {

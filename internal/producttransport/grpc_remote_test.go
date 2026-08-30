@@ -12,7 +12,7 @@ func TestRemoteIPAcceptsOnlyCanonicalPeerIP(t *testing.T) {
 	}{
 		{addr: &net.TCPAddr{IP: net.ParseIP("192.0.2.9"), Port: 9443}, want: "192.0.2.9"},
 		{addr: &net.TCPAddr{IP: net.ParseIP("2001:db8::5"), Port: 9443}, want: "2001:db8::5"},
-		{addr: stringAddr("unix:///run/dockpilot.sock"), want: ""},
+		{addr: stringAddr("unix:///run/docklattice.sock"), want: ""},
 		{addr: nil, want: ""},
 	}
 	for _, test := range tests {

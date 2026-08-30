@@ -5,8 +5,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	pb "github.com/east-true/dockpilot/internal/contract/pb"
-	"github.com/east-true/dockpilot/internal/transport"
+	pb "github.com/east-true/docklattice/internal/contract/pb"
+	"github.com/east-true/docklattice/internal/transport"
 )
 
 // Sink는 Responder가 Caller로 타입 있는 메시지를 밀어 보내는 통로다.

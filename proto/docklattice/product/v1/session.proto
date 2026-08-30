@@ -2,9 +2,9 @@ syntax = "proto3";
 
 // Product control-plane messages. Transport-specific HTTP/2 window, ALPN,
 // metadata, and framing details are intentionally absent from this namespace.
-package dockpilot.product.v1;
+package docklattice.product.v1;
 
-option go_package = "github.com/east-true/dockpilot/internal/producttransport/pb;pb";
+option go_package = "github.com/east-true/docklattice/internal/producttransport/pb;pb";
 
 message HeartbeatRequest {
   int64 sent_at_unix_nano = 1;
@@ -137,7 +137,7 @@ message StatsStreamRequest {
 // selector: the frame is the whole host, and narrowing is the viewer's job.
 message MetricsMatrixRequest {}
 
-// ManagedFilesystem is capacity for a path Dockpilot writes to - a discovery
+// ManagedFilesystem is capacity for a path DockLattice writes to - a discovery
 // root or the Agent state directory - deduplicated by filesystem. It is not an
 // inventory of the host's mounts.
 message ManagedFilesystem {

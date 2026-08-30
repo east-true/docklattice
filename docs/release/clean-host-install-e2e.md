@@ -25,7 +25,7 @@ machine that is running other stacks is a skip, not a pass and not a bug.
 
 ## Effective defaults contract
 
-Before starting either product mode, the harness runs `dockpilot defaults`
+Before starting either product mode, the harness runs `docklattice defaults`
 inside the exact release Server Image and compares the complete JSON output
 byte-for-byte with `distribution/v1-defaults.json`. This proves which defaults
 the shipped binary contains rather than inferring them from source or tests.
@@ -123,7 +123,7 @@ There are no warning-only success paths.
 
 The first execution ran on a WSL2 developer machine that happened to have no
 other Compose projects. This one ran on a disposable libvirt guest where
-Dockpilot had never run, provisioned by
+DockLattice had never run, provisioned by
 [`../../scripts/vm-lab-provision.sh`](../../scripts/vm-lab-provision.sh) with
 Docker installed from Ubuntu's own repository and nothing else - which is what
 this gate is defined for.

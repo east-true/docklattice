@@ -8,21 +8,21 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/agentproduct"
-	"github.com/east-true/dockpilot/internal/agentprojects"
-	"github.com/east-true/dockpilot/internal/agentsafety"
-	"github.com/east-true/dockpilot/internal/agentstorage"
-	"github.com/east-true/dockpilot/internal/auditevents"
-	"github.com/east-true/dockpilot/internal/auditgen"
-	"github.com/east-true/dockpilot/internal/backup"
-	"github.com/east-true/dockpilot/internal/composeconfig"
-	"github.com/east-true/dockpilot/internal/composeexec"
-	"github.com/east-true/dockpilot/internal/composesource"
-	productconfig "github.com/east-true/dockpilot/internal/config"
-	"github.com/east-true/dockpilot/internal/discovery"
-	"github.com/east-true/dockpilot/internal/dockeradapter"
-	"github.com/east-true/dockpilot/internal/managedaudit"
-	"github.com/east-true/dockpilot/internal/operation"
+	"github.com/east-true/docklattice/internal/agentproduct"
+	"github.com/east-true/docklattice/internal/agentprojects"
+	"github.com/east-true/docklattice/internal/agentsafety"
+	"github.com/east-true/docklattice/internal/agentstorage"
+	"github.com/east-true/docklattice/internal/auditevents"
+	"github.com/east-true/docklattice/internal/auditgen"
+	"github.com/east-true/docklattice/internal/backup"
+	"github.com/east-true/docklattice/internal/composeconfig"
+	"github.com/east-true/docklattice/internal/composeexec"
+	"github.com/east-true/docklattice/internal/composesource"
+	productconfig "github.com/east-true/docklattice/internal/config"
+	"github.com/east-true/docklattice/internal/discovery"
+	"github.com/east-true/docklattice/internal/dockeradapter"
+	"github.com/east-true/docklattice/internal/managedaudit"
+	"github.com/east-true/docklattice/internal/operation"
 )
 
 // startProduct is intentionally tied to the production Docker adapter. Unit
@@ -160,7 +160,7 @@ func (r *Runtime) startProduct(ctx context.Context) error {
 	return nil
 }
 
-// managedPaths are the paths Dockpilot writes to on this host: the discovery
+// managedPaths are the paths DockLattice writes to on this host: the discovery
 // roots and the Agent state root. They are what the host row reports capacity
 // for. Deduplication is by filesystem and happens at probe time, because two
 // distinct paths on one mount are one filesystem and neither of them is

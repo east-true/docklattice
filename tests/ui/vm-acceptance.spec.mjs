@@ -6,20 +6,21 @@ import { expect, test } from "@playwright/test";
 
 const execFileAsync = promisify(execFile);
 const evidenceDirectory =
-  process.env.DOCKPILOT_VM_EVIDENCE_DIRECTORY || "test-results/vm-acceptance";
+  process.env.DOCKLATTICE_VM_EVIDENCE_DIRECTORY || "test-results/vm-acceptance";
 const vmAcceptanceEnabled =
-  process.env.DOCKPILOT_VM_ACCEPTANCE === "1" &&
+  process.env.DOCKLATTICE_VM_ACCEPTANCE === "1" &&
   Boolean(process.env.PLAYWRIGHT_TEST_BASE_URL) &&
-  Boolean(process.env.DOCKPILOT_VM_SSH_HOST) &&
-  Boolean(process.env.DOCKPILOT_VM_SSH_KEY);
-const vmSSHHost = process.env.DOCKPILOT_VM_SSH_HOST;
-const vmSSHUser = process.env.DOCKPILOT_VM_SSH_USER || "dockpilot";
-const vmSSHKey = process.env.DOCKPILOT_VM_SSH_KEY;
-const vmSSHKnownHosts = process.env.DOCKPILOT_VM_SSH_KNOWN_HOSTS || "/dev/null";
+  Boolean(process.env.DOCKLATTICE_VM_SSH_HOST) &&
+  Boolean(process.env.DOCKLATTICE_VM_SSH_KEY);
+const vmSSHHost = process.env.DOCKLATTICE_VM_SSH_HOST;
+const vmSSHUser = process.env.DOCKLATTICE_VM_SSH_USER || "docklattice";
+const vmSSHKey = process.env.DOCKLATTICE_VM_SSH_KEY;
+const vmSSHKnownHosts =
+  process.env.DOCKLATTICE_VM_SSH_KNOWN_HOSTS || "/dev/null";
 
 test.skip(
   !vmAcceptanceEnabled,
-  "Set the DOCKPILOT_VM_* variables to run destructive live-VM acceptance.",
+  "Set the DOCKLATTICE_VM_* variables to run destructive live-VM acceptance.",
 );
 
 test.describe.configure({
@@ -65,31 +66,31 @@ async function vmExec(command) {
 async function recreateAgent() {
   const command = [
     "docker run --detach",
-    "--name dockpilot-agent",
-    "--hostname dockpilot-agent",
-    "--network dockpilot-acceptance-net",
+    "--name docklattice-agent",
+    "--hostname docklattice-agent",
+    "--network docklattice-acceptance-net",
     "--restart unless-stopped",
     "--user 65532:65532",
     "--group-add 112",
-    "--volume dockpilot-agent-state:/var/lib/dockpilot:z",
-    "--volume /opt/dockpilot-acceptance/bootstrap/server-ca.crt:/var/lib/dockpilot/server-ca.crt:ro",
-    "--volume /opt/dockpilot-acceptance/bootstrap/join-token:/var/lib/dockpilot/join-token:ro",
-    "--volume /opt/dockpilot-acceptance/fixtures/stacks:/opt/dockpilot-acceptance/fixtures/stacks:rw",
-    "--volume /opt/dockpilot-acceptance/fixtures/stacks-ro:/opt/dockpilot-acceptance/fixtures/stacks-ro:ro",
+    "--volume docklattice-agent-state:/var/lib/docklattice:z",
+    "--volume /opt/docklattice-acceptance/bootstrap/server-ca.crt:/var/lib/docklattice/server-ca.crt:ro",
+    "--volume /opt/docklattice-acceptance/bootstrap/join-token:/var/lib/docklattice/join-token:ro",
+    "--volume /opt/docklattice-acceptance/fixtures/stacks:/opt/docklattice-acceptance/fixtures/stacks:rw",
+    "--volume /opt/docklattice-acceptance/fixtures/stacks-ro:/opt/docklattice-acceptance/fixtures/stacks-ro:ro",
     "--volume /var/run/docker.sock:/var/run/docker.sock:rw",
-    "dockpilot-ui-vm:agent",
+    "docklattice-ui-vm:agent",
     "agent",
     "--server server:8443",
     "--registration-url https://server:8080",
-    "--server-ca /var/lib/dockpilot/server-ca.crt",
-    "--join-token-file /var/lib/dockpilot/join-token",
-    "--display-name dockpilot-vm-acceptance",
-    "--self-container-name dockpilot-agent",
-    "--project-root /opt/dockpilot-acceptance/fixtures/stacks",
-    "--project-root /opt/dockpilot-acceptance/fixtures/stacks-ro",
+    "--server-ca /var/lib/docklattice/server-ca.crt",
+    "--join-token-file /var/lib/docklattice/join-token",
+    "--display-name docklattice-vm-acceptance",
+    "--self-container-name docklattice-agent",
+    "--project-root /opt/docklattice-acceptance/fixtures/stacks",
+    "--project-root /opt/docklattice-acceptance/fixtures/stacks-ro",
   ].join(" ");
 
-  await vmExec("docker rm --force dockpilot-agent");
+  await vmExec("docker rm --force docklattice-agent");
   await vmExec(command);
 }
 
@@ -187,7 +188,7 @@ async function waitForHost(page, predicate) {
       async () => {
         const dashboard = await currentDashboard(page);
         host = dashboard.hosts.find(
-          (candidate) => candidate.display_name === "dockpilot-vm-acceptance",
+          (candidate) => candidate.display_name === "docklattice-vm-acceptance",
         );
         return Boolean(host && predicate(host));
       },
@@ -202,18 +203,18 @@ async function waitForHost(page, predicate) {
 
 function liveContext(dashboard) {
   const host = dashboard.hosts.find(
-    (candidate) => candidate.display_name === "dockpilot-vm-acceptance",
+    (candidate) => candidate.display_name === "docklattice-vm-acceptance",
   );
   const normalProject = dashboard.projects.find(
     (project) =>
-      project.name === "dockpilot-acceptance-normal" &&
+      project.name === "docklattice-acceptance-normal" &&
       project.managed &&
       project.working_dir ===
-        "/opt/dockpilot-acceptance/fixtures/stacks/normal",
+        "/opt/docklattice-acceptance/fixtures/stacks/normal",
   );
   const buildPolicyProject = dashboard.projects.find(
     (project) =>
-      project.name === "dockpilot-acceptance-build-policy" && project.managed,
+      project.name === "docklattice-acceptance-build-policy" && project.managed,
   );
 
   expect(host).toBeTruthy();
@@ -532,7 +533,7 @@ test("VM shell, policy, host details, and responsive drawer are live", async ({
   const runtimePanel = page.locator("section.project-runtime-panel");
   await expect(
     projectPanel.getByRole("heading", {
-      name: "Dockpilot management",
+      name: "DockLattice management",
       exact: true,
     }),
   ).toBeVisible();
@@ -753,7 +754,7 @@ test("VM Container actions target one Container and enforce protection", async (
   );
   const target = containers.find(
     (container) =>
-      container.compose_project === "dockpilot-acceptance-normal" &&
+      container.compose_project === "docklattice-acceptance-normal" &&
       container.compose_service === "nolog" &&
       !container.one_off &&
       !container.orphan,
@@ -841,7 +842,7 @@ test("VM runtime distinguishes one-off and orphan Containers and exposes live In
   page,
 }) => {
   const browserFailures = observeBrowserFailures(page);
-  const projectDirectory = "/opt/dockpilot-acceptance/fixtures/stacks/normal";
+  const projectDirectory = "/opt/docklattice-acceptance/fixtures/stacks/normal";
   const composeRunner = [
     "docker run --rm",
     "--user 65532:65532",
@@ -850,15 +851,15 @@ test("VM runtime distinguishes one-off and orphan Containers and exposes live In
     `--volume ${projectDirectory}:${projectDirectory}`,
     `--workdir ${projectDirectory}`,
     "--entrypoint docker",
-    "dockpilot-ui-vm:agent",
+    "docklattice-ui-vm:agent",
   ].join(" ");
 
   await vmExec(
     [
       `${composeRunner} compose --file compose-orphan.yaml up --detach orphan`,
-      "docker inspect dockpilot-acceptance-one-off >/dev/null 2>&1 || " +
+      "docker inspect docklattice-acceptance-one-off >/dev/null 2>&1 || " +
         `${composeRunner} compose --file compose.yaml run --detach ` +
-        "--no-deps --name dockpilot-acceptance-one-off worker",
+        "--no-deps --name docklattice-acceptance-one-off worker",
     ].join(" && "),
   );
 
@@ -950,11 +951,11 @@ test("VM runtime distinguishes one-off and orphan Containers and exposes live In
   expect(draggedInspectorWidth).toBeGreaterThan(initialInspectorWidth + 50);
   expect(
     await page.evaluate(() =>
-      localStorage.getItem("dockpilot.inspector-width.v1"),
+      localStorage.getItem("docklattice.inspector-width.v1"),
     ),
   ).toBe(String(Math.round(draggedInspectorWidth)));
 
-  const networkName = "dockpilot-acceptance-normal_acceptance-net";
+  const networkName = "docklattice-acceptance-normal_acceptance-net";
   const networks = await jsonFromPage(
     page,
     `/api/v1/hosts/${encodeURIComponent(host.id)}/networks`,
@@ -971,7 +972,7 @@ test("VM runtime distinguishes one-off and orphan Containers and exposes live In
   await expect(inspector).toContainText("IPAM configuration 2");
   await expect(inspector).toContainText("10.51.0.0/24");
   await expect(inspector).toContainText("fd00:51::/64");
-  await expect(inspector).toContainText("dockpilot-acceptance-normal-web-1");
+  await expect(inspector).toContainText("docklattice-acceptance-normal-web-1");
   expect(
     Math.abs((await inspector.boundingBox()).width - draggedInspectorWidth),
   ).toBeLessThanOrEqual(1);
@@ -981,13 +982,13 @@ test("VM runtime distinguishes one-off and orphan Containers and exposes live In
   const keyboardInspectorWidth = (await inspector.boundingBox()).width;
   expect(draggedInspectorWidth - keyboardInspectorWidth).toBe(16);
 
-  const volumeName = "dockpilot-acceptance-normal_acceptance-data";
+  const volumeName = "docklattice-acceptance-normal_acceptance-data";
   await page.goto(
     `/#/hosts/${encodeURIComponent(host.id)}/volumes` +
       `?inspect=${encodeURIComponent(volumeName)}`,
   );
   await expect(inspector).toContainText("Containers using this Volume");
-  await expect(inspector).toContainText("dockpilot-acceptance-normal-web-1");
+  await expect(inspector).toContainText("docklattice-acceptance-normal-web-1");
   await expect(inspector).not.toContainText("Size 0 B");
 
   const images = await jsonFromPage(
@@ -1003,7 +1004,7 @@ test("VM runtime distinguishes one-off and orphan Containers and exposes live In
       `?inspect=${encodeURIComponent(alpine.id)}`,
   );
   await expect(inspector).toContainText("Containers using this Image");
-  await expect(inspector).toContainText("dockpilot-acceptance-normal-web-1");
+  await expect(inspector).toContainText("docklattice-acceptance-normal-web-1");
   expect(
     Math.abs((await inspector.boundingBox()).width - keyboardInspectorWidth),
   ).toBeLessThanOrEqual(1);
@@ -1015,7 +1016,7 @@ test("VM runtime distinguishes one-off and orphan Containers and exposes live In
 
   await page.goto(`/#/hosts/${encodeURIComponent(host.id)}/containers`);
   const agentRow = page.locator("tbody tr").filter({
-    hasText: "dockpilot-agent",
+    hasText: "docklattice-agent",
   });
   await expect(agentRow).toContainText("Protected");
   await expect(agentRow).toContainText(
@@ -1073,7 +1074,7 @@ test("VM Logs stream Engine output, clear only the browser, and explain unsuppor
     "All Containers in web",
   );
   const webOption = containerSelect.locator("option").filter({
-    hasText: "dockpilot-acceptance-normal-web-1",
+    hasText: "docklattice-acceptance-normal-web-1",
   });
   const webContainerID = await webOption.getAttribute("value");
   expect(webContainerID).toBeTruthy();
@@ -1114,7 +1115,7 @@ test("VM Logs stream Engine output, clear only the browser, and explain unsuppor
     "All Containers in nolog",
   );
   const noLogOption = containerSelect.locator("option").filter({
-    hasText: "dockpilot-acceptance-normal-nolog-1",
+    hasText: "docklattice-acceptance-normal-nolog-1",
   });
   const noLogContainerID = await noLogOption.getAttribute("value");
   expect(noLogContainerID).toBeTruthy();
@@ -1272,7 +1273,7 @@ test("VM Files enforce reveal, optimistic concurrency, backup, and restore bound
   });
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(revealDialog).toContainText(
-    "Dockpilot creates a pre-write backup and applies optimistic hash protection.",
+    "DockLattice creates a pre-write backup and applies optimistic hash protection.",
   );
   await revealDialog.getByRole("button", { name: "Save" }).click();
   const saveResponse = await saveResponsePromise;
@@ -1450,8 +1451,10 @@ test("VM rejects malformed, oversized, escaping, and command-shaped input", asyn
   });
   await expectProblem(oversizedWrite, 413, "TOO_LARGE");
 
-  const injectionMarker = "/tmp/dockpilot-command-injection-marker";
-  await vmExec(`docker exec --user 0 dockpilot-agent rm -f ${injectionMarker}`);
+  const injectionMarker = "/tmp/docklattice-command-injection-marker";
+  await vmExec(
+    `docker exec --user 0 docklattice-agent rm -f ${injectionMarker}`,
+  );
   const commandShapedTarget = await page.request.post("/api/v1/operations", {
     data: {
       operation_id: `target-injection-${crypto.randomUUID()}`,
@@ -1471,7 +1474,7 @@ test("VM rejects malformed, oversized, escaping, and command-shaped input", asyn
     },
   });
   await expectProblem(commandShapedKind, 503, "CAPABILITY_UNAVAILABLE");
-  await vmExec(`docker exec dockpilot-agent test ! -e ${injectionMarker}`);
+  await vmExec(`docker exec docklattice-agent test ! -e ${injectionMarker}`);
 
   const operationID = `idempotency-${crypto.randomUUID()}`;
   const originalOperation = await page.request.post("/api/v1/operations", {
@@ -1636,7 +1639,7 @@ test("VM Container stats survives rapid route churn and confirmation focus is co
     page.locator("#metrics-table tbody tr").first(),
   ).not.toContainText("Unbounded");
   await expect(page.locator("#metrics-table")).toContainText(
-    "dockpilot-acceptance-normal",
+    "docklattice-acceptance-normal",
   );
   await page.getByRole("button", { name: "Top Containers" }).click();
   await expect(
@@ -1690,7 +1693,7 @@ test("VM reports Agent, Compose, and Docker failures and recovers each dependenc
   const disabledComposePlugin = `${composePlugin}.disabled-by-acceptance`;
 
   try {
-    await vmExec("docker stop dockpilot-agent");
+    await vmExec("docker stop docklattice-agent");
     const offlineHost = await waitForHost(
       page,
       (candidate) => candidate.state !== "ACTIVE",
@@ -1701,7 +1704,7 @@ test("VM reports Agent, Compose, and Docker failures and recovers each dependenc
       "0/1 connected",
     );
   } finally {
-    await vmExec("docker start dockpilot-agent");
+    await vmExec("docker start docklattice-agent");
     await waitForHost(
       page,
       (candidate) =>
@@ -1712,9 +1715,9 @@ test("VM reports Agent, Compose, and Docker failures and recovers each dependenc
 
   try {
     await vmExec(
-      `docker exec --user 0 dockpilot-agent mv ${composePlugin} ${disabledComposePlugin}`,
+      `docker exec --user 0 docklattice-agent mv ${composePlugin} ${disabledComposePlugin}`,
     );
-    await vmExec("docker restart dockpilot-agent");
+    await vmExec("docker restart docklattice-agent");
     const composeFailure = await waitForHost(
       page,
       (candidate) => candidate.state !== "ACTIVE",
@@ -1723,7 +1726,7 @@ test("VM reports Agent, Compose, and Docker failures and recovers each dependenc
     await expect
       .poll(async () => {
         const result = await vmExec(
-          "sudo docker inspect --format '{{.State.Status}}' dockpilot-agent",
+          "sudo docker inspect --format '{{.State.Status}}' docklattice-agent",
         );
         return result.stdout.trim();
       })
@@ -1750,7 +1753,7 @@ test("VM reports Agent, Compose, and Docker failures and recovers each dependenc
 
   try {
     await vmExec("sudo chmod 000 /var/run/docker.sock");
-    await vmExec("sudo docker restart dockpilot-agent");
+    await vmExec("sudo docker restart docklattice-agent");
     const dockerFailure = await waitForHost(
       page,
       (candidate) => candidate.state !== "ACTIVE",
@@ -1759,7 +1762,7 @@ test("VM reports Agent, Compose, and Docker failures and recovers each dependenc
     await expect
       .poll(async () => {
         const result = await vmExec(
-          "sudo docker inspect --format '{{.State.Status}}' dockpilot-agent",
+          "sudo docker inspect --format '{{.State.Status}}' docklattice-agent",
         );
         return result.stdout.trim();
       })
@@ -1802,7 +1805,7 @@ test("VM recovers an operation record across Server and Agent restart", async ({
   expect(response.status()).toBe(202);
   const operation = await response.json();
 
-  await vmExec("docker restart dockpilot-server");
+  await vmExec("docker restart docklattice-server");
   await expect
     .poll(
       async () => {
@@ -1820,7 +1823,7 @@ test("VM recovers an operation record across Server and Agent restart", async ({
     )
     .toBe(true);
 
-  await vmExec("docker restart dockpilot-agent");
+  await vmExec("docker restart docklattice-agent");
   await waitForHost(page, (candidate) => candidate.state === "ACTIVE");
   const recovered = await waitForTerminalOperation(page, operation);
   expect(recovered.operation_id).toBe(operation.operation_id);
@@ -1835,9 +1838,9 @@ test("VM Compose Down removes runtime objects, retains data, and Up restores ser
   const browserFailures = observeBrowserFailures(page);
   await page.goto("/#/home");
   const { host, normalProject } = liveContext(await currentDashboard(page));
-  const volumeName = "dockpilot-acceptance-normal_acceptance-data";
-  const networkName = "dockpilot-acceptance-normal_acceptance-net";
-  const orphanNetworkName = "dockpilot-acceptance-normal_default";
+  const volumeName = "docklattice-acceptance-normal_acceptance-data";
+  const networkName = "docklattice-acceptance-normal_acceptance-net";
+  const orphanNetworkName = "docklattice-acceptance-normal_default";
   const volumeBefore = await vmExec(
     `docker volume inspect --format '{{.Mountpoint}}' ${volumeName}`,
   );
@@ -1855,24 +1858,24 @@ test("VM Compose Down removes runtime objects, retains data, and Up restores ser
 
   const remaining = await vmExec(
     "docker ps --all " +
-      "--filter label=com.docker.compose.project=dockpilot-acceptance-normal " +
+      "--filter label=com.docker.compose.project=docklattice-acceptance-normal " +
       "--format '{{.Names}}'",
   );
   const remainingNames = remaining.stdout.trim().split("\n").sort();
   expect(remainingNames).toEqual(
     [
-      "dockpilot-acceptance-normal-orphan-1",
-      "dockpilot-acceptance-one-off",
+      "docklattice-acceptance-normal-orphan-1",
+      "docklattice-acceptance-one-off",
     ].sort(),
   );
   await vmExec(`docker volume inspect ${volumeName}`);
   const retainedNetwork = await vmExec(`docker network inspect ${networkName}`);
-  expect(retainedNetwork.stdout).toContain("dockpilot-acceptance-one-off");
+  expect(retainedNetwork.stdout).toContain("docklattice-acceptance-one-off");
   const retainedOrphanNetwork = await vmExec(
     `docker network inspect ${orphanNetworkName}`,
   );
   expect(retainedOrphanNetwork.stdout).toContain(
-    "dockpilot-acceptance-normal-orphan-1",
+    "docklattice-acceptance-normal-orphan-1",
   );
 
   const up = await runProjectOperation(

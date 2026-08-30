@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/producttransport"
-	"github.com/east-true/dockpilot/internal/webui"
+	"github.com/east-true/docklattice/internal/producttransport"
+	"github.com/east-true/docklattice/internal/webui"
 )
 
 func TestHostInventoryIsTypedLiveOnlyAndDoesNotPersistSecrets(t *testing.T) {

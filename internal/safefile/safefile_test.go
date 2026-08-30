@@ -70,7 +70,7 @@ func TestWriteValidatesSnapshotsAndAtomicallyPreservesModeAndCRLF(t *testing.T) 
 			if input.ProjectRoot != dir || input.RelativePath != "compose.yaml" {
 				t.Fatalf("validation context = %+v", input)
 			}
-			if !strings.Contains(input.StagedRelativePath, ".dockpilot-stage-") {
+			if !strings.Contains(input.StagedRelativePath, ".docklattice-stage-") {
 				t.Fatalf("staged relative path = %q", input.StagedRelativePath)
 			}
 			onDisk, err := os.ReadFile(input.StagedPath)
@@ -622,7 +622,7 @@ func assertFileBytes(t *testing.T, path string, want []byte) {
 
 func assertNoStages(t *testing.T, dir string) {
 	t.Helper()
-	matches, err := filepath.Glob(filepath.Join(dir, ".dockpilot-stage-*"))
+	matches, err := filepath.Glob(filepath.Join(dir, ".docklattice-stage-*"))
 	if err != nil {
 		t.Fatal(err)
 	}

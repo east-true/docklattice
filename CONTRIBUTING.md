@@ -1,14 +1,14 @@
-# Contributing to Dockpilot
+# Contributing to DockLattice
 
 ## The one rule that is different here
 
 [`docs/architecture.md`](docs/architecture.md) is the authority, and every
-behaviour in Dockpilot is classified in its section 18 as **CORE**, **OPTIONAL**,
+behaviour in DockLattice is classified in its section 18 as **CORE**, **OPTIONAL**,
 **FUTURE**, or **DO NOT BUILD**.
 
 A change that adds a FUTURE or DO NOT BUILD behaviour will not be accepted, and
 `scripts/verify-release-scope.sh` will fail it before a human reads it. That
-script audits the transitive dependency graph of `./cmd/dockpilot` rather than a
+script audits the transitive dependency graph of `./cmd/docklattice` rather than a
 directory list, so the classification cannot be evaded by moving a file.
 
 If you believe a classification is wrong, propose the architecture change first,
@@ -25,7 +25,7 @@ Go, at the version declared in [`go.mod`](go.mod). Nothing else is required to
 build or to run the unit tests.
 
 ```sh
-go build ./cmd/dockpilot
+go build ./cmd/docklattice
 go test ./...
 go test -race ./...
 ```
@@ -67,7 +67,7 @@ ordinary change; a maintainer runs the affected gate before a release.
 consistent throughout the repository on purpose. New code should be
 indistinguishable from the code next to it.
 
-**Fail closed.** When Dockpilot cannot prove something is safe, it refuses and
+**Fail closed.** When DockLattice cannot prove something is safe, it refuses and
 says why with a specific reason code — not a generic error, and never a silent
 degradation. A new code path that has a "probably fine" branch is not finished.
 

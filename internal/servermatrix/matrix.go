@@ -22,7 +22,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/producttransport"
+	"github.com/east-true/docklattice/internal/producttransport"
 )
 
 var ErrClosed = errors.New("server metrics matrix is closed")
@@ -50,7 +50,7 @@ type Sessions interface {
 // project and service it belongs to, and the image it was started from.
 //
 // It is context, not authority. The Docker Engine decides what is running; this
-// only says what Dockpilot knows about it, and knowing nothing is an ordinary
+// only says what DockLattice knows about it, and knowing nothing is an ordinary
 // answer - a container started by hand is not part of any project and never
 // will be.
 type ContainerContext struct {
@@ -71,7 +71,7 @@ type ContextSource interface {
 	ContainerContext(ctx context.Context, agentID string) (map[string]ContainerContext, error)
 }
 
-// Filesystem is capacity for one path Dockpilot writes to, carried through from
+// Filesystem is capacity for one path DockLattice writes to, carried through from
 // the Agent. Unavailable is a fact about that path, not about the host.
 type Filesystem struct {
 	Path        string

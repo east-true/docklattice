@@ -88,12 +88,12 @@ for image in "$server_image" "$agent_image" "$fixture_image"; do
     [ "$(docker image inspect --format '{{.Id}}' "$image")" = "$image" ] ||
         fail "preflight: image reference did not resolve to its exact requested ID: $image"
 done
-[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$server_image")" = "Dockpilot Server" ] ||
+[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$server_image")" = "DockLattice Server" ] ||
     fail "preflight: Server image is not the production Server target"
-[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$agent_image")" = "Dockpilot Agent" ] ||
+[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$agent_image")" = "DockLattice Agent" ] ||
     fail "preflight: Agent image is not the production Agent target"
-[ "$(docker image inspect --format '{{index .Config.Labels "io.dockpilot.role"}}' "$agent_image")" = agent ] ||
-    fail "preflight: Agent image lacks io.dockpilot.role=agent"
+[ "$(docker image inspect --format '{{index .Config.Labels "io.docklattice.role"}}' "$agent_image")" = agent ] ||
+    fail "preflight: Agent image lacks io.docklattice.role=agent"
 [ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}' "$server_image")" = Apache-2.0 ] ||
     fail "preflight: Server production license label is missing"
 [ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}' "$agent_image")" = Apache-2.0 ] ||
@@ -107,14 +107,14 @@ agent_revision=$(docker image inspect --format '{{index .Config.Labels "org.open
 [ "$server_revision" = "$agent_revision" ] || fail "preflight: Server and Agent revisions differ"
 case "$server_revision" in ''|*[!0-9a-f]*) fail "preflight: production revision must be lowercase hexadecimal" ;; esac
 [ "${#server_revision}" -eq 40 ] || fail "preflight: production revision must be a full 40-character Git object ID"
-compose_version=$(docker image inspect --format '{{index .Config.Labels "io.dockpilot.compose.version"}}' "$agent_image")
+compose_version=$(docker image inspect --format '{{index .Config.Labels "io.docklattice.compose.version"}}' "$agent_image")
 [ -n "$compose_version" ] && [ "$compose_version" != '<no value>' ] || fail "preflight: Agent Compose version label is missing"
 
 available_kib=$(df -Pk "$evidence_parent" | awk 'NR == 2 { print $4 }')
 [ "$available_kib" -ge $((evidence_max_bytes / 1024 + 65536)) ] ||
     fail "preflight: evidence filesystem needs the cap plus 64 MiB free"
 
-prefix="dockpilot-clean-host-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+prefix="docklattice-clean-host-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 probe="$prefix-probe"
 docker run --pull never -d --name "$probe" --memory 32m --memory-swap 32m \
     --entrypoint /bin/sh "$server_image" -c 'sleep 30' >/dev/null ||
@@ -174,10 +174,10 @@ remove_compose_objects() {
 
 scrub_runtime() {
     [ -n "${runtime:-}" ] && [ -d "$runtime" ] || return 0
-    case "$runtime" in "$runtime_base"/dockpilot-clean-host.*) ;; *) return 1 ;; esac
+    case "$runtime" in "$runtime_base"/docklattice-clean-host.*) ;; *) return 1 ;; esac
     docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
-        -v "$runtime:/dockpilot-clean-host-runtime" "$server_image" \
-        -c 'rm -rf /dockpilot-clean-host-runtime/server /dockpilot-clean-host-runtime/agent /dockpilot-clean-host-runtime/bootstrap /dockpilot-clean-host-runtime/projects' \
+        -v "$runtime:/docklattice-clean-host-runtime" "$server_image" \
+        -c 'rm -rf /docklattice-clean-host-runtime/server /docklattice-clean-host-runtime/agent /docklattice-clean-host-runtime/bootstrap /docklattice-clean-host-runtime/projects' \
         >/dev/null 2>&1 || return 1
     rmdir "$runtime"
 }
@@ -236,8 +236,8 @@ cleanup() {
 trap cleanup EXIT
 trap 'failure_reason="harness interrupted by signal"; exit 130' HUP INT TERM
 
-runtime=$(mktemp -d "$runtime_base/dockpilot-clean-host.XXXXXXXX")
-case "$runtime" in "$runtime_base"/dockpilot-clean-host.*) ;; *) fail "mktemp returned an unexpected runtime root" ;; esac
+runtime=$(mktemp -d "$runtime_base/docklattice-clean-host.XXXXXXXX")
+case "$runtime" in "$runtime_base"/docklattice-clean-host.*) ;; *) fail "mktemp returned an unexpected runtime root" ;; esac
 chmod 0700 "$runtime"
 mkdir "$evidence_dir"
 artifact_created=1
@@ -306,7 +306,7 @@ docker network create --subnet "$(harness_subnet)" "$network" >"$evidence_dir/ne
 server="$prefix-server"
 docker run --pull never -d --name "$server" --network "$network" --network-alias server \
     --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-    -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/dockpilot:rw" "$server_image" \
+    -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/docklattice:rw" "$server_image" \
     server --listen 0.0.0.0:8080 --agent-listen 0.0.0.0:8443 --allow-public-bind \
     >"$evidence_dir/server.container-id"
 server_port=$(docker port "$server" 8080/tcp | awk -F: 'NR == 1 { print $NF }')
@@ -326,8 +326,8 @@ done
 [ "$ready" -eq 1 ] || fail "Server did not become HTTPS-ready"
 
 docker run --pull never --rm --user 65532:65532 \
-    -v "$runtime/server:/var/lib/dockpilot:rw" "$server_image" \
-    server issue-token --state-dir /var/lib/dockpilot --ttl 15m \
+    -v "$runtime/server:/var/lib/docklattice:rw" "$server_image" \
+    server issue-token --state-dir /var/lib/docklattice --ttl 15m \
     >"$runtime/bootstrap/join-token" 2>"$evidence_dir/issue-token.stderr"
 [ "$(wc -l <"$runtime/bootstrap/join-token" | awk '{ print $1 }')" -eq 1 ] || fail "Join Token CLI did not emit exactly one line"
 token_size=$(wc -c <"$runtime/bootstrap/join-token" | awk '{ print $1 }')
@@ -350,25 +350,25 @@ start_agent() {
     if [ "$with_token" = true ]; then
         docker run --pull never -d --name "$agent" --network "$network" \
             --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-            --group-add "$socket_gid" --label io.dockpilot.role=agent \
+            --group-add "$socket_gid" --label io.docklattice.role=agent \
             -v /var/run/docker.sock:/var/run/docker.sock:rw \
-            -v "$runtime/agent:/var/lib/dockpilot:rw" \
-            -v "$runtime/bootstrap/join-token:/run/secrets/dockpilot-join-token:ro" \
+            -v "$runtime/agent:/var/lib/docklattice:rw" \
+            -v "$runtime/bootstrap/join-token:/run/secrets/docklattice-join-token:ro" \
             -v "$runtime/projects:$runtime/projects:rw" "$agent_image" agent \
             --server server:8443 --registration-url https://server:8080 \
-            --server-ca /var/lib/dockpilot/server-ca.crt \
-            --join-token-file /run/secrets/dockpilot-join-token \
+            --server-ca /var/lib/docklattice/server-ca.crt \
+            --join-token-file /run/secrets/docklattice-join-token \
             --display-name clean-host-agent --self-container-name "$agent" \
             --project-root "$runtime/projects"
     else
         docker run --pull never -d --name "$agent" --network "$network" \
             --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-            --group-add "$socket_gid" --label io.dockpilot.role=agent \
+            --group-add "$socket_gid" --label io.docklattice.role=agent \
             -v /var/run/docker.sock:/var/run/docker.sock:rw \
-            -v "$runtime/agent:/var/lib/dockpilot:rw" \
+            -v "$runtime/agent:/var/lib/docklattice:rw" \
             -v "$runtime/projects:$runtime/projects:rw" "$agent_image" agent \
             --server server:8443 --registration-url https://server:8080 \
-            --server-ca /var/lib/dockpilot/server-ca.crt \
+            --server-ca /var/lib/docklattice/server-ca.crt \
             --display-name clean-host-agent --self-container-name "$agent" \
             --project-root "$runtime/projects"
     fi

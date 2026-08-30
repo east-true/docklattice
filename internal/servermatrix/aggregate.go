@@ -169,7 +169,7 @@ type ServiceRow struct {
 	Containers []ContainerRow
 }
 
-// ProjectRow is one Compose project. A project Dockpilot does not manage still
+// ProjectRow is one Compose project. A project DockLattice does not manage still
 // appears - somebody else's stack on this host is part of what the host is
 // doing - and so does the bucket for containers belonging to no project at all,
 // which is what Unmapped marks.
@@ -186,7 +186,7 @@ type ProjectRow struct {
 //
 // Projects are keyed by UID where there is one and by name otherwise. The
 // second case is not a fallback for missing data: a Compose project on this
-// host that Dockpilot has never been told to manage has real labels and no UID,
+// host that DockLattice has never been told to manage has real labels and no UID,
 // and grouping it by name shows it as the project it is rather than dumping it
 // in with unrelated containers.
 func groupProjects(rows []ContainerRow) []ProjectRow {

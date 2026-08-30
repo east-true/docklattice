@@ -12,18 +12,18 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/east-true/dockpilot/internal/agentops"
-	"github.com/east-true/dockpilot/internal/agentprojects"
-	"github.com/east-true/dockpilot/internal/agentquery"
-	"github.com/east-true/dockpilot/internal/backup"
-	"github.com/east-true/dockpilot/internal/composeexec"
-	productconfig "github.com/east-true/dockpilot/internal/config"
-	"github.com/east-true/dockpilot/internal/dockeradapter"
-	"github.com/east-true/dockpilot/internal/livematrix"
-	"github.com/east-true/dockpilot/internal/livestats"
-	"github.com/east-true/dockpilot/internal/logrelay"
-	"github.com/east-true/dockpilot/internal/operation"
-	"github.com/east-true/dockpilot/internal/producttransport"
+	"github.com/east-true/docklattice/internal/agentops"
+	"github.com/east-true/docklattice/internal/agentprojects"
+	"github.com/east-true/docklattice/internal/agentquery"
+	"github.com/east-true/docklattice/internal/backup"
+	"github.com/east-true/docklattice/internal/composeexec"
+	productconfig "github.com/east-true/docklattice/internal/config"
+	"github.com/east-true/docklattice/internal/dockeradapter"
+	"github.com/east-true/docklattice/internal/livematrix"
+	"github.com/east-true/docklattice/internal/livestats"
+	"github.com/east-true/docklattice/internal/logrelay"
+	"github.com/east-true/docklattice/internal/operation"
+	"github.com/east-true/docklattice/internal/producttransport"
 )
 
 // Docker is the synchronous query/mutation boundary. Live sources are passed
@@ -84,7 +84,7 @@ type Config struct {
 	StatsSampleInterval time.Duration
 
 	// MatrixDocker, MatrixPaths and MatrixFrameInterval configure host-scoped
-	// live metrics. MatrixPaths are the paths Dockpilot writes to - the
+	// live metrics. MatrixPaths are the paths DockLattice writes to - the
 	// discovery roots and the Agent state root - reported as capacity, not as
 	// an inventory of the host's mounts.
 	MatrixDocker        MatrixDocker

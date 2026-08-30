@@ -21,7 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/livestats"
+	"github.com/east-true/docklattice/internal/livestats"
 )
 
 var ErrClosed = errors.New("live metrics matrix is closed")
@@ -46,7 +46,7 @@ type Events interface {
 }
 
 // Workload reports the host row: the capacity this Engine has and the paths
-// Dockpilot writes to. It is deliberately not host OS metrics - an Agent runs
+// DockLattice writes to. It is deliberately not host OS metrics - an Agent runs
 // in a container, where /proc/net belongs to the container's own network
 // namespace.
 type Workload interface {

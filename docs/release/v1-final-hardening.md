@@ -21,7 +21,7 @@ All at revision `c6366b83dc31c712b58ace47fe384bffb15a2a32` unless noted.
 | [Hardening matrix](hardening-matrix-e2e.md), `docker-daemon-restart` | `dp-vm-clean` guest | PASS |
 | [Abuse matrix](abuse-matrix-e2e.md), 13 cases | workstation | PASS |
 | [Recovery matrix](recovery-matrix-e2e.md), incl. new case 1b | workstation | PASS |
-| [Clean-host installation](clean-host-install-e2e.md) | `dp-vm-clean` guest, never ran Dockpilot | PASS |
+| [Clean-host installation](clean-host-install-e2e.md) | `dp-vm-clean` guest, never ran DockLattice | PASS |
 | [Multi-Agent lab](multi-agent-lab.md), 11 cases, 3 Agents | `dp-vm-lab` guest | PASS |
 | [Power cut](power-cut.md) | `dp-vm-clean` guest, `virsh destroy` | PASS |
 | [Soak](soak.md) stage 1 re-run | workstation | INCOMPLETE — stopped at 17.6 of 60 minutes |
@@ -149,8 +149,10 @@ which is a different case and is covered by recovery matrix case 1b.
 
 The long-running soak is excluded from the Interface Freeze gate by project
 decision but is part of the separately adopted Release Candidate gate. All
-three stages have now passed at current `main` revision `7249c29`, including
-the eight-hour mixed overnight stage; see [`soak.md`](soak.md).
+three stages passed at the pre-rename revision `7249c29`, including the
+eight-hour mixed overnight stage; see [`soak.md`](soak.md). The DockLattice
+identity migration requires the gate to be repeated at the renamed release
+revision.
 The resource matrix was also re-run at its post-fix revision: three trials,
 `status=PASS`, peak RSS in the low tens of MiB against 256/512 MiB budgets, no
 OOM. That run resolved a question this record previously listed as open -
@@ -160,6 +162,6 @@ stream, failing three of five observed trials and passing two with exact counts
 of 10,773 and 80,514 bytes. The driver now holds the stream open until the
 evidence exists. See [resource-gate.md](resource-gate.md).
 
-All three stages are now established at the current revision. The separate
-Release Candidate soak gate is complete and does not alter the earlier
-Interface Freeze result.
+All three stages are established as the pre-rename behavioral baseline. The
+separate Release Candidate soak gate remains open for the renamed revision and
+does not alter the earlier Interface Freeze result.

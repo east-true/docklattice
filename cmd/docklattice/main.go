@@ -14,10 +14,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/app"
-	productconfig "github.com/east-true/dockpilot/internal/config"
-	"github.com/east-true/dockpilot/internal/registration"
-	"github.com/east-true/dockpilot/internal/serverbootstrap"
+	"github.com/east-true/docklattice/internal/app"
+	productconfig "github.com/east-true/docklattice/internal/config"
+	"github.com/east-true/docklattice/internal/registration"
+	"github.com/east-true/docklattice/internal/serverbootstrap"
 )
 
 func main() {
@@ -74,7 +74,7 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer, fac
 		return runIssueToken(ctx, args[1:], stdout, stderr)
 	}
 	cfg := app.DefaultConfig(app.ModeServer)
-	flags := flag.NewFlagSet("dockpilot server", flag.ContinueOnError)
+	flags := flag.NewFlagSet("docklattice server", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() { printServerUsage(flags.Output()) }
 	flags.StringVar(&cfg.Server.ListenAddress, "listen", app.DefaultServerListenAddress, "listen address; public addresses require --allow-public-bind")
@@ -105,7 +105,7 @@ func runServer(ctx context.Context, args []string, stdout, stderr io.Writer, fac
 }
 
 func runIssueToken(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	flags := flag.NewFlagSet("dockpilot server issue-token", flag.ContinueOnError)
+	flags := flag.NewFlagSet("docklattice server issue-token", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() { printIssueTokenUsage(flags.Output()) }
 	stateDir := app.DefaultServerStateDir
@@ -154,7 +154,7 @@ func runIssueToken(ctx context.Context, args []string, stdout, stderr io.Writer)
 
 func runAgent(ctx context.Context, args []string, stdout, stderr io.Writer, factories app.Factories) int {
 	cfg := app.DefaultConfig(app.ModeAgent)
-	flags := flag.NewFlagSet("dockpilot agent", flag.ContinueOnError)
+	flags := flag.NewFlagSet("docklattice agent", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() { printAgentUsage(flags.Output()) }
 	flags.StringVar(&cfg.Agent.StateDir, "state-dir", app.DefaultAgentStateDir, "absolute path for durable Agent state")
@@ -189,26 +189,26 @@ func runAgent(ctx context.Context, args []string, stdout, stderr io.Writer, fact
 
 func runConfigured(ctx context.Context, cfg app.Config, _, stderr io.Writer, factories app.Factories) int {
 	if err := app.Run(ctx, cfg, factories); err != nil {
-		fmt.Fprintf(stderr, "dockpilot %s failed: %v\n", cfg.Mode, err)
+		fmt.Fprintf(stderr, "docklattice %s failed: %v\n", cfg.Mode, err)
 		return 1
 	}
 	return 0
 }
 
 func printRootUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage: dockpilot <server|agent|defaults> [options]")
+	fmt.Fprintln(w, "Usage: docklattice <server|agent|defaults> [options]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Modes:")
-	fmt.Fprintln(w, "  server  run the Dockpilot control plane")
+	fmt.Fprintln(w, "  server  run the DockLattice control plane")
 	fmt.Fprintln(w, "  agent   run the Docker host controller")
 	fmt.Fprintln(w, "  defaults  print the machine-readable v1 operational defaults")
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Use 'dockpilot <mode> --help' for mode options.")
+	fmt.Fprintln(w, "Use 'docklattice <mode> --help' for mode options.")
 }
 
 func printServerUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage: dockpilot server [options]")
-	fmt.Fprintln(w, "       dockpilot server issue-token [options]")
+	fmt.Fprintln(w, "Usage: docklattice server [options]")
+	fmt.Fprintln(w, "       docklattice server issue-token [options]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Options:")
 	fmt.Fprintf(w, "  --listen address         listen address (default %s)\n", app.DefaultServerListenAddress)
@@ -220,7 +220,7 @@ func printServerUsage(w io.Writer) {
 }
 
 func printIssueTokenUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage: dockpilot server issue-token [options]")
+	fmt.Fprintln(w, "Usage: docklattice server issue-token [options]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Options:")
 	fmt.Fprintf(w, "  --state-dir path         durable Server state directory (default %s)\n", app.DefaultServerStateDir)
@@ -229,7 +229,7 @@ func printIssueTokenUsage(w io.Writer) {
 }
 
 func printAgentUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage: dockpilot agent [options]")
+	fmt.Fprintln(w, "Usage: docklattice agent [options]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Options:")
 	fmt.Fprintf(w, "  --state-dir path         durable Agent state directory (default %s)\n", app.DefaultAgentStateDir)

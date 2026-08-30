@@ -72,15 +72,15 @@ validate_image "$agent_image" "$agent_digest"
 
 for component in server agent; do
     for architecture in amd64 arm64; do
-        [ -s "$asset_dir/dockpilot-$component-$architecture.cdx.json" ] ||
+        [ -s "$asset_dir/docklattice-$component-$architecture.cdx.json" ] ||
             fail "missing $component/$architecture SBOM"
-        [ -s "$asset_dir/dockpilot-$component-$architecture.vulnerabilities.json" ] ||
+        [ -s "$asset_dir/docklattice-$component-$architecture.vulnerabilities.json" ] ||
             fail "missing $component/$architecture vulnerability report"
     done
 done
 
 licenses_dir=$asset_dir/licenses
-licenses_archive=$asset_dir/dockpilot-$version-go-licenses.tar.gz
+licenses_archive=$asset_dir/docklattice-$version-go-licenses.tar.gz
 manifest=$asset_dir/release-images.json
 checksums=$asset_dir/SHA256SUMS
 scan_policy=$asset_dir/trivyignore.yaml

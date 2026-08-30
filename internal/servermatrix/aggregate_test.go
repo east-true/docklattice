@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/producttransport"
+	"github.com/east-true/docklattice/internal/producttransport"
 )
 
 func bounded(id string, sample producttransport.StatsSample, context ContainerContext) ContainerRow {
@@ -187,7 +187,7 @@ func TestAMemoryLimitAtTheMachineSizeIsNotALimit(t *testing.T) {
 	}
 }
 
-// The tree is project, then service, then container. A project Dockpilot does
+// The tree is project, then service, then container. A project DockLattice does
 // not manage is still a project; containers belonging to no project at all are
 // a bucket of their own and sort last, but they are never hidden.
 func TestGroupingKeepsEveryContainerSomewhere(t *testing.T) {
@@ -206,7 +206,7 @@ func TestGroupingKeepsEveryContainerSomewhere(t *testing.T) {
 		t.Fatalf("first project is %+v", projects[0])
 	}
 	if projects[1].ProjectName != "someone-elses-stack" || projects[1].ProjectUID != "" || projects[1].Unmapped {
-		t.Fatalf("a Compose project Dockpilot does not manage was not shown as itself: %+v", projects[1])
+		t.Fatalf("a Compose project DockLattice does not manage was not shown as itself: %+v", projects[1])
 	}
 	if !projects[2].Unmapped {
 		t.Fatalf("the containers belonging to no project did not sort last: %+v", projects[2])

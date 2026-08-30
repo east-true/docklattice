@@ -4,7 +4,7 @@ set -eu
 # Phase 9 release license material.
 #
 # Enumerates every third-party Go module that is actually linked into the
-# release binary (./cmd/dockpilot), copies each module's license and notice
+# release binary (./cmd/docklattice), copies each module's license and notice
 # texts out of the module cache, and writes a checksummed inventory. Output
 # goes to dist/, which is a release output directory and is not committed:
 # license texts are generated from the pinned go.sum versions at release time
@@ -42,7 +42,7 @@ printf 'module\tversion\tfile\tsha256\n' >"$inventory"
 
 # Modules linked into the release binary, excluding the standard library and
 # this module itself.
-modules=$(go list -deps -f '{{with .Module}}{{.Path}} {{.Version}}{{end}}' ./cmd/dockpilot |
+modules=$(go list -deps -f '{{with .Module}}{{.Path}} {{.Version}}{{end}}' ./cmd/docklattice |
     awk 'NF == 2' | sort -u | grep -v "^$module ")
 
 missing=0

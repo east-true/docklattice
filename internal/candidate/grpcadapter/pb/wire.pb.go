@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.12
 // 	protoc        (unknown)
-// source: dockpilot/prototype/grpc/v1/wire.proto
+// source: docklattice/prototype/grpc/v1/wire.proto
 
 // This schema is private to Candidate A. None of these HTTP/2/gRPC adapter
 // details are exposed by the transport-neutral package.
@@ -37,7 +37,7 @@ type OpenRequest struct {
 
 func (x *OpenRequest) Reset() {
 	*x = OpenRequest{}
-	mi := &file_dockpilot_prototype_grpc_v1_wire_proto_msgTypes[0]
+	mi := &file_docklattice_prototype_grpc_v1_wire_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -49,7 +49,7 @@ func (x *OpenRequest) String() string {
 func (*OpenRequest) ProtoMessage() {}
 
 func (x *OpenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_grpc_v1_wire_proto_msgTypes[0]
+	mi := &file_docklattice_prototype_grpc_v1_wire_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -62,7 +62,7 @@ func (x *OpenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OpenRequest.ProtoReflect.Descriptor instead.
 func (*OpenRequest) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_grpc_v1_wire_proto_rawDescGZIP(), []int{0}
+	return file_docklattice_prototype_grpc_v1_wire_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *OpenRequest) GetExchangeId() uint64 {
@@ -109,7 +109,7 @@ type UnaryResponse struct {
 
 func (x *UnaryResponse) Reset() {
 	*x = UnaryResponse{}
-	mi := &file_dockpilot_prototype_grpc_v1_wire_proto_msgTypes[1]
+	mi := &file_docklattice_prototype_grpc_v1_wire_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -121,7 +121,7 @@ func (x *UnaryResponse) String() string {
 func (*UnaryResponse) ProtoMessage() {}
 
 func (x *UnaryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_grpc_v1_wire_proto_msgTypes[1]
+	mi := &file_docklattice_prototype_grpc_v1_wire_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -134,7 +134,7 @@ func (x *UnaryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnaryResponse.ProtoReflect.Descriptor instead.
 func (*UnaryResponse) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_grpc_v1_wire_proto_rawDescGZIP(), []int{1}
+	return file_docklattice_prototype_grpc_v1_wire_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *UnaryResponse) GetPayload() []byte {
@@ -157,7 +157,7 @@ type StreamFrame struct {
 
 func (x *StreamFrame) Reset() {
 	*x = StreamFrame{}
-	mi := &file_dockpilot_prototype_grpc_v1_wire_proto_msgTypes[2]
+	mi := &file_docklattice_prototype_grpc_v1_wire_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -169,7 +169,7 @@ func (x *StreamFrame) String() string {
 func (*StreamFrame) ProtoMessage() {}
 
 func (x *StreamFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_dockpilot_prototype_grpc_v1_wire_proto_msgTypes[2]
+	mi := &file_docklattice_prototype_grpc_v1_wire_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -182,7 +182,7 @@ func (x *StreamFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamFrame.ProtoReflect.Descriptor instead.
 func (*StreamFrame) Descriptor() ([]byte, []int) {
-	return file_dockpilot_prototype_grpc_v1_wire_proto_rawDescGZIP(), []int{2}
+	return file_docklattice_prototype_grpc_v1_wire_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *StreamFrame) GetBody() isStreamFrame_Body {
@@ -226,11 +226,11 @@ func (*StreamFrame_Open) isStreamFrame_Body() {}
 
 func (*StreamFrame_Payload) isStreamFrame_Body() {}
 
-var File_dockpilot_prototype_grpc_v1_wire_proto protoreflect.FileDescriptor
+var File_docklattice_prototype_grpc_v1_wire_proto protoreflect.FileDescriptor
 
-const file_dockpilot_prototype_grpc_v1_wire_proto_rawDesc = "" +
+const file_docklattice_prototype_grpc_v1_wire_proto_rawDesc = "" +
 	"\n" +
-	"&dockpilot/prototype/grpc/v1/wire.proto\x12\x1bdockpilot.prototype.grpc.v1\"\x99\x01\n" +
+	"(docklattice/prototype/grpc/v1/wire.proto\x12\x1ddocklattice.prototype.grpc.v1\"\x99\x01\n" +
 	"\vOpenRequest\x12\x1f\n" +
 	"\vexchange_id\x18\x01 \x01(\x04R\n" +
 	"exchangeId\x12\x16\n" +
@@ -239,32 +239,32 @@ const file_dockpilot_prototype_grpc_v1_wire_proto_rawDesc = "" +
 	"\rtraffic_class\x18\x04 \x01(\rR\ftrafficClass\x12\x18\n" +
 	"\apayload\x18\x05 \x01(\fR\apayload\")\n" +
 	"\rUnaryResponse\x12\x18\n" +
-	"\apayload\x18\x01 \x01(\fR\apayload\"q\n" +
-	"\vStreamFrame\x12>\n" +
-	"\x04open\x18\x01 \x01(\v2(.dockpilot.prototype.grpc.v1.OpenRequestH\x00R\x04open\x12\x1a\n" +
+	"\apayload\x18\x01 \x01(\fR\apayload\"s\n" +
+	"\vStreamFrame\x12@\n" +
+	"\x04open\x18\x01 \x01(\v2*.docklattice.prototype.grpc.v1.OpenRequestH\x00R\x04open\x12\x1a\n" +
 	"\apayload\x18\x02 \x01(\fH\x00R\apayloadB\x06\n" +
-	"\x04bodyBEZCgithub.com/east-true/dockpilot/internal/candidate/grpcadapter/pb;pbb\x06proto3"
+	"\x04bodyBGZEgithub.com/east-true/docklattice/internal/candidate/grpcadapter/pb;pbb\x06proto3"
 
 var (
-	file_dockpilot_prototype_grpc_v1_wire_proto_rawDescOnce sync.Once
-	file_dockpilot_prototype_grpc_v1_wire_proto_rawDescData []byte
+	file_docklattice_prototype_grpc_v1_wire_proto_rawDescOnce sync.Once
+	file_docklattice_prototype_grpc_v1_wire_proto_rawDescData []byte
 )
 
-func file_dockpilot_prototype_grpc_v1_wire_proto_rawDescGZIP() []byte {
-	file_dockpilot_prototype_grpc_v1_wire_proto_rawDescOnce.Do(func() {
-		file_dockpilot_prototype_grpc_v1_wire_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_dockpilot_prototype_grpc_v1_wire_proto_rawDesc), len(file_dockpilot_prototype_grpc_v1_wire_proto_rawDesc)))
+func file_docklattice_prototype_grpc_v1_wire_proto_rawDescGZIP() []byte {
+	file_docklattice_prototype_grpc_v1_wire_proto_rawDescOnce.Do(func() {
+		file_docklattice_prototype_grpc_v1_wire_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_docklattice_prototype_grpc_v1_wire_proto_rawDesc), len(file_docklattice_prototype_grpc_v1_wire_proto_rawDesc)))
 	})
-	return file_dockpilot_prototype_grpc_v1_wire_proto_rawDescData
+	return file_docklattice_prototype_grpc_v1_wire_proto_rawDescData
 }
 
-var file_dockpilot_prototype_grpc_v1_wire_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
-var file_dockpilot_prototype_grpc_v1_wire_proto_goTypes = []any{
-	(*OpenRequest)(nil),   // 0: dockpilot.prototype.grpc.v1.OpenRequest
-	(*UnaryResponse)(nil), // 1: dockpilot.prototype.grpc.v1.UnaryResponse
-	(*StreamFrame)(nil),   // 2: dockpilot.prototype.grpc.v1.StreamFrame
+var file_docklattice_prototype_grpc_v1_wire_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_docklattice_prototype_grpc_v1_wire_proto_goTypes = []any{
+	(*OpenRequest)(nil),   // 0: docklattice.prototype.grpc.v1.OpenRequest
+	(*UnaryResponse)(nil), // 1: docklattice.prototype.grpc.v1.UnaryResponse
+	(*StreamFrame)(nil),   // 2: docklattice.prototype.grpc.v1.StreamFrame
 }
-var file_dockpilot_prototype_grpc_v1_wire_proto_depIdxs = []int32{
-	0, // 0: dockpilot.prototype.grpc.v1.StreamFrame.open:type_name -> dockpilot.prototype.grpc.v1.OpenRequest
+var file_docklattice_prototype_grpc_v1_wire_proto_depIdxs = []int32{
+	0, // 0: docklattice.prototype.grpc.v1.StreamFrame.open:type_name -> docklattice.prototype.grpc.v1.OpenRequest
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -272,12 +272,12 @@ var file_dockpilot_prototype_grpc_v1_wire_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_dockpilot_prototype_grpc_v1_wire_proto_init() }
-func file_dockpilot_prototype_grpc_v1_wire_proto_init() {
-	if File_dockpilot_prototype_grpc_v1_wire_proto != nil {
+func init() { file_docklattice_prototype_grpc_v1_wire_proto_init() }
+func file_docklattice_prototype_grpc_v1_wire_proto_init() {
+	if File_docklattice_prototype_grpc_v1_wire_proto != nil {
 		return
 	}
-	file_dockpilot_prototype_grpc_v1_wire_proto_msgTypes[2].OneofWrappers = []any{
+	file_docklattice_prototype_grpc_v1_wire_proto_msgTypes[2].OneofWrappers = []any{
 		(*StreamFrame_Open)(nil),
 		(*StreamFrame_Payload)(nil),
 	}
@@ -285,17 +285,17 @@ func file_dockpilot_prototype_grpc_v1_wire_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dockpilot_prototype_grpc_v1_wire_proto_rawDesc), len(file_dockpilot_prototype_grpc_v1_wire_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_docklattice_prototype_grpc_v1_wire_proto_rawDesc), len(file_docklattice_prototype_grpc_v1_wire_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_dockpilot_prototype_grpc_v1_wire_proto_goTypes,
-		DependencyIndexes: file_dockpilot_prototype_grpc_v1_wire_proto_depIdxs,
-		MessageInfos:      file_dockpilot_prototype_grpc_v1_wire_proto_msgTypes,
+		GoTypes:           file_docklattice_prototype_grpc_v1_wire_proto_goTypes,
+		DependencyIndexes: file_docklattice_prototype_grpc_v1_wire_proto_depIdxs,
+		MessageInfos:      file_docklattice_prototype_grpc_v1_wire_proto_msgTypes,
 	}.Build()
-	File_dockpilot_prototype_grpc_v1_wire_proto = out.File
-	file_dockpilot_prototype_grpc_v1_wire_proto_goTypes = nil
-	file_dockpilot_prototype_grpc_v1_wire_proto_depIdxs = nil
+	File_docklattice_prototype_grpc_v1_wire_proto = out.File
+	file_docklattice_prototype_grpc_v1_wire_proto_goTypes = nil
+	file_docklattice_prototype_grpc_v1_wire_proto_depIdxs = nil
 }

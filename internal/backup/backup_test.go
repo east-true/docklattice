@@ -486,7 +486,7 @@ func TestRecoverPreparingJournalCleansStagingAsInterrupted(t *testing.T) {
 	manager, project := newTestManager(t)
 	mustWrite(t, filepath.Join(project.WorkingDir, "compose.yaml"), "current", 0o600)
 	backup := createBackup(t, manager, project, TriggerManual, "source", time.Now(), "compose.yaml")
-	stage := ".dockpilot-restore-prepare-000.tmp"
+	stage := ".docklattice-restore-prepare-000.tmp"
 	mustWrite(t, filepath.Join(project.WorkingDir, stage), "staged", 0o600)
 	journal := restoreJournal{
 		Version: journalVersion, OperationID: "prepare", ProjectUID: project.UID,
@@ -613,7 +613,7 @@ func assertNoRestoreArtifacts(t *testing.T, manager *Manager, project Project) {
 		t.Fatal(err)
 	}
 	for _, entry := range projectEntries {
-		if strings.HasPrefix(entry.Name(), ".dockpilot-restore-") {
+		if strings.HasPrefix(entry.Name(), ".docklattice-restore-") {
 			t.Fatalf("staging artifact remains: %s", entry.Name())
 		}
 	}

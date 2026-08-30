@@ -4,7 +4,7 @@ The Agent writes bounded structured records to stderr. In the documented
 Container deployment, inspect them with:
 
 ```sh
-docker logs --tail 200 dockpilot-agent
+docker logs --tail 200 docklattice-agent
 ```
 
 Each record is one line with `time`, `level`, `component=agent`, and `event`.
@@ -47,5 +47,5 @@ Do not delete Agent state or edit either generation. Follow the
 or advance the Server trust state through the documented recovery procedure.
 
 Diagnostics are an operator signal, not an Audit archive. They are not parsed
-by Dockpilot, synchronized to the Server, or retained beyond the Container log
+by DockLattice, synchronized to the Server, or retained beyond the Container log
 driver policy.

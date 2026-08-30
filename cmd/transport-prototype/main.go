@@ -1,5 +1,5 @@
 // transport-prototype is the disposable Appendix A experiment binary. It has
-// no Docker/Compose/product behavior and must not be installed as Dockpilot.
+// no Docker/Compose/product behavior and must not be installed as DockLattice.
 package main
 
 import (
@@ -25,14 +25,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/acceptance"
-	"github.com/east-true/dockpilot/internal/candidate/grpcadapter"
-	"github.com/east-true/dockpilot/internal/candidate/wsadapter"
-	"github.com/east-true/dockpilot/internal/contract"
-	"github.com/east-true/dockpilot/internal/experiment"
-	"github.com/east-true/dockpilot/internal/metrics"
-	"github.com/east-true/dockpilot/internal/transport"
-	"github.com/east-true/dockpilot/internal/workload"
+	"github.com/east-true/docklattice/internal/acceptance"
+	"github.com/east-true/docklattice/internal/candidate/grpcadapter"
+	"github.com/east-true/docklattice/internal/candidate/wsadapter"
+	"github.com/east-true/docklattice/internal/contract"
+	"github.com/east-true/docklattice/internal/experiment"
+	"github.com/east-true/docklattice/internal/metrics"
+	"github.com/east-true/docklattice/internal/transport"
+	"github.com/east-true/docklattice/internal/workload"
 )
 
 func main() {
@@ -384,7 +384,7 @@ func copyCandidateMetrics(ctx context.Context, source interface {
 func runCert(args []string) error {
 	fs := flag.NewFlagSet("cert", flag.ContinueOnError)
 	output := fs.String("output", ".", "certificate output directory")
-	hosts := fs.String("hosts", "127.0.0.1,localhost,dockpilot-server", "comma-separated IP/DNS SANs")
+	hosts := fs.String("hosts", "127.0.0.1,localhost,docklattice-server", "comma-separated IP/DNS SANs")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -463,7 +463,7 @@ func generateCertificate(dir string, hosts []string) (string, string, error) {
 		return "", "", err
 	}
 	now := time.Now()
-	tmpl := &x509.Certificate{SerialNumber: big.NewInt(now.UnixNano()), Subject: pkix.Name{CommonName: "dockpilot-transport-prototype"}, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(24 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(now.UnixNano()), Subject: pkix.Name{CommonName: "docklattice-transport-prototype"}, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(24 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	for _, host := range hosts {
 		host = strings.TrimSpace(host)
 		if ip := net.ParseIP(host); ip != nil {

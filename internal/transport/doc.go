@@ -1,4 +1,4 @@
-// Package transport는 Dockpilot Server-Agent 통신의 transport-neutral 논리 계약이다.
+// Package transport는 DockLattice Server-Agent 통신의 transport-neutral 논리 계약이다.
 //
 // 이 패키지는 부록 A.4의 "공통 계약"에 해당한다. 후보 A(Reverse gRPC)와
 // 후보 B(WebSocket + Application Multiplexing)는 이 패키지의 인터페이스를

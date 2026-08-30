@@ -30,7 +30,7 @@ for literal in \
     "'{{.OSType}}'" \
     '/var/run/docker.sock' \
     '--pull never' \
-    'server issue-token --state-dir /var/lib/dockpilot --ttl 15m' \
+    'server issue-token --state-dir /var/lib/docklattice --ttl 15m' \
     'chmod 0700 /recovery/server /recovery/agent /recovery/server/tls' \
     'restart_server control' \
     'rm -f /state/server.db /state/server.db-wal /state/server.db-shm' \

@@ -79,9 +79,9 @@ fi
 require_literal 'USER 65532:65532' "$dockerfile"
 require_literal 'COPY --from=rootfs /etc/passwd /etc/group /etc/' "$dockerfile"
 require_literal 'COPY --from=licenses /licenses /licenses' "$dockerfile"
-require_literal "io.dockpilot.docker-cli.version=\"${DOCKER_CLI_VERSION}\"" "$dockerfile"
-require_literal "io.dockpilot.compose.version=\"${COMPOSE_VERSION}\"" "$dockerfile"
-require_literal "BundledComposeVersion: \"${COMPOSE_VERSION}\"" "$repo_dir/cmd/dockpilot/factories.go"
+require_literal "io.docklattice.docker-cli.version=\"${DOCKER_CLI_VERSION}\"" "$dockerfile"
+require_literal "io.docklattice.compose.version=\"${COMPOSE_VERSION}\"" "$dockerfile"
+require_literal "BundledComposeVersion: \"${COMPOSE_VERSION}\"" "$repo_dir/cmd/docklattice/factories.go"
 
 # The browser/API has no authentication in v1. Documentation examples must
 # never regress to Docker's all-host-interface shorthand for port 8080.

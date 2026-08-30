@@ -45,8 +45,8 @@ uid_for() {
 }
 
 agent="11111111-1111-4111-8111-111111111111"
-root="/tmp/dockpilot-fixture-selection/projects"
-name="dockpilot-fixture"
+root="/tmp/docklattice-fixture-selection/projects"
+name="docklattice-fixture"
 fixture_uid_value=$(uid_for "$agent" "$root")
 foreign_uid=$(uid_for "$agent" "/home/operator/real-project")
 same_name_other_root_uid=$(uid_for "$agent" "/home/operator/also-named")

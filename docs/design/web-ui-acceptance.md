@@ -1,8 +1,8 @@
-# Dockpilot Web UI — Acceptance Checklist
+# DockLattice Web UI — Acceptance Checklist
 
 ## App shell / IA
 
-- [ ] Sidebar contains Dockpilot wordmark, Search, Home, and registered Docker hosts only.
+- [ ] Sidebar contains DockLattice wordmark, Search, Home, and registered Docker hosts only.
 - [ ] No user/avatar/settings controls are added.
 - [ ] Host-selected main navigation is exactly: Summary / Compose / Containers / Images / Networks / Volumes / Container stats / Audit.
 - [ ] Compose project navigation is exactly: Summary / Services / Containers / Files / Logs / Backups / Activity.
@@ -20,7 +20,7 @@
 
 - [ ] Home prioritizes Search, compact filters, Needs attention, and Docker hosts.
 - [ ] No Host OS CPU/memory metrics appear.
-- [ ] Attention contains deterministic Dockpilot-known exceptions only.
+- [ ] Attention contains deterministic DockLattice-known exceptions only.
 - [ ] A partial/unavailable host cannot silently disappear and look like fewer resources.
 
 ## Operations
@@ -39,7 +39,7 @@
 ## Host Summary
 
 - [ ] Host, Docker Engine, and Compose projects use separate outer panels in
-      that order; Agent/Dockpilot, Engine, and project facts are not mixed.
+      that order; Agent/DockLattice, Engine, and project facts are not mixed.
 - [ ] Docker Engine overview and advanced facts share the Engine panel but are
       separated by spacing and a subsection heading; overview fields are not
       repeated and no redundant divider appears.
@@ -55,7 +55,7 @@
       panels in that order; the full effective Service model is not duplicated
       in Summary.
 - [ ] Effective Compose metadata appears before the separately spaced
-      `Dockpilot management` subsection; observed Compose Container counts
+      `DockLattice management` subsection; observed Compose Container counts
       remain in the Containers panel.
 - [ ] Compose Summary ends with an exception-only `Services needing attention`
       list for missing Containers, abnormal runtime/Health, and no-build policy
@@ -87,7 +87,7 @@
 - [ ] Project-level Pull, Up, and Down each require confirmation. Pull explains
       that it does not start or build; Up explains create/recreate/start and
       unconditional `--no-build`; Down matches actual removal semantics.
-- [ ] Every Up invocation includes `--no-build`; Dockpilot exposes no Build action or build fallback.
+- [ ] Every Up invocation includes `--no-build`; DockLattice exposes no Build action or build fallback.
 - [ ] Pull explicitly targets effective Services with a declared Image; mixed `image` + `build` Services remain pullable without `--ignore-buildable`.
 - [ ] Build-only and `pull_policy: build` Services have explicit unavailable reasons for Pull and Service Up.
 - [ ] Project Up is unavailable when its effective target set contains any build-required Service; the UI never silently skips one.
@@ -104,7 +104,7 @@
 
 ## Logs
 
-- [ ] UI states Docker Engine retention, not Dockpilot retention.
+- [ ] UI states Docker Engine retention, not DockLattice retention.
 - [ ] Scope/time filters use a compact grid; Agent ID is not repeated as a
       visible filter, and browser-only Find remains adjacent to loaded output.
 - [ ] Tail/Since/Until/Follow semantics cannot form contradictory states.
@@ -118,7 +118,7 @@
 
 - [ ] Container table shows Compose project and service context where proven.
 - [ ] Standalone Containers remain visible.
-- [ ] Protected Dockpilot Agent Container remains visible with blocked destructive actions and reasons.
+- [ ] Protected DockLattice Agent Container remains visible with blocked destructive actions and reasons.
 - [ ] Each real Container row has an unlabeled final utility column with the
       same quiet `…` menu used by Services for state-aware Start / Stop /
       Restart / Remove; placeholder `No container` rows do not.
@@ -234,7 +234,7 @@ release-scope checks, and Docker Compose CLI option/model smoke check also pass.
 The opt-in `tests/ui/vm-acceptance.spec.mjs` suite runs against production
 Server and Agent images on an Ubuntu 24.04 VM with Docker Engine 29.1.3 (API
 1.52) and the Agent-bundled Docker Compose 5.5.0. It requires explicit
-`DOCKPILOT_VM_ACCEPTANCE=1`, HTTPS base URL, SSH host, and SSH key variables, so
+`DOCKLATTICE_VM_ACCEPTANCE=1`, HTTPS base URL, SSH host, and SSH key variables, so
 the destructive cases cannot run accidentally in the normal fixture suite.
 
 One serial desktop run completed with 11 passed in 1.9 minutes. It exercised:
@@ -271,7 +271,7 @@ metadata positioned before current capability states.
 
 `npm run test:ui:vm:visual` is a read-only Playwright visual gate for an already
 running live environment. Set `PLAYWRIGHT_TEST_BASE_URL` and optionally
-`DOCKPILOT_VM_EVIDENCE_DIRECTORY`; the command waits for the Agent and Docker
+`DOCKLATTICE_VM_EVIDENCE_DIRECTORY`; the command waits for the Agent and Docker
 capability, captures the five required viewports, rejects browser errors, and
 rejects document-level horizontal overflow.
 

@@ -1,4 +1,4 @@
-// Package app defines the product process boundary shared by the dockpilot
+// Package app defines the product process boundary shared by the docklattice
 // command and the concrete Server and Agent runtimes.
 package app
 
@@ -10,14 +10,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/east-true/dockpilot/internal/config"
+	"github.com/east-true/docklattice/internal/config"
 )
 
 const (
 	DefaultServerListenAddress      = "127.0.0.1:8080"
 	DefaultServerAgentListenAddress = "127.0.0.1:8443"
-	DefaultServerStateDir           = "/var/lib/dockpilot"
-	DefaultAgentStateDir            = "/var/lib/dockpilot"
+	DefaultServerStateDir           = "/var/lib/docklattice"
+	DefaultAgentStateDir            = "/var/lib/docklattice"
 	DefaultAgentServerAddress       = "127.0.0.1:8443"
 	DefaultAgentRegistrationURL     = "https://127.0.0.1:8080"
 )
@@ -171,7 +171,7 @@ func DefaultConfig(mode Mode) Config {
 		Agent: AgentConfig{
 			StateDir: DefaultAgentStateDir, ServerAddress: DefaultAgentServerAddress,
 			RegistrationURL: DefaultAgentRegistrationURL, ServerCAFile: filepath.Join(DefaultAgentStateDir, "server-ca.crt"),
-			DisplayName: "dockpilot-agent",
+			DisplayName: "docklattice-agent",
 		},
 	}
 }

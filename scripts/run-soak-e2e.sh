@@ -116,9 +116,9 @@ for image in "$server_image" "$agent_image" "$fixture_image"; do
     [ "$(docker image inspect --format '{{.Id}}' "$image")" = "$image" ] ||
         fail "preflight: image reference did not resolve to its exact requested ID: $image"
 done
-[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$server_image")" = "Dockpilot Server" ] ||
+[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$server_image")" = "DockLattice Server" ] ||
     fail "preflight: Server image is not the production Server target"
-[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$agent_image")" = "Dockpilot Agent" ] ||
+[ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.title"}}' "$agent_image")" = "DockLattice Agent" ] ||
     fail "preflight: Agent image is not the production Agent target"
 server_version=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$server_image")
 server_revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$server_image")
@@ -129,7 +129,7 @@ runtime_base=${TMPDIR:-/tmp}
 case "$runtime_base" in /*) ;; *) fail "preflight: TMPDIR must be absolute" ;; esac
 [ -d "$runtime_base" ] || fail "preflight: TMPDIR does not exist"
 
-prefix="dockpilot-soak-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+prefix="docklattice-soak-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 umask 077
 artifact_created=0
 runtime=
@@ -211,8 +211,8 @@ cleanup() {
 trap cleanup EXIT
 trap 'failure_reason="soak interrupted by signal"; exit 130' HUP INT TERM
 
-runtime=$(mktemp -d "$runtime_base/dockpilot-soak.XXXXXXXX")
-case "$runtime" in "$runtime_base"/dockpilot-soak.*) ;; *) fail "mktemp returned an unexpected runtime root" ;; esac
+runtime=$(mktemp -d "$runtime_base/docklattice-soak.XXXXXXXX")
+case "$runtime" in "$runtime_base"/docklattice-soak.*) ;; *) fail "mktemp returned an unexpected runtime root" ;; esac
 chmod 0700 "$runtime"
 mkdir "$evidence_dir"
 chmod 0700 "$evidence_dir"
@@ -271,7 +271,7 @@ docker network create --subnet "$(harness_subnet)" "$network" >/dev/null
 start_server() {
     docker run --pull never -d --name "$server" --network "$network" --network-alias server \
         --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-        -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/dockpilot:rw" "$server_image" \
+        -p 127.0.0.1::8080 -v "$runtime/server:/var/lib/docklattice:rw" "$server_image" \
         server --listen 0.0.0.0:8080 --agent-listen 0.0.0.0:8443 --allow-public-bind
 }
 
@@ -295,8 +295,8 @@ wait_server_ready() {
 
 issue_token() {
     docker run --pull never --rm --user 65532:65532 \
-        -v "$runtime/server:/var/lib/dockpilot:rw" "$server_image" \
-        server issue-token --state-dir /var/lib/dockpilot --ttl 60m \
+        -v "$runtime/server:/var/lib/docklattice:rw" "$server_image" \
+        server issue-token --state-dir /var/lib/docklattice --ttl 60m \
         >"$runtime/bootstrap/join-token" 2>"$evidence_dir/issue-token.stderr"
     [ "$(wc -c <"$runtime/bootstrap/join-token" | awk '{ print $1 }')" -gt 1 ] || fail "Join Token CLI produced no token"
     docker run --pull never --rm --user 0:0 --entrypoint /bin/sh \
@@ -308,19 +308,19 @@ issue_token() {
 start_agent() {
     with_token=$1
     if [ "$with_token" = true ]; then
-        token_args="--join-token-file /var/lib/dockpilot/join-token"
+        token_args="--join-token-file /var/lib/docklattice/join-token"
     else
         token_args=
     fi
     # shellcheck disable=SC2086
     docker run --pull never -d --name "$agent" --network "$network" \
         --log-driver local --log-opt max-size=1m --log-opt max-file=1 --log-opt compress=false \
-        --group-add "$socket_gid" --label io.dockpilot.role=agent \
+        --group-add "$socket_gid" --label io.docklattice.role=agent \
         -v /var/run/docker.sock:/var/run/docker.sock:rw \
-        -v "$runtime/agent:/var/lib/dockpilot:rw" \
+        -v "$runtime/agent:/var/lib/docklattice:rw" \
         -v "$runtime/projects:$runtime/projects:rw" "$agent_image" agent \
         --server server:8443 --registration-url https://server:8080 \
-        --server-ca /var/lib/dockpilot/server-ca.crt $token_args \
+        --server-ca /var/lib/docklattice/server-ca.crt $token_args \
         --display-name soak-agent --self-container-name "$agent" \
         --project-root "$runtime/projects"
 }
@@ -507,7 +507,7 @@ cgroup_event() {
 
 # busybox du has no -b, so the Agent state is measured in KiB.
 agent_state_kib() {
-    { docker exec "$agent" sh -c 'du -sk /var/lib/dockpilot 2>/dev/null | cut -f1' 2>/dev/null || true; } | first_number
+    { docker exec "$agent" sh -c 'du -sk /var/lib/docklattice 2>/dev/null | cut -f1' 2>/dev/null || true; } | first_number
 }
 
 sample() {
@@ -848,7 +848,7 @@ jq -e '((.error // "") | test("PROJECT_BUSY")) | not' "$evidence_dir/invariants.
     fail "invariant: the project lock is still held by nothing"
 
 state_dir=$(docker exec "$agent" /bin/sh -c '
-    for candidate in /var/lib/dockpilot /constrained/state; do
+    for candidate in /var/lib/docklattice /constrained/state; do
         if [ -e "$candidate/identity/agent-state.json" ] || [ -e "$candidate/agent-state.json" ]; then
             printf %s "$candidate"
             exit 0
@@ -859,7 +859,7 @@ docker exec "$agent" /bin/sh -c "ls -A '$state_dir/restore-journal' 2>/dev/null"
     >"$evidence_dir/invariants.restore-journal.txt" 2>&1 || true
 [ ! -s "$evidence_dir/invariants.restore-journal.txt" ] ||
     fail "invariant: a restore journal survived a settled soak"
-ls -A "$runtime/projects" | grep -e '^\.dockpilot-' >"$evidence_dir/invariants.staging.txt" 2>/dev/null || true
+ls -A "$runtime/projects" | grep -e '^\.docklattice-' >"$evidence_dir/invariants.staging.txt" 2>/dev/null || true
 [ ! -s "$evidence_dir/invariants.staging.txt" ] ||
     fail "invariant: staging files were orphaned in the project directory"
 
@@ -878,14 +878,14 @@ jq -e '
    .coverage.ack.seq < .coverage.delivery_next.seq)' "$evidence_dir/invariants.audit.json" >/dev/null ||
     fail "invariant: the acknowledged cursor passed the Server delivery cursor"
 
-# Docker's view and Dockpilot's view of the fixture must still agree.
+# Docker's view and DockLattice's view of the fixture must still agree.
 docker ps --all --filter "label=com.docker.compose.project=$compose_project" --format '{{.ID}}' \
     >"$evidence_dir/invariants.docker-fixture.txt"
 api GET "$base_url/api/v1/projects/$project_uid/files?path=compose.yaml" '' "$evidence_dir/invariants.file.json"
 on_disk=$(sha256sum "$runtime/projects/compose.yaml" | awk '{ print $1 }')
 reported=$(jq -r '.sha256' "$evidence_dir/invariants.file.json")
 [ "$on_disk" = "$reported" ] ||
-    fail "invariant: Dockpilot reported compose.yaml as $reported, disk says $on_disk"
+    fail "invariant: DockLattice reported compose.yaml as $reported, disk says $on_disk"
 
 # The project secret must not have reached Audit, an answer, or a container log.
 ! grep -rF -- "$secret_marker" "$evidence_dir" --exclude=STATUS --exclude=SHA256SUMS >/dev/null 2>&1 ||

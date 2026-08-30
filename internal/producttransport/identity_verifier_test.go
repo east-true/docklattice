@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/identity"
+	"github.com/east-true/docklattice/internal/identity"
 )
 
 func TestIdentityVerifierChecksDurableRevocation(t *testing.T) {

@@ -1,11 +1,11 @@
 # Internal-network trial installation
 
-This runbook installs one Dockpilot Server and one or more remote Agents on a
+This runbook installs one DockLattice Server and one or more remote Agents on a
 trusted internal network when the target hosts cannot pull Images from an
 external registry. It uses `docker save`, `scp`, and `docker load` to move an
 already-present Agent Image from the Server host.
 
-This is a trial-installation path, not a production exposure pattern. Dockpilot
+This is a trial-installation path, not a production exposure pattern. DockLattice
 v1 has no browser authentication, user accounts, or RBAC. Every person who can
 reach the published Server UI can control every connected Docker host. Restrict
 the UI port to an explicit trusted source range with the host or network
@@ -22,14 +22,14 @@ The examples below use these values:
 | Server internal address         | `10.20.30.40`                   |
 | Server UI and registration port | `18081`                         |
 | Agent transport port            | `18443`                         |
-| Server Container                | `dockpilot-server-local`        |
-| Server state Volume             | `dockpilot-server-local-state`  |
-| Server Image                    | `dockpilot/server:soak-7249c29` |
-| Agent Image                     | `dockpilot/agent:soak-7249c29`  |
+| Server Container                | `docklattice-server-local`        |
+| Server state Volume             | `docklattice-server-local-state`  |
+| Server Image                    | `docklattice/server:validation-local` |
+| Agent Image                     | `docklattice/agent:validation-local`  |
 | Agent discovery root            | `/srv/stacks`                   |
 
 Replace `10.20.30.40`, the SSH destination, and the discovery root with values
-for the target environment. The `soak-7249c29` Images are local validation
+for the target environment. The `validation-local` Images are local validation
 artifacts, not signed release Images. Server and Agent must use matching
 revisions. Use the exact digest from a verified release when one is available.
 
@@ -45,8 +45,8 @@ already present and that the selected host ports are unused:
 ```sh
 docker version
 openssl version
-docker image inspect dockpilot/server:soak-7249c29 >/dev/null
-docker image inspect dockpilot/agent:soak-7249c29 >/dev/null
+docker image inspect docklattice/server:validation-local >/dev/null
+docker image inspect docklattice/agent:validation-local >/dev/null
 docker ps --format '{{.Names}} {{.Ports}}'
 ```
 
@@ -58,7 +58,7 @@ multi-architecture release Images instead when an Agent host is `arm64`.
 Run this entire block in one shell. Change `server_ip` before running it. The
 temporary private key is deleted after it has been copied into the named
 Volume; the public certificate is retained at
-`/tmp/dockpilot-server-local-ca.crt` for Agent installation.
+`/tmp/docklattice-server-local-ca.crt` for Agent installation.
 
 ```sh
 set -eu
@@ -66,11 +66,11 @@ set -eu
 server_ip=10.20.30.40
 server_ui_port=18081
 server_agent_port=18443
-server_image=dockpilot/server:soak-7249c29
-server_name=dockpilot-server-local
-server_volume=dockpilot-server-local-state
+server_image=docklattice/server:validation-local
+server_name=docklattice-server-local
+server_volume=docklattice-server-local-state
 
-tls_stage=$(mktemp -d /tmp/dockpilot-server-tls.XXXXXX)
+tls_stage=$(mktemp -d /tmp/docklattice-server-tls.XXXXXX)
 trap 'rm -rf "$tls_stage"' EXIT HUP INT TERM
 
 openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 365 \
@@ -83,33 +83,33 @@ chmod 0600 "$tls_stage/server.key" "$tls_stage/server.crt"
 docker volume create "$server_volume"
 
 docker run --pull never --rm --user 0 --entrypoint /bin/sh \
-  -v "$server_volume:/var/lib/dockpilot" \
+  -v "$server_volume:/var/lib/docklattice" \
   -v "$tls_stage:/tls-source:ro" \
   "$server_image" -c \
-  'mkdir -p /var/lib/dockpilot/tls
-   cp /tls-source/server.crt /var/lib/dockpilot/tls/server.crt
-   cp /tls-source/server.key /var/lib/dockpilot/tls/server.key
-   chown -R 65532:65532 /var/lib/dockpilot
-   chmod 0700 /var/lib/dockpilot /var/lib/dockpilot/tls
-   chmod 0600 /var/lib/dockpilot/tls/server.crt /var/lib/dockpilot/tls/server.key'
+  'mkdir -p /var/lib/docklattice/tls
+   cp /tls-source/server.crt /var/lib/docklattice/tls/server.crt
+   cp /tls-source/server.key /var/lib/docklattice/tls/server.key
+   chown -R 65532:65532 /var/lib/docklattice
+   chmod 0700 /var/lib/docklattice /var/lib/docklattice/tls
+   chmod 0600 /var/lib/docklattice/tls/server.crt /var/lib/docklattice/tls/server.key'
 
 docker run --pull never -d \
   --name "$server_name" \
   --restart unless-stopped \
   -p "0.0.0.0:$server_ui_port:8080" \
   -p "0.0.0.0:$server_agent_port:8443" \
-  -v "$server_volume:/var/lib/dockpilot:rw" \
+  -v "$server_volume:/var/lib/docklattice:rw" \
   "$server_image"
 
 docker cp \
-  "$server_name:/var/lib/dockpilot/tls/server.crt" \
-  /tmp/dockpilot-server-local-ca.crt
+  "$server_name:/var/lib/docklattice/tls/server.crt" \
+  /tmp/docklattice-server-local-ca.crt
 
 server_ready=0
 attempt=0
 while [ "$attempt" -lt 30 ]; do
   if curl --noproxy '*' --fail --silent --show-error \
-    --cacert /tmp/dockpilot-server-local-ca.crt \
+    --cacert /tmp/docklattice-server-local-ca.crt \
     "https://$server_ip:$server_ui_port/api/v1/dashboard"; then
     server_ready=1
     break
@@ -127,8 +127,8 @@ A new Server returns a dashboard document with no hosts. Confirm the Container
 and publication addresses:
 
 ```sh
-docker ps --filter name=dockpilot-server-local
-docker logs --tail 100 dockpilot-server-local
+docker ps --filter name=docklattice-server-local
+docker logs --tail 100 docklattice-server-local
 ```
 
 The log warning about an explicitly enabled public bind is expected for this
@@ -161,36 +161,36 @@ Agent Image:
 agent_ssh='operator@10.20.30.51'
 
 docker save \
-  --output /tmp/dockpilot-agent-soak-7249c29.tar \
-  dockpilot/agent:soak-7249c29
+  --output /tmp/docklattice-agent-validation-local.tar \
+  docklattice/agent:validation-local
 
-sha256sum /tmp/dockpilot-agent-soak-7249c29.tar \
-  > /tmp/dockpilot-agent-soak-7249c29.tar.sha256
+sha256sum /tmp/docklattice-agent-validation-local.tar \
+  > /tmp/docklattice-agent-validation-local.tar.sha256
 
 scp \
-  /tmp/dockpilot-agent-soak-7249c29.tar \
-  /tmp/dockpilot-agent-soak-7249c29.tar.sha256 \
-  /tmp/dockpilot-server-local-ca.crt \
+  /tmp/docklattice-agent-validation-local.tar \
+  /tmp/docklattice-agent-validation-local.tar.sha256 \
+  /tmp/docklattice-server-local-ca.crt \
   "$agent_ssh:/tmp/"
 ```
 
 On the Agent host, verify and load the Image:
 
 ```sh
-sha256sum --check /tmp/dockpilot-agent-soak-7249c29.tar.sha256
-docker load --input /tmp/dockpilot-agent-soak-7249c29.tar
+sha256sum --check /tmp/docklattice-agent-validation-local.tar.sha256
+docker load --input /tmp/docklattice-agent-validation-local.tar
 
-docker image inspect dockpilot/agent:soak-7249c29 \
+docker image inspect docklattice/agent:validation-local \
   --format 'arch={{.Architecture}} version={{index .Config.Labels "org.opencontainers.image.version"}} revision={{index .Config.Labels "org.opencontainers.image.revision"}}'
 ```
 
 Install the Server certificate for the Agent's unprivileged UID:
 
 ```sh
-sudo install -d -m 0700 -o 65532 -g 65532 /etc/dockpilot
+sudo install -d -m 0700 -o 65532 -g 65532 /etc/docklattice
 sudo install -m 0400 -o 65532 -g 65532 \
-  /tmp/dockpilot-server-local-ca.crt \
-  /etc/dockpilot/server-ca.crt
+  /tmp/docklattice-server-local-ca.crt \
+  /etc/docklattice/server-ca.crt
 ```
 
 Validate both Server ports from the Agent host. `sudo` is intentional: the
@@ -198,12 +198,12 @@ installed certificate is readable only by UID 65532 and root.
 
 ```sh
 sudo curl --noproxy '*' --fail \
-  --cacert /etc/dockpilot/server-ca.crt \
+  --cacert /etc/docklattice/server-ca.crt \
   https://10.20.30.40:18081/api/v1/dashboard
 
 sudo openssl s_client \
   -connect 10.20.30.40:18443 \
-  -CAfile /etc/dockpilot/server-ca.crt \
+  -CAfile /etc/docklattice/server-ca.crt \
   </dev/null
 ```
 
@@ -223,20 +223,20 @@ between shell sessions.
 set -eu
 
 agent_ssh='operator@10.20.30.51'
-join_token_file=$(mktemp /tmp/dockpilot-join-token.XXXXXX)
+join_token_file=$(mktemp /tmp/docklattice-join-token.XXXXXX)
 trap 'rm -f "$join_token_file"' EXIT HUP INT TERM
 chmod 0600 "$join_token_file"
 
 docker run --pull never --rm \
-  -v dockpilot-server-local-state:/var/lib/dockpilot:rw \
-  dockpilot/server:soak-7249c29 \
+  -v docklattice-server-local-state:/var/lib/docklattice:rw \
+  docklattice/server:validation-local \
   server issue-token \
-  --state-dir /var/lib/dockpilot \
+  --state-dir /var/lib/docklattice \
   --ttl 15m \
   > "$join_token_file"
 
 test -s "$join_token_file"
-scp "$join_token_file" "$agent_ssh:/tmp/dockpilot-join-token"
+scp "$join_token_file" "$agent_ssh:/tmp/docklattice-join-token"
 
 rm -f "$join_token_file"
 trap - EXIT HUP INT TERM
@@ -248,9 +248,9 @@ On the Agent host, install it for UID 65532 and remove the transferred copy:
 
 ```sh
 sudo install -m 0600 -o 65532 -g 65532 \
-  /tmp/dockpilot-join-token \
-  /etc/dockpilot/join-token
-rm -f /tmp/dockpilot-join-token
+  /tmp/docklattice-join-token \
+  /etc/docklattice/join-token
+rm -f /tmp/docklattice-join-token
 ```
 
 ## 6. Bootstrap the Agent
@@ -265,7 +265,7 @@ Run on the Agent host:
 ```sh
 set -eu
 
-agent_image=dockpilot/agent:soak-7249c29
+agent_image=docklattice/agent:validation-local
 project_root=/srv/stacks
 docker_socket_gid=$(stat -c '%g' /var/run/docker.sock)
 agent_display_name=$(hostname -s)
@@ -273,25 +273,25 @@ agent_display_name=$(hostname -s)
 sudo mkdir -p "$project_root"
 
 docker run --pull never -d \
-  --name dockpilot-agent \
+  --name docklattice-agent \
   --user 65532:65532 \
   --group-add "$docker_socket_gid" \
-  --label io.dockpilot.role=agent \
+  --label io.docklattice.role=agent \
   -v /var/run/docker.sock:/var/run/docker.sock:rw \
-  -v dockpilot-agent-state:/var/lib/dockpilot \
-  -v /etc/dockpilot/server-ca.crt:/var/lib/dockpilot/server-ca.crt:ro \
-  -v /etc/dockpilot/join-token:/run/secrets/dockpilot-join-token:ro \
+  -v docklattice-agent-state:/var/lib/docklattice \
+  -v /etc/docklattice/server-ca.crt:/var/lib/docklattice/server-ca.crt:ro \
+  -v /etc/docklattice/join-token:/run/secrets/docklattice-join-token:ro \
   -v "$project_root:$project_root:ro" \
   "$agent_image" agent \
   --server 10.20.30.40:18443 \
   --registration-url https://10.20.30.40:18081 \
-  --server-ca /var/lib/dockpilot/server-ca.crt \
-  --join-token-file /run/secrets/dockpilot-join-token \
+  --server-ca /var/lib/docklattice/server-ca.crt \
+  --join-token-file /run/secrets/docklattice-join-token \
   --display-name "$agent_display_name" \
-  --self-container-name dockpilot-agent \
+  --self-container-name docklattice-agent \
   --project-root "$project_root"
 
-docker logs --tail 100 dockpilot-agent
+docker logs --tail 100 docklattice-agent
 ```
 
 Open `https://10.20.30.40:18081` and wait until the new host reports `Active`.
@@ -301,13 +301,13 @@ and an Active host are the required boundary.
 ## 7. Remove the consumed token
 
 After the UI reports the Agent as Active, replace the bootstrap Container with
-its steady-state form. Preserve the `dockpilot-agent-state` Volume: it contains
+its steady-state form. Preserve the `docklattice-agent-state` Volume: it contains
 the stable Agent ID and runtime credential.
 
 ```sh
-docker stop dockpilot-agent
-docker rm dockpilot-agent
-sudo rm -f /etc/dockpilot/join-token
+docker stop docklattice-agent
+docker rm docklattice-agent
+sudo rm -f /etc/docklattice/join-token
 ```
 
 Recreate the Agent without the token mount or `--join-token-file`:
@@ -315,35 +315,35 @@ Recreate the Agent without the token mount or `--join-token-file`:
 ```sh
 set -eu
 
-agent_image=dockpilot/agent:soak-7249c29
+agent_image=docklattice/agent:validation-local
 project_root=/srv/stacks
 docker_socket_gid=$(stat -c '%g' /var/run/docker.sock)
 agent_display_name=$(hostname -s)
 
 docker run --pull never -d \
-  --name dockpilot-agent \
+  --name docklattice-agent \
   --restart unless-stopped \
   --user 65532:65532 \
   --group-add "$docker_socket_gid" \
-  --label io.dockpilot.role=agent \
+  --label io.docklattice.role=agent \
   -v /var/run/docker.sock:/var/run/docker.sock:rw \
-  -v dockpilot-agent-state:/var/lib/dockpilot \
-  -v /etc/dockpilot/server-ca.crt:/var/lib/dockpilot/server-ca.crt:ro \
+  -v docklattice-agent-state:/var/lib/docklattice \
+  -v /etc/docklattice/server-ca.crt:/var/lib/docklattice/server-ca.crt:ro \
   -v "$project_root:$project_root:ro" \
   "$agent_image" agent \
   --server 10.20.30.40:18443 \
   --registration-url https://10.20.30.40:18081 \
-  --server-ca /var/lib/dockpilot/server-ca.crt \
+  --server-ca /var/lib/docklattice/server-ca.crt \
   --display-name "$agent_display_name" \
-  --self-container-name dockpilot-agent \
+  --self-container-name docklattice-agent \
   --project-root "$project_root"
 
-docker restart dockpilot-agent
-docker logs --tail 100 dockpilot-agent
+docker restart docklattice-agent
+docker logs --tail 100 docklattice-agent
 ```
 
 Confirm that the same host identity returns to `Active`. Do not delete
-`dockpilot-agent-state`; losing it requires enrollment again. For an existing
+`docklattice-agent-state`; losing it requires enrollment again. For an existing
 Agent whose credential expired while it was offline, follow the identity
 [recovery procedure](recovery.md) and issue a token bound with
 `--rejoin-agent-id` instead of creating a duplicate host.
@@ -357,9 +357,9 @@ so the login user cannot read it. Keep that permission and run the validation
 with `sudo`:
 
 ```sh
-sudo stat -c '%u:%g %a %n' /etc/dockpilot/server-ca.crt
+sudo stat -c '%u:%g %a %n' /etc/docklattice/server-ca.crt
 sudo curl --noproxy '*' --fail \
-  --cacert /etc/dockpilot/server-ca.crt \
+  --cacert /etc/docklattice/server-ca.crt \
   https://10.20.30.40:18081/api/v1/dashboard
 ```
 
@@ -374,11 +374,11 @@ token block in section 5, or use an explicit protected path:
 ```sh
 umask 077
 docker run --pull never --rm \
-  -v dockpilot-server-local-state:/var/lib/dockpilot:rw \
-  dockpilot/server:soak-7249c29 \
-  server issue-token --state-dir /var/lib/dockpilot --ttl 15m \
-  > /tmp/dockpilot-join-token
-test -s /tmp/dockpilot-join-token
+  -v docklattice-server-local-state:/var/lib/docklattice:rw \
+  docklattice/server:validation-local \
+  server issue-token --state-dir /var/lib/docklattice --ttl 15m \
+  > /tmp/docklattice-join-token
+test -s /tmp/docklattice-join-token
 ```
 
 ### Agent Container exits or remains offline
@@ -386,8 +386,8 @@ test -s /tmp/dockpilot-join-token
 Inspect its bounded structured diagnostics:
 
 ```sh
-docker ps -a --filter name=dockpilot-agent
-docker logs --tail 200 dockpilot-agent
+docker ps -a --filter name=docklattice-agent
+docker logs --tail 200 docklattice-agent
 ```
 
 Typical causes are an expired token, an unreadable CA or token file, blocked
@@ -404,12 +404,12 @@ artifacts from the Server host:
 
 ```sh
 rm -f \
-  /tmp/dockpilot-agent-soak-7249c29.tar \
-  /tmp/dockpilot-agent-soak-7249c29.tar.sha256 \
-  /tmp/dockpilot-server-local-ca.crt
+  /tmp/docklattice-agent-validation-local.tar \
+  /tmp/docklattice-agent-validation-local.tar.sha256 \
+  /tmp/docklattice-server-local-ca.crt
 ```
 
 This command does not remove the loaded Image, Agent state, or installed CA.
 On the Agent host, the copies under `/tmp` may be removed as well, but keep
-`/etc/dockpilot/server-ca.crt`. Do not remove `dockpilot-agent-state` as part of
+`/etc/docklattice/server-ca.crt`. Do not remove `docklattice-agent-state` as part of
 routine cleanup.

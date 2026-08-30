@@ -1,4 +1,4 @@
-# Dockpilot Web UI — Final Screen Contract
+# DockLattice Web UI — Final Screen Contract
 
 **Status:** Design-ready; implementation gaps may remain.  
 **Normative scope:** UI structure, terminology, state presentation, interaction rules.  
@@ -7,7 +7,7 @@
 ## 1. Information architecture
 
 ```text
-Dockpilot
+DockLattice
 ├─ Home
 ├─ Global Search
 ├─ Global Operation Center
@@ -76,7 +76,7 @@ Host rows may optionally disclose their Compose projects. Keep project disclosur
 
 ### Needs attention
 
-Only deterministic Dockpilot-known exceptions belong here, for example:
+Only deterministic DockLattice-known exceptions belong here, for example:
 
 - Docker Engine unavailable
 - Docker Compose unavailable
@@ -161,12 +161,12 @@ Rules:
 
 Role:
 
-> What is this Docker Engine, what can Dockpilot currently do on it, and what requires attention?
+> What is this Docker Engine, what can DockLattice currently do on it, and what requires attention?
 
 Sections:
 
 Use three separate outer panels in this order: `Host`, `Docker Engine`, and
-`Compose projects`. Do not mix Agent/Dockpilot management facts with Docker
+`Compose projects`. Do not mix Agent/DockLattice management facts with Docker
 Engine facts or Compose project state.
 
 ### Host
@@ -309,11 +309,11 @@ Active profiles
 Compose file graph complete/incomplete
 ```
 
-Then show a separately spaced `Dockpilot management` subsection:
+Then show a separately spaced `DockLattice management` subsection:
 
 ```text
 Managed/unmanaged
-Dockpilot discovery record and freshness
+DockLattice discovery record and freshness
 Compose operation availability
 File access
 Compose config state
@@ -407,7 +407,7 @@ External networks and volumes will not be removed.
 
 ### Compose build policy — v1
 
-Dockpilot v1 never builds Images. It has no Build action and does not expose
+DockLattice v1 never builds Images. It has no Build action and does not expose
 Dockerfile/build-context editing, build arguments, or BuildKit controls.
 `build` is read-only Compose metadata, not a mutation feature.
 
@@ -427,7 +427,7 @@ Classify every Service from Docker Compose's effective model:
 | `image` + `build` + `pull_policy: build` | Unavailable                           | Unavailable                 | Blocks the whole Project Up |
 
 `pull_policy: build` is an explicit build requirement and must not be silently
-overridden. More generally, Dockpilot executes Compose only when the selected
+overridden. More generally, DockLattice executes Compose only when the selected
 effective Service set can be satisfied from declared Images without invoking a
 build.
 
@@ -452,8 +452,8 @@ Example unavailable reason:
 
 ```text
 This Compose project contains 1 build-only Service: worker.
-Dockpilot v1 does not build Images. Provide an Image for this Service before
-running the whole project with Dockpilot.
+DockLattice v1 does not build Images. Provide an Image for this Service before
+running the whole project with DockLattice.
 ```
 
 ## 10. Compose project → Containers
@@ -516,7 +516,7 @@ Rules:
 - External modification must not be overwritten silently.
 - Saving does not apply Compose changes.
 - On save success, offer `Run Up to apply configuration changes` when appropriate.
-- Before mutation, Dockpilot may create its existing automatic managed-file snapshot according to the backup contract.
+- Before mutation, DockLattice may create its existing automatic managed-file snapshot according to the backup contract.
 
 ### `docker compose config`
 
@@ -527,7 +527,7 @@ Explicit reveal is required because resolved/interpolated output can contain sen
 Header:
 
 ```text
-Docker Engine logs · Not retained by Dockpilot Server
+Docker Engine logs · Not retained by DockLattice Server
 ```
 
 Controls:
@@ -551,11 +551,11 @@ layout may stack only as the viewport requires it.
 
 Rules:
 
-- Time range means querying logs still retained by Docker Engine, not Dockpilot historical storage.
+- Time range means querying logs still retained by Docker Engine, not DockLattice historical storage.
 - Follow and bounded range controls must not enter contradictory states.
 - Scrolling away pauses auto-follow; `Jump to latest` resumes.
 - `Clear view` clears browser display only.
-- Preserve and show dropped lines/bytes from Dockpilot relay.
+- Preserve and show dropped lines/bytes from DockLattice relay.
 - On reconnect, do not promise gap-free resume unless a separate continuity contract exists.
 - If Docker logging configuration cannot provide readable logs, show disabled/unavailable with reason.
 - Multi-Container merge order is observational, not causal/audit ordering.
@@ -564,14 +564,14 @@ Rules:
 
 Title copy:
 
-> Dockpilot-managed configuration backups
+> DockLattice-managed configuration backups
 
 Explain exactly what is included and not included.
 
 Typical Included:
 
 - approved Compose files
-- approved interpolation/environment files that Dockpilot manages
+- approved interpolation/environment files that DockLattice manages
 
 Typical Not included unless explicitly supported:
 
@@ -636,7 +636,7 @@ Priority columns at narrow width:
 
 Health/Image/Ports may move to the details panel progressively.
 
-Protected Dockpilot Agent Container remains visible, with destructive actions disabled and reasons shown.
+Protected DockLattice Agent Container remains visible, with destructive actions disabled and reasons shown.
 
 Container actions use the same final `…` menu and state/protection rules as the
 project Container list. They call Docker Container operations directly; they
@@ -780,7 +780,7 @@ Title/help:
 ```text
 Container stats
 Live · Container stats are collected only while this view is open.
-Not retained by Dockpilot.
+Not retained by DockLattice.
 ```
 
 Views:
@@ -913,7 +913,7 @@ Error copy should communicate:
 
 ### Compose build policy
 
-The v1 Compose build policy in §8 is approved. Dockpilot never builds, never
+The v1 Compose build policy in §8 is approved. DockLattice never builds, never
 falls back to build, and never silently skips build-required Services. The UI
 must use effective-model facts and exact unavailable reasons; it must not infer
 build capability from filenames, Container names, or CLI error text.

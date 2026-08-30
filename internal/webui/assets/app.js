@@ -202,12 +202,12 @@ function emptyRow(columns, message) {
   return `<tr><td class="empty-cell" colspan="${columns}">${text(message)}</td></tr>`;
 }
 
-const TABLE_WIDTH_STORAGE_PREFIX = "dockpilot.table-widths.v2:";
+const TABLE_WIDTH_STORAGE_PREFIX = "docklattice.table-widths.v2:";
 const TABLE_COLUMN_ABSOLUTE_MIN_WIDTH = 24;
 const TABLE_COLUMN_MIN_WIDTH = 72;
 const TABLE_COLUMN_MAX_WIDTH = 1200;
 const TABLE_COLUMN_KEYBOARD_STEP = 16;
-const INSPECTOR_WIDTH_STORAGE_KEY = "dockpilot.inspector-width.v1";
+const INSPECTOR_WIDTH_STORAGE_KEY = "docklattice.inspector-width.v1";
 const INSPECTOR_DEFAULT_WIDTH = 520;
 const INSPECTOR_MIN_WIDTH = 420;
 const INSPECTOR_MAX_VIEWPORT_RATIO = 0.7;
@@ -219,7 +219,7 @@ const INSPECTOR_KEYBOARD_STEP = 16;
 const OPERATION_POLL_INTERVAL = 1000;
 const OPERATION_POLL_MAX_INTERVAL = 10000;
 const OPERATION_POLL_MAX_DURATION = 10 * 60 * 1000;
-const AUTO_REFRESH_STORAGE_KEY = "dockpilot.auto-refresh-interval.v1";
+const AUTO_REFRESH_STORAGE_KEY = "docklattice.auto-refresh-interval.v1";
 const AUTO_REFRESH_INTERVALS = new Set([0, 15000, 30000, 60000, 300000]);
 const CAPABILITY_LABELS = {
   connection: "Agent connection",
@@ -468,7 +468,7 @@ function scheduleAutoRefresh() {
       scheduleAutoRefresh();
       return;
     }
-    void refreshDockpilot();
+    void refreshDockLattice();
   }, state.autoRefreshInterval);
 }
 
@@ -660,7 +660,7 @@ async function renderHome(signal) {
       .join(" ");
     return `<tr data-home-state="${states}"><td><a class="primary" href="#/hosts/${encodeURIComponent(host.id)}/summary">${text(host.display_name || host.id)}</a><div class="secondary mono">${text(host.id)}</div></td><td>${connectionAvailable(host) ? "Connected" : "Unavailable"}<div class="secondary">${text(host.capabilities?.connection?.reason || "")}</div></td><td>${host.capabilities?.docker?.enabled ? "Available" : `Unavailable · ${text(host.capabilities?.docker?.reason || "")}`}</td><td>${host.capabilities?.compose?.enabled ? "Available" : `Unavailable · ${text(host.capabilities?.compose?.reason || "")}`}</td><td>${host.capabilities?.discovery?.enabled && !host.project_scan?.truncated ? `Completed · ${text(formatTime(host.project_scan?.scanned_at))}` : `Incomplete · ${text(host.capabilities?.discovery?.reason || host.project_scan?.stop_reason || "")}`}</td></tr>`;
   });
-  view.innerHTML = `${pageHeader("Fleet", "Home", "Compare Docker hosts, inspect deterministic exceptions, and route to real host or Compose project context.")}<input id="home-search" class="search-field" type="search" placeholder="Search Docker hosts and Compose projects" aria-label="Search Docker hosts and Compose projects"><div class="compact-filters" aria-label="Docker host state filters"><button class="quiet-button compact-filter active" data-action="home-filter" data-filter="all">All hosts ${hosts.length}</button><button class="quiet-button compact-filter" data-action="home-filter" data-filter="docker">Docker Engine unavailable ${dockerUnavailable}</button><button class="quiet-button compact-filter" data-action="home-filter" data-filter="compose">Docker Compose unavailable ${composeUnavailable}</button><button class="quiet-button compact-filter" data-action="home-filter" data-filter="discovery">Discovery incomplete ${discoveryIncomplete}</button></div><section class="panel"><div class="panel-header"><div><h2>Needs attention</h2><p>Deterministic Dockpilot-known exceptions only.</p></div></div><ul class="attention-list">${attention.map((item) => `<li class="attention-item"><a class="primary attention-target" href="${item.project ? `#/projects/${encodeURIComponent(item.project.uid)}/summary` : `#/hosts/${encodeURIComponent(item.host.id)}/summary`}">${text(item.project?.name || item.host?.display_name || item.host?.id)}</a><span class="attention-reason" title="${text(item.copy)}">${text(item.copy)}</span></li>`).join("") || `<li class="muted">No deterministic exceptions reported.</li>`}</ul></section><section class="panel flush"><div class="panel-header inset"><div><h2>Docker hosts</h2><p>No registered host disappears when a live probe fails.</p></div></div>${table(["Docker host", "Agent", "Docker Engine", "Docker Compose", "Discovery"], rows, "No Docker hosts registered")}</section>`;
+  view.innerHTML = `${pageHeader("Fleet", "Home", "Compare Docker hosts, inspect deterministic exceptions, and route to real host or Compose project context.")}<input id="home-search" class="search-field" type="search" placeholder="Search Docker hosts and Compose projects" aria-label="Search Docker hosts and Compose projects"><div class="compact-filters" aria-label="Docker host state filters"><button class="quiet-button compact-filter active" data-action="home-filter" data-filter="all">All hosts ${hosts.length}</button><button class="quiet-button compact-filter" data-action="home-filter" data-filter="docker">Docker Engine unavailable ${dockerUnavailable}</button><button class="quiet-button compact-filter" data-action="home-filter" data-filter="compose">Docker Compose unavailable ${composeUnavailable}</button><button class="quiet-button compact-filter" data-action="home-filter" data-filter="discovery">Discovery incomplete ${discoveryIncomplete}</button></div><section class="panel"><div class="panel-header"><div><h2>Needs attention</h2><p>Deterministic DockLattice-known exceptions only.</p></div></div><ul class="attention-list">${attention.map((item) => `<li class="attention-item"><a class="primary attention-target" href="${item.project ? `#/projects/${encodeURIComponent(item.project.uid)}/summary` : `#/hosts/${encodeURIComponent(item.host.id)}/summary`}">${text(item.project?.name || item.host?.display_name || item.host?.id)}</a><span class="attention-reason" title="${text(item.copy)}">${text(item.copy)}</span></li>`).join("") || `<li class="muted">No deterministic exceptions reported.</li>`}</ul></section><section class="panel flush"><div class="panel-header inset"><div><h2>Docker hosts</h2><p>No registered host disappears when a live probe fails.</p></div></div>${table(["Docker host", "Agent", "Docker Engine", "Docker Compose", "Discovery"], rows, "No Docker hosts registered")}</section>`;
   $("#home-search").addEventListener("input", (event) => {
     const value = event.target.value.trim();
     if (value) location.hash = `#/search?q=${encodeURIComponent(value)}`;
@@ -670,7 +670,7 @@ async function renderHome(signal) {
 function renderSearch() {
   breadcrumbs([{ label: "Home", href: "#/home" }, { label: "Search" }]);
   const route = parsedRoute();
-  view.innerHTML = `${pageHeader("Dockpilot index", "Search", "Immediate search covers registered Docker hosts and discovered Compose projects. It does not claim a global Container index.")}<input id="global-search" class="search-field" type="search" value="${text(route.query)}" placeholder="Host name, Agent ID, project, UID, or working directory" autofocus><div id="search-results"></div>`;
+  view.innerHTML = `${pageHeader("DockLattice index", "Search", "Immediate search covers registered Docker hosts and discovered Compose projects. It does not claim a global Container index.")}<input id="global-search" class="search-field" type="search" value="${text(route.query)}" placeholder="Host name, Agent ID, project, UID, or working directory" autofocus><div id="search-results"></div>`;
   const input = $("#global-search");
   const update = () => {
     const query = input.value.trim().toLowerCase();
@@ -885,7 +885,7 @@ async function renderHost(route, signal) {
         <div class="panel-header">
           <div>
             <h2>Host</h2>
-            <p>Current Agent session, discovery, and Dockpilot capability state.</p>
+            <p>Current Agent session, discovery, and DockLattice capability state.</p>
           </div>
         </div>
         ${managementFacts}
@@ -927,7 +927,7 @@ async function renderHost(route, signal) {
           </a>
         </div>
         ${table(
-          ["Project", "Dockpilot condition", "Config drift"],
+          ["Project", "DockLattice condition", "Config drift"],
           exceptions.map(
             (project) =>
               `<tr><td><a class="primary" href="#/projects/${encodeURIComponent(project.uid)}/summary">${text(project.name)}</a><div class="secondary mono">${text(project.working_dir)}</div></td><td>${projectCondition(project)}</td><td>${text(composeConfigState(project.drift))}</td></tr>`,
@@ -1204,8 +1204,8 @@ function loadSummaryWorkloadSnapshot(host, engine, routeSignal) {
     .finally(() => window.clearTimeout(timeout));
 }
 
-// This is a Dockpilot condition, not the runtime status printed by
-// `docker compose ls`. It summarizes whether Dockpilot can safely manage the
+// This is a DockLattice condition, not the runtime status printed by
+// `docker compose ls`. It summarizes whether DockLattice can safely manage the
 // discovered project and gives exceptional conditions precedence.
 function projectCondition(project) {
   if (project.restore_recovery_required)
@@ -1228,7 +1228,7 @@ function composeConfigState(value) {
 }
 
 // A Compose Service is a model entry, not a Docker runtime object with its own
-// state. This value is a Dockpilot summary of the Service's Container states.
+// state. This value is a DockLattice summary of the Service's Container states.
 function serviceRuntimeSummary(runtimeService) {
   const states = [
     ...new Set(
@@ -1433,7 +1433,7 @@ function renderProjectServiceAttention(project, runtime) {
         tone: "bad",
         evidence:
           service.unavailable_reason ||
-          "Dockpilot v1 cannot satisfy this Service without an Image build",
+          "DockLattice v1 cannot satisfy this Service without an Image build",
       });
     }
     if (runtime && service.active !== false && containers.length === 0) {
@@ -1566,7 +1566,7 @@ async function renderProject(route, signal) {
       projectAction("Restart", "compose.restart"),
     ].join("");
     const actions = `
-      <span title="Dockpilot condition">${projectCondition(project)}</span>
+      <span title="DockLattice condition">${projectCondition(project)}</span>
       <span class="project-action-group" role="group" aria-label="Apply or remove Compose project">
         ${projectLifecycleActions}
       </span>
@@ -1641,7 +1641,7 @@ async function renderProject(route, signal) {
     });
     const managementFacts = definitionList({
       Management: project.managed ? "Managed" : "Unmanaged",
-      "Dockpilot discovery": projectRecord,
+      "DockLattice discovery": projectRecord,
       "Compose operations": composeOperations,
       "File access": fileAccess,
       "Config drift": composeConfigState(project.drift),
@@ -1671,7 +1671,7 @@ async function renderProject(route, signal) {
         </div>
         ${projectOverview}
         <section class="project-management-section" aria-labelledby="project-management-heading">
-          <h3 id="project-management-heading">Dockpilot management</h3>
+          <h3 id="project-management-heading">DockLattice management</h3>
           ${managementFacts}
         </section>
       </section>
@@ -1889,7 +1889,7 @@ async function saveFile(project) {
   if (
     !(await confirmAction(
       `Save ${loaded.path}?`,
-      "Dockpilot creates a pre-write backup and applies optimistic hash protection.",
+      "DockLattice creates a pre-write backup and applies optimistic hash protection.",
       "Save",
     ))
   )
@@ -2123,7 +2123,7 @@ async function startProjectLogs(project) {
   renderLoadedLogs(output);
   output.dataset.autoFollow = "true";
   status.textContent =
-    "Streaming Docker Engine-retained logs; Dockpilot does not retain them.";
+    "Streaming Docker Engine-retained logs; DockLattice does not retain them.";
   stop.disabled = false;
   try {
     await streamSSE(
@@ -2212,7 +2212,7 @@ async function renderOperations(signal, inspectID = "") {
   breadcrumbs([{ label: "Home", href: "#/home" }, { label: "Operations" }]);
   const page = await jsonRequest("/api/v1/operations?limit=200", { signal });
   state.operationsIndex = page.operations || [];
-  view.innerHTML = `${pageHeader("Dockpilot control", "Operations", "Bounded Server index with request context and Agent-authoritative execution facts.")}<section class="panel flush">${operationTable(state.operationsIndex)}</section>`;
+  view.innerHTML = `${pageHeader("DockLattice control", "Operations", "Bounded Server index with request context and Agent-authoritative execution facts.")}<section class="panel flush">${operationTable(state.operationsIndex)}</section>`;
   if (inspectID) {
     state.inspectorRoute = true;
     inspectOperation(inspectID);
@@ -2489,7 +2489,7 @@ function operationToastContext(operation) {
     operation.project_uid ||
     host?.display_name ||
     operation.agent_id ||
-    "Dockpilot"
+    "DockLattice"
   );
 }
 
@@ -2820,7 +2820,7 @@ async function startContainerOperation(button) {
     kind === "container.remove" &&
     !(await confirmAction(
       `Remove ${name}?`,
-      "The stopped Container and its writable layer will be removed. Dockpilot does not force-stop it and does not remove attached Volumes.",
+      "The stopped Container and its writable layer will be removed. DockLattice does not force-stop it and does not remove attached Volumes.",
       "Remove",
     ))
   ) {
@@ -2867,7 +2867,7 @@ async function startProjectOperation(button) {
     kind === "compose.pull" &&
     !(await confirmAction(
       `Pull declared Images for ${actionContext}?`,
-      "Dockpilot will download Images declared by eligible Services. It will not start Containers, build Images, or fall back to a build.",
+      "DockLattice will download Images declared by eligible Services. It will not start Containers, build Images, or fall back to a build.",
       "Pull",
     ))
   ) {
@@ -2878,7 +2878,7 @@ async function startProjectOperation(button) {
     kind === "compose.up" &&
     !(await confirmAction(
       `Apply ${actionContext}?`,
-      "Dockpilot may create, recreate, and start Containers from declared Images. It always uses --no-build and never builds Images.",
+      "DockLattice may create, recreate, and start Containers from declared Images. It always uses --no-build and never builds Images.",
       "Up",
     ))
   ) {
@@ -3742,7 +3742,7 @@ async function renderRoute({ showPending = true, throwOnError = false } = {}) {
   }
 }
 
-async function refreshDockpilot() {
+async function refreshDockLattice() {
   if (state.refreshInFlight) return;
 
   state.refreshInFlight = true;
@@ -3904,7 +3904,7 @@ $("#refresh-interval").addEventListener("change", (event) => {
   }
   scheduleAutoRefresh();
 });
-$("#refresh").addEventListener("click", () => void refreshDockpilot());
+$("#refresh").addEventListener("click", () => void refreshDockLattice());
 $("#inspector-close").addEventListener("click", closeInspector);
 $("#scrim").addEventListener("click", closeInspector);
 $("#sidebar-toggle").addEventListener("click", () => {

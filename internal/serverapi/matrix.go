@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/east-true/dockpilot/internal/producttransport"
-	"github.com/east-true/dockpilot/internal/projectmodel"
-	"github.com/east-true/dockpilot/internal/servermatrix"
-	"github.com/east-true/dockpilot/internal/webui"
+	"github.com/east-true/docklattice/internal/producttransport"
+	"github.com/east-true/docklattice/internal/projectmodel"
+	"github.com/east-true/docklattice/internal/servermatrix"
+	"github.com/east-true/docklattice/internal/webui"
 )
 
 // metricsUnsupportedError is an Agent that cannot serve the metrics matrix at

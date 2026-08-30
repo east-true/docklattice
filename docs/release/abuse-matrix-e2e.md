@@ -3,7 +3,7 @@
 Status: PASS
 
 The browser-facing HTTP API is the product's one untrusted surface, and a
-project directory is written by people outside Dockpilot. This gate sends the
+project directory is written by people outside DockLattice. This gate sends the
 things the product must refuse and asserts the refusal - not merely that nothing
 crashed. It complements [`hardening-matrix-e2e.md`](hardening-matrix-e2e.md),
 which breaks the running system rather than feeding it bad input.

@@ -1,4 +1,4 @@
-# Dockpilot
+# DockLattice
 
 <p align="center">
   <strong>A Docker-first control plane for trusted internal networks.</strong>
@@ -11,8 +11,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/east-true/dockpilot/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/east-true/dockpilot/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/east-true/dockpilot/releases"><img alt="GitHub release" src="https://img.shields.io/github/v/release/east-true/dockpilot?include_prereleases&sort=semver"></a>
+  <a href="https://github.com/east-true/docklattice/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/east-true/docklattice/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/east-true/docklattice/releases"><img alt="GitHub release" src="https://img.shields.io/github/v/release/east-true/docklattice?include_prereleases&sort=semver"></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
   <a href="go.mod"><img alt="Go version" src="https://img.shields.io/badge/go-1.26-00ADD8.svg"></a>
   <a href="docs/operations/supported-environments.md"><img alt="Platforms: Linux amd64 and arm64" src="https://img.shields.io/badge/platform-Linux%20amd64%20%7C%20arm64-lightgrey.svg"></a>
@@ -27,20 +27,20 @@
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-![Dockpilot Home showing fleet health, exceptions, and Docker host availability](docs/assets/dockpilot-home.png)
+![DockLattice Home showing fleet health, exceptions, and Docker host availability](docs/assets/docklattice-home.png)
 
-_The current Home screen, captured in Chromium against the disposable
-acceptance VM. Every name and identifier shown belongs to a test fixture._
+_The current Home screen, captured in Chromium from the deterministic UI
+acceptance fixture. Every name and identifier shown belongs to that fixture._
 
-## Why Dockpilot
+## Why DockLattice
 
-Dockpilot is for operators who manage a small fleet of trusted Docker hosts and
+DockLattice is for operators who manage a small fleet of trusted Docker hosts and
 want one place to inspect state, operate Compose projects, edit configuration,
 and understand failures.
 
 - **Docker remains authoritative.** Current Containers, Images, Networks,
   Volumes, health, and resource use come from Docker Engine—not a replicated
-  Dockpilot inventory.
+  DockLattice inventory.
 - **Agents dial out.** Each host opens one reverse gRPC connection to the
   Server. Hosts behind NAT, firewalls, or changing addresses need no inbound
   Agent port.
@@ -54,10 +54,10 @@ and understand failures.
 
 ## Docker feature coverage
 
-Dockpilot is intentionally smaller than the Docker CLI. “Not provided” usually
+DockLattice is intentionally smaller than the Docker CLI. “Not provided” usually
 marks a safety or product boundary, not an unfinished button.
 
-| Docker area | Dockpilot v1 | Included | Not provided |
+| Docker area | DockLattice v1 | Included | Not provided |
 |---|---|---|---|
 | Docker hosts | **Inspect** | Engine version and API, capacity, storage/logging/cgroup/runtime details, capabilities, and Compose discovery state | Host package, process, filesystem, network, or OS management |
 | [Containers](https://docs.docker.com/reference/cli/docker/container/) | **Inspect + control** | List, search, Inspect details, state/health, ports, mounts, networks, logs, stats, start, stop, restart, and remove one selected Container | `exec`, attach, shell/terminal, arbitrary `docker run`, copy, rename, update, export, or commit |
@@ -76,7 +76,7 @@ marks a safety or product boundary, not an unfinished button.
 
 ### Compose never builds Images
 
-Dockpilot v1 executes Compose only when the effective Service model can be
+DockLattice v1 executes Compose only when the effective Service model can be
 satisfied from declared Images. It never builds, never falls back to a build,
 and never silently skips a build-required Service.
 
@@ -96,13 +96,13 @@ Up:   docker compose ... up --detach --no-build
 This follows Docker Compose's documented
 [`pull`](https://docs.docker.com/reference/cli/docker/compose/pull/) and
 [`up --no-build`](https://docs.docker.com/reference/cli/docker/compose/up/)
-semantics while adding Dockpilot's stricter no-build product boundary.
+semantics while adding DockLattice's stricter no-build product boundary.
 
 ## Architecture
 
 ```text
                                  HTTPS
-  Browser ───────────────────────────────────▶ Dockpilot Server
+  Browser ───────────────────────────────────▶ DockLattice Server
                                                registration
                                                operation index
                                                canonical Audit archive
@@ -110,7 +110,7 @@ semantics while adding Dockpilot's stricter no-build product boundary.
                                                         │ one Agent-initiated
                                                         │ reverse gRPC session
                                                         │
-                                               Dockpilot Agent
+                                               DockLattice Agent
                                                Docker socket
                                                Compose project roots
                                                         │
@@ -134,7 +134,7 @@ disconnect does not cancel an operation already accepted by an Agent.
 ## Security boundary
 
 > [!WARNING]
-> **Dockpilot v1 has no browser authentication, user accounts, or RBAC.** Anyone
+> **DockLattice v1 has no browser authentication, user accounts, or RBAC.** Anyone
 > who can reach the Server UI can control every connected Docker host.
 >
 > The Server binds to `127.0.0.1` by default. Keep it on loopback, use a private
@@ -152,7 +152,7 @@ The ellipsis is not a complete install command. The
 sets `$server_image` to its exact digest from `release-images.json`, and
 supplies the required state, TLS, registration, and Agent arguments.
 
-The Agent necessarily has powerful Docker access. Dockpilot reduces that risk
+The Agent necessarily has powerful Docker access. DockLattice reduces that risk
 with self-protection, fixed operation kinds, identical-path validation, safe
 file allowlists, project locks, bounded storage, and fail-closed capability
 checks; it does not turn Docker socket access into an unprivileged boundary.
@@ -166,9 +166,9 @@ deploying.
 The Go version is declared in [`go.mod`](go.mod).
 
 ```sh
-git clone https://github.com/east-true/dockpilot.git
-cd dockpilot
-go build ./cmd/dockpilot
+git clone https://github.com/east-true/docklattice.git
+cd docklattice
+go build ./cmd/docklattice
 go test ./...
 ```
 
@@ -176,7 +176,7 @@ The resulting binary contains both `server` and `agent` modes and embeds the
 production web UI.
 
 > [!IMPORTANT]
-> [`v0.0.0`](https://github.com/east-true/dockpilot/releases/tag/v0.0.0) is the
+> [`v0.0.0`](https://github.com/east-true/docklattice/releases/tag/v0.0.0) is the
 > first source-only pre-release. GitHub provides source archives for the tag;
 > the release does not publish signed Server/Agent images or prebuilt binaries.
 > The Image-bearing release workflow is prepared for a later SemVer tag; it
@@ -229,12 +229,13 @@ The Playwright suite covers 1440, 1280, 1024, 768, and 375 pixel viewports.
 `npm run test:ui:headed` uses a visible browser,
 `npm run test:ui:open` opens Playwright's interactive runner, and
 `npm run test:ui:report` opens the generated report. Set
-`PLAYWRIGHT_TEST_BASE_URL` to exercise an already running Dockpilot Server.
+`PLAYWRIGHT_TEST_BASE_URL` to exercise an already running DockLattice Server.
 
 The release evidence records the distinction between implementation complete,
 validated defaults, and release-candidate work. The one-hour Stage 1, two-hour
-Stage 2, and eight-hour overnight Stage 3 soaks have all passed. See
-[release evidence](docs/release/README.md) for the exact revisions,
+Stage 2, and eight-hour overnight Stage 3 soaks passed at the recorded
+pre-rename baseline; the DockLattice release revision requires revalidation.
+See [release evidence](docs/release/README.md) for the exact revisions,
 environments, and limitations.
 
 ## Contributing and support
@@ -242,8 +243,8 @@ environments, and limitations.
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing behavior. Features
   classified as `FUTURE` or `DO NOT BUILD` require an architecture decision
   before implementation.
-- Use [GitHub Issues](https://github.com/east-true/dockpilot/issues) for bugs and
-  feature discussions. Include the Dockpilot revision, kernel, Docker Engine,
+- Use [GitHub Issues](https://github.com/east-true/docklattice/issues) for bugs and
+  feature discussions. Include the DockLattice revision, kernel, Docker Engine,
   Compose version, Agent root mode, and exact refusal text.
 - Report vulnerabilities privately using [SECURITY.md](SECURITY.md).
 
@@ -258,5 +259,5 @@ material is generated from pinned modules with
 while programs bundled in the Agent image are covered by
 [`distribution/IMAGE-LICENSES.md`](distribution/IMAGE-LICENSES.md).
 
-Dockpilot is not affiliated with or endorsed by Docker, Inc. Docker and the
+DockLattice is not affiliated with or endorsed by Docker, Inc. Docker and the
 Docker logo are trademarks or registered trademarks of Docker, Inc.

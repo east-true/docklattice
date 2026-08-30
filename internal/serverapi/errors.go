@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/east-true/dockpilot/internal/webui"
+	"github.com/east-true/docklattice/internal/webui"
 )
 
 var (

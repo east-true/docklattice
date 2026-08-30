@@ -51,8 +51,8 @@ mkdir -p "$evidence_dir"
 status_file=$evidence_dir/STATUS
 printf 'started_at=%s\nvm=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$vm" >"$evidence_dir/environment.env"
 
-guest_runtime=/home/lab/dockpilot-power-cut
-key_file=${VM_SSH_KEY:-$HOME/.ssh/dockpilot-vm-lab}
+guest_runtime=/home/lab/docklattice-power-cut
+key_file=${VM_SSH_KEY:-$HOME/.ssh/docklattice-vm-lab}
 
 guest() {
     "$provision" ssh "$vm" "$@"

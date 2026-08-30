@@ -224,7 +224,7 @@ func TestDashboardAndEmbeddedClient(t *testing.T) {
 	for _, path := range []string{"/", "/hosts/agent-1"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
-		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Dockpilot") ||
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "DockLattice") ||
 			!strings.Contains(response.Body.String(), `id="host-tree"`) || !strings.Contains(response.Body.String(), `id="inspector"`) ||
 			!strings.Contains(response.Body.String(), `id="confirm-dialog"`) || !strings.Contains(response.Body.String(), `id="project-logs-form"`) ||
 			!strings.Contains(response.Body.String(), `id="metrics-template"`) {

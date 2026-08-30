@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/serverstore"
-	"github.com/east-true/dockpilot/internal/webui"
+	"github.com/east-true/docklattice/internal/serverstore"
+	"github.com/east-true/docklattice/internal/webui"
 )
 
 // TestStoreContentionIsTransientNotInternal is the contract behind the HTTP 500

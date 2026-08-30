@@ -146,7 +146,7 @@ Live relay. Not storage, not search, not retention.
 - A slow consumer gets bounded buffering and exact drop accounting
   (`dropped_bytes`, `dropped_lines` on the event). Drops are reported, never
   silent, and a slow reader must not starve other streams or the control plane.
-- Dockpilot does not sanitise application log content. Secrets an application
+- DockLattice does not sanitise application log content. Secrets an application
   prints appear in its logs.
 
 ## 9. Metrics
@@ -178,7 +178,7 @@ watched is also readable before asking, as `capabilities.metrics`.
 It is the Docker workload this Agent manages, against the capacity its Engine
 reports: Engine CPU and memory capacity, running and total container counts,
 the aggregate of this frame's container samples, and capacity for the paths
-Dockpilot writes to — the discovery roots and the Agent state root,
+DockLattice writes to — the discovery roots and the Agent state root,
 deduplicated by device, not an inventory of the host's mounts.
 
 Host OS CPU, host memory usage and host network traffic are **not** provided in
@@ -212,7 +212,7 @@ Every running container appears. A row is one of:
 - **pending** — it is in the membership snapshot and its first sample has not
   arrived, which is not the same as gone and is not how a failed listing is
   reported;
-- **unmapped** — it belongs to no project Dockpilot manages. It keeps its
+- **unmapped** — it belongs to no project DockLattice manages. It keeps its
   metrics and is never hidden: the Engine decides what is running and the
   project mapping is context.
 
@@ -275,7 +275,7 @@ leaves no relay behind.
 
 ## 10. Audit and coverage
 
-Two kinds: **Managed** (Dockpilot operation history) and **Observed** (Docker
+Two kinds: **Managed** (DockLattice operation history) and **Observed** (Docker
 and external change). Docker events are observation, never current-state
 authority.
 
@@ -404,7 +404,7 @@ when the state cannot authenticate the Agent is the bootstrap source evaluated.
 `--join-token-file` is therefore not a runtime dependency. After successful
 enrollment the file may be deleted or unmounted while the flag stays on the
 command line, and the Agent restarts with the same identity and credential.
-Dockpilot never deletes an operator's secret file.
+DockLattice never deletes an operator's secret file.
 
 There is no Join Token fallback on authentication failure. A revoked credential,
 a different Server identity, or corrupt state does not become an automatic

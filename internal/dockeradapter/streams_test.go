@@ -14,8 +14,8 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
-	"github.com/east-true/dockpilot/internal/livestats"
-	"github.com/east-true/dockpilot/internal/logrelay"
+	"github.com/east-true/docklattice/internal/livestats"
+	"github.com/east-true/docklattice/internal/logrelay"
 )
 
 type fakeStreamingEngine struct {

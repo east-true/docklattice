@@ -1,4 +1,4 @@
-// Package operation implements Dockpilot's transport- and persistence-neutral
+// Package operation implements DockLattice's transport- and persistence-neutral
 // Operation state, cancellation, locking, idempotency, and bounded result
 // retention rules.
 package operation

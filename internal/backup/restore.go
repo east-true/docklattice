@@ -219,12 +219,12 @@ func existingTargets(root *os.Root, entries []FileEntry) ([]string, error) {
 func stagePlan(manifest Manifest, suffix string) map[string]string {
 	plan := make(map[string]string, len(manifest.Files))
 	for index, entry := range manifest.Files {
-		plan[entry.RelPath] = fmt.Sprintf(".dockpilot-restore-%s-%03d.tmp", suffix, index)
+		plan[entry.RelPath] = fmt.Sprintf(".docklattice-restore-%s-%03d.tmp", suffix, index)
 	}
 	return plan
 }
 
-func stagePrefix(suffix string) string { return ".dockpilot-restore-" + suffix + "-" }
+func stagePrefix(suffix string) string { return ".docklattice-restore-" + suffix + "-" }
 
 // purgeStaging removes the staging files of one transaction and purpose. Only
 // names carrying that transaction's own prefix are touched, and a crashed
@@ -474,7 +474,7 @@ func validateJournal(journal restoreJournal) error {
 	seen := make(map[string]struct{}, len(journal.Files))
 	for _, file := range journal.Files {
 		if !validManagedPath(file.Target) || filepath.Base(file.StagedPath) != file.StagedPath ||
-			!strings.HasPrefix(file.StagedPath, ".dockpilot-restore-") || (file.Status != filePending && file.Status != fileReplaced) {
+			!strings.HasPrefix(file.StagedPath, ".docklattice-restore-") || (file.Status != filePending && file.Status != fileReplaced) {
 			return ErrRecoveryRequired
 		}
 		if _, exists := seen[file.Target]; exists {

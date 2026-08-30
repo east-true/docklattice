@@ -11,18 +11,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/east-true/dockpilot/internal/composeexec"
-	productconfig "github.com/east-true/dockpilot/internal/config"
-	"github.com/east-true/dockpilot/internal/dockeradapter"
-	"github.com/east-true/dockpilot/internal/operation"
-	"github.com/east-true/dockpilot/internal/producttransport"
-	"github.com/east-true/dockpilot/internal/safefile"
+	"github.com/east-true/docklattice/internal/composeexec"
+	productconfig "github.com/east-true/docklattice/internal/config"
+	"github.com/east-true/docklattice/internal/dockeradapter"
+	"github.com/east-true/docklattice/internal/operation"
+	"github.com/east-true/docklattice/internal/producttransport"
+	"github.com/east-true/docklattice/internal/safefile"
 )
 
 var (
 	ErrUnsupportedOperation = errors.New("agent operation is not wired to a safe executor")
 	ErrProjectUnavailable   = errors.New("Agent project is unavailable or not safely managed")
-	ErrComposeBuildRequired = errors.New("Compose mutation requires an Image build, which Dockpilot v1 does not perform")
+	ErrComposeBuildRequired = errors.New("Compose mutation requires an Image build, which DockLattice v1 does not perform")
 )
 
 type Docker interface {
@@ -281,7 +281,7 @@ func (s *Service) runCompose(ctx context.Context, current *operation.Operation, 
 		defer close(drained)
 		for chunk := range relay {
 			if chunk.DroppedBytes > 0 {
-				_, _ = current.WriteOutput([]byte(fmt.Sprintf("\n[dockpilot: %d output bytes omitted]\n", chunk.DroppedBytes)))
+				_, _ = current.WriteOutput([]byte(fmt.Sprintf("\n[docklattice: %d output bytes omitted]\n", chunk.DroppedBytes)))
 			}
 			_, _ = current.WriteOutput(chunk.Data)
 		}

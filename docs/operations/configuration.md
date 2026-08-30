@@ -1,6 +1,6 @@
 # Configuration reference
 
-Dockpilot has two configuration surfaces, and they are deliberately different in
+DockLattice has two configuration surfaces, and they are deliberately different in
 kind:
 
 - **Command-line flags** — deployment wiring: addresses, paths, identity. An
@@ -16,10 +16,10 @@ start-up, so a value cannot be changed in isolation without breaking an
 invariant the validator enforces. Their validation status is recorded in
 [release/defaults-validation.md](../release/defaults-validation.md).
 
-## `dockpilot server`
+## `docklattice server`
 
 ```
-dockpilot server [options]
+docklattice server [options]
 ```
 
 | Flag | Default | Purpose |
@@ -27,7 +27,7 @@ dockpilot server [options]
 | `--listen` | `127.0.0.1:8080` | HTTPS listen address for the UI, API, and Agent registration. |
 | `--agent-listen` | `127.0.0.1:8443` | Listen address for the Agent transport. |
 | `--allow-public-bind` | off | Required to bind either listener to a non-loopback address. |
-| `--state-dir` | `/var/lib/dockpilot` | Durable Server state: identity, database, TLS material. |
+| `--state-dir` | `/var/lib/docklattice` | Durable Server state: identity, database, TLS material. |
 | `--tls-cert` | `<state-dir>/tls/server.crt` | TLS certificate PEM. |
 | `--tls-key` | `<state-dir>/tls/server.key` | TLS private key PEM. |
 
@@ -41,15 +41,15 @@ container*. Keep the Docker host mapping loopback-only with
 `-p 127.0.0.1:8080:8080`; `-p 8080:8080` publishes the unauthenticated UI on
 every host interface.
 
-## `dockpilot server issue-token`
+## `docklattice server issue-token`
 
 ```
-dockpilot server issue-token [options]
+docklattice server issue-token [options]
 ```
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--state-dir` | `/var/lib/dockpilot` | Server state directory to issue against. |
+| `--state-dir` | `/var/lib/docklattice` | Server state directory to issue against. |
 | `--ttl` | `15m` | One-time token lifetime. |
 | `--rejoin-agent-id` | none | Bind the token to an existing Agent identity instead of creating a new one. |
 
@@ -57,15 +57,15 @@ The command writes only the token to stdout. Use `--rejoin-agent-id` when an
 Agent's credential expired while it was offline; a general token would enroll it
 as a *new* host and orphan its history.
 
-## `dockpilot agent`
+## `docklattice agent`
 
 ```
-dockpilot agent [options]
+docklattice agent [options]
 ```
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--state-dir` | `/var/lib/dockpilot` | Durable Agent state: Agent ID, credential, WAL, backups. Must be mode 0700 and owned by 65532. |
+| `--state-dir` | `/var/lib/docklattice` | Durable Agent state: Agent ID, credential, WAL, backups. Must be mode 0700 and owned by 65532. |
 | `--server` | `127.0.0.1:8443` | Server Agent transport address. |
 | `--registration-url` | `https://127.0.0.1:8080` | HTTPS registration base URL. |
 | `--server-ca` | none | PEM CA or certificate used to authenticate the Server. |
@@ -78,7 +78,7 @@ dockpilot agent [options]
 The self-protection flags matter more than they look: they are how the Agent
 knows which container is *itself*, and therefore which container it must refuse
 to stop, remove, or recreate. If detection fails and no fallback is supplied,
-Dockpilot could be asked to kill its own Agent.
+DockLattice could be asked to kill its own Agent.
 
 ## Operational defaults
 

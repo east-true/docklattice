@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/east-true/dockpilot/internal/diskbudget"
-	"github.com/east-true/dockpilot/internal/operation"
+	"github.com/east-true/docklattice/internal/diskbudget"
+	"github.com/east-true/docklattice/internal/operation"
 	"golang.org/x/sys/unix"
 )
 
@@ -28,7 +28,7 @@ import (
 // needs no privilege and can never consume space on the developer host
 // filesystem.
 
-const quotaMatrixChildEnv = "DOCKPILOT_QUOTA_MATRIX_CHILD"
+const quotaMatrixChildEnv = "DOCKLATTICE_QUOTA_MATRIX_CHILD"
 
 // Sizes are the production ratios of internal/config scaled to a filesystem
 // small enough to fill deterministically. The policy semantics under test are
