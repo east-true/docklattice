@@ -21,8 +21,9 @@ is a summary — where the two differ, the record wins.
 
 ## Getting set up
 
-Go, at the version declared in [`go.mod`](go.mod). Nothing else is required to
-build or to run the unit tests.
+Go, at the version declared in [`go.mod`](go.mod), is enough for the Server and
+Agent unit tests. Desktop widget changes additionally require Node.js, Rust,
+and the platform prerequisites listed by Tauri.
 
 ```sh
 go build ./cmd/docklattice
@@ -46,8 +47,20 @@ Run everything that does not need Docker:
 ```sh
 go test ./...
 go test -race ./...
+set -e
 for check in scripts/verify-*.sh; do "$check"; done
 npm run check:docs
+```
+
+For a desktop widget change, also run:
+
+```sh
+cd desktop
+npm ci
+npm run check:format
+npm test
+npm run test:ui
+npm run tauri -- build --debug --no-bundle
 ```
 
 The `verify-*.sh` scripts are static contract checks: they confirm the release

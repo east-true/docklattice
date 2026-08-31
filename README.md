@@ -5,9 +5,9 @@
 </p>
 
 <p align="center">
-  Manage multiple Linux Docker Engine hosts and Compose projects from one web
-  interface—without inbound Agent ports, SSH loops, or a second copy of Docker
-  runtime state.
+  Manage multiple Linux Docker Engine hosts and Compose projects from the full
+  browser UI or an optional desktop widget—without inbound Agent ports, SSH
+  loops, or a second copy of Docker runtime state.
 </p>
 
 <p align="center">
@@ -51,6 +51,12 @@ and understand failures.
   unknown states are presented as such instead of being guessed.
 - **Configuration stays on the host.** Compose and `.env` contents are handled
   by the Agent and are not stored in the Server database.
+
+The browser UI remains the complete operational interface. The optional Tauri
+desktop widget is an additive quick-control surface for Windows, macOS, and
+Linux: it connects to a remote Server and exposes only Pull, Up, Down, Start,
+and Stop. The widget is currently a source-built development preview, not a
+published installer. See the [desktop widget guide](docs/operations/desktop-widget.md).
 
 ## Docker feature coverage
 
@@ -103,6 +109,7 @@ semantics while adding DockLattice's stricter no-build product boundary.
 ```text
                                  HTTPS
   Browser ───────────────────────────────────▶ DockLattice Server
+  Desktop widget ───────────── HTTPS ─────────▶
                                                registration
                                                operation index
                                                canonical Audit archive
@@ -210,6 +217,7 @@ go vet ./...
 go test ./...
 go test -race ./...
 
+set -e
 for check in scripts/verify-*.sh; do
   "$check"
 done
@@ -230,6 +238,19 @@ The Playwright suite covers 1440, 1280, 1024, 768, and 375 pixel viewports.
 `npm run test:ui:open` opens Playwright's interactive runner, and
 `npm run test:ui:report` opens the generated report. Set
 `PLAYWRIGHT_TEST_BASE_URL` to exercise an already running DockLattice Server.
+
+Desktop widget checks:
+
+```sh
+cd desktop
+npm ci
+npm test
+npm run test:ui
+npm run tauri -- build --debug --no-bundle
+```
+
+The widget is additive: these checks do not build, remove, or replace the
+Server-embedded browser UI.
 
 The release evidence records the distinction between implementation complete,
 validated defaults, and release-candidate work. The one-hour Stage 1, two-hour

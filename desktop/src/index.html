@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#f4f6f8" />
+    <title>Compose widget</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <div class="widget-shell">
+      <header id="window-drag-region" class="topbar">
+        <div class="connection-summary">
+          <p class="connection-state" data-state="disconnected">
+            <span class="connection-dot" aria-hidden="true"></span>
+            <span id="connection-label">Not connected</span>
+          </p>
+        </div>
+        <div class="header-actions">
+          <label class="interval-control" title="Refresh interval">
+            <span class="sr-only">Refresh interval</span>
+            <select id="refresh-interval">
+              <option value="0">Manual</option>
+              <option value="15" selected>15s</option>
+              <option value="30">30s</option>
+              <option value="60">60s</option>
+            </select>
+          </label>
+          <button
+            id="refresh-button"
+            class="utility-button"
+            type="button"
+            aria-label="Refresh data"
+            title="Refresh data"
+          >
+            <span class="refresh-glyph" aria-hidden="true">↻</span>
+          </button>
+          <button id="settings-button" class="utility-button" type="button">
+            <span class="settings-glyph" aria-hidden="true">⚙</span>
+            <span class="sr-only">Connection settings</span>
+          </button>
+          <div class="window-controls" aria-label="Window controls">
+            <button
+              id="minimize-window"
+              class="window-button"
+              type="button"
+              aria-label="Minimize window"
+              title="Minimize"
+            >
+              <span aria-hidden="true">−</span>
+            </button>
+            <button
+              id="close-window"
+              class="window-button close-window"
+              type="button"
+              aria-label="Close window"
+              title="Close"
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main>
+        <section id="settings-view" class="settings-view" hidden>
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">Connection</span>
+              <h2>Server connection</h2>
+              <p>Choose the remote Server this widget controls.</p>
+            </div>
+          </div>
+          <form id="settings-form">
+            <label>
+              <span>HTTPS Server URL</span>
+              <input
+                id="server-url"
+                name="server-url"
+                type="url"
+                value="https://127.0.0.1:8080"
+                autocomplete="url"
+                spellcheck="false"
+                required
+              />
+            </label>
+            <label>
+              <span>Server CA certificate <small>optional PEM</small></span>
+              <textarea
+                id="ca-pem"
+                name="ca-pem"
+                rows="7"
+                spellcheck="false"
+                placeholder="-----BEGIN CERTIFICATE-----"
+              ></textarea>
+            </label>
+            <aside class="form-note">
+              <strong>TLS verification stays enabled.</strong>
+              <span>
+                A custom CA certificate is stored only on this device.
+              </span>
+            </aside>
+            <div class="form-actions">
+              <button id="cancel-settings" class="secondary" type="button">
+                Cancel
+              </button>
+              <button class="primary" type="submit">Save and connect</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="projects-view" class="projects-view">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">Remote operations</span>
+              <h2>Compose projects</h2>
+              <p id="observed-label">Connect to load projects.</p>
+            </div>
+          </div>
+          <div
+            id="notice"
+            class="notice"
+            role="status"
+            aria-live="polite"
+            hidden
+          ></div>
+          <div id="loading-state" class="loading-state" hidden>
+            <div class="loading-line loading-title"></div>
+            <div class="loading-line loading-meta"></div>
+            <div class="loading-actions">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </div>
+          <div id="project-list" class="project-list"></div>
+          <div id="empty-state" class="empty-state">
+            <strong>No project data</strong>
+            <span>Open settings to connect to a remote Server.</span>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="confirm-dialog" aria-labelledby="confirm-title">
+      <form method="dialog">
+        <span id="confirm-icon" class="dialog-icon" aria-hidden="true">!</span>
+        <h2 id="confirm-title">Confirm action</h2>
+        <p id="confirm-message"></p>
+        <p class="policy-note">
+          This widget does not build Images. Pull has no build fallback. Up
+          always uses <code>--no-build</code>.
+        </p>
+        <div class="dialog-actions">
+          <button value="cancel" class="secondary">Cancel</button>
+          <button id="confirm-action" value="confirm" class="primary">
+            Continue
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  </body>
+</html>

@@ -10,6 +10,7 @@ refuses several deployment shapes that it cannot manage safely.
 | Install the Server and Agents | [Installation](install.md) |
 | Trial an install on a registry-restricted internal network | [Internal-network trial installation](internal-network-install.md) |
 | Configure commands and operational defaults | [Configuration reference](configuration.md) |
+| Use the optional quick-control app | [Desktop widget](desktop-widget.md) |
 | Integrate with the HTTP interface | [HTTP API](api.md) |
 | Recover Server or Agent identity | [Identity recovery](recovery.md) |
 | Recover from storage pressure | [Degraded storage](degraded-storage.md) |

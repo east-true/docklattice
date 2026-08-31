@@ -1,0 +1,21 @@
+{
+  "name": "docklattice-desktop-widget",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tauri build",
+    "check": "node --check src/app.js && node --check src/domain.js && cargo check --manifest-path src-tauri/Cargo.toml",
+    "check:format": "prettier --check package.json playwright.config.mjs src tests",
+    "dev": "tauri dev",
+    "format": "prettier --write package.json playwright.config.mjs src tests",
+    "tauri": "tauri",
+    "test": "node --test tests/*.test.mjs && cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:ui": "playwright test tests/widget-ui.spec.mjs --config=playwright.config.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@tauri-apps/cli": "2.11.4",
+    "prettier": "3.9.6"
+  }
+}

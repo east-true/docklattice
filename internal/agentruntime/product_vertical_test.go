@@ -204,6 +204,84 @@ func TestProductionAdapterBootAssemblesCompleteProductHandler(t *testing.T) {
 	}
 }
 
+func TestProductionAgentDiscoveryDoesNotCrossConfiguredRootBoundaries(t *testing.T) {
+	server := newCredentialServer(t)
+	stateRoot := t.TempDir()
+	if err := os.Chmod(stateRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	filesystem := t.TempDir()
+	configuredRoot := filepath.Join(filesystem, "projects")
+	insideRoot := configuredRoot
+	insideNested := filepath.Join(configuredRoot, "teams", "api")
+	outsideSibling := filepath.Join(filesystem, "outside")
+	prefixSibling := filepath.Join(filesystem, "projects-backup")
+	for _, directory := range []string{insideRoot, insideNested, outsideSibling, prefixSibling} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		compose := []byte("services:\n  app:\n    image: example/app\n")
+		if err := os.WriteFile(filepath.Join(directory, "compose.yaml"), compose, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	config := testConfig(stateRoot, server)
+	config.ProjectRoots = []string{configuredRoot}
+	config.projectEvaluator = verticalProjectEvaluator{}
+	engine := &verticalMobyEngine{projectRoots: []string{configuredRoot}}
+	config.DockerOpen = func(identity dockeradapter.IdentityProvider) (Docker, error) {
+		return dockeradapter.New(engine, identity, dockeradapter.MinimumAPIVersion)
+	}
+
+	runtime, err := Boot(context.Background(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close(context.Background()) })
+
+	response, err := runtime.handler.(producttransport.QueryHandler).Query(
+		context.Background(),
+		producttransport.SessionInfo{},
+		producttransport.QueryRequest{Kind: "project.list"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot struct {
+		Projects []struct {
+			Root       string `json:"root"`
+			WorkingDir string `json:"working_dir"`
+		} `json:"projects"`
+		Status struct {
+			Truncated bool `json:"truncated"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal(response.Payload, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Status.Truncated {
+		t.Fatalf("project discovery was unexpectedly truncated: %s", response.Payload)
+	}
+
+	wantWorkingDirs := map[string]struct{}{
+		insideRoot:   {},
+		insideNested: {},
+	}
+	if len(snapshot.Projects) != len(wantWorkingDirs) {
+		t.Fatalf("project.list projects = %+v, want only configured-root projects", snapshot.Projects)
+	}
+	for _, project := range snapshot.Projects {
+		if _, expected := wantWorkingDirs[project.WorkingDir]; !expected {
+			t.Fatalf("Agent published out-of-scope project %+v", project)
+		}
+		if project.Root != configuredRoot {
+			t.Fatalf("project %q root = %q, want %q", project.WorkingDir, project.Root, configuredRoot)
+		}
+	}
+}
+
 func TestProductionBootKeepsVerifiedProductAvailableAfterPartialDiscoveryFailure(t *testing.T) {
 	server := newCredentialServer(t)
 	stateRoot := t.TempDir()

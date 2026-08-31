@@ -26,6 +26,13 @@ acceptance_root=/opt/docklattice-acceptance
 network=docklattice-acceptance-net
 server=docklattice-server
 agent=docklattice-agent
+certificate_days=${DOCKLATTICE_ACCEPTANCE_CERT_DAYS:-30}
+
+case "$certificate_days" in
+    ''|*[!0-9]*) fail "DOCKLATTICE_ACCEPTANCE_CERT_DAYS must be an integer" ;;
+esac
+[ "$certificate_days" -ge 1 ] && [ "$certificate_days" -le 365 ] ||
+    fail "DOCKLATTICE_ACCEPTANCE_CERT_DAYS must be between 1 and 365"
 
 case "$(hostname)" in
     dp-vm-*) ;;
@@ -265,14 +272,28 @@ sudo chown -R 65532:65532 "$acceptance_root/fixtures"
 sudo find "$acceptance_root/fixtures" -type d -exec chmod 0755 {} +
 sudo find "$acceptance_root/fixtures" -type f -exec chmod 0644 {} +
 
-sudo openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
-    -subj '/CN=server' \
-    -addext 'subjectAltName=DNS:server,IP:127.0.0.1' \
+subject_alt_name="DNS:server,DNS:$(hostname),IP:127.0.0.1"
+for address in $(hostname -I 2>/dev/null); do
+    case "$address" in
+        *:*) ;;
+        *.*) subject_alt_name="$subject_alt_name,IP:$address" ;;
+    esac
+done
+
+sudo openssl req -x509 -newkey rsa:2048 -sha256 -nodes \
+    -days "$certificate_days" \
+    -subj "/CN=$(hostname)" \
+    -addext "subjectAltName=$subject_alt_name" \
     -keyout "$acceptance_root/bootstrap/server.key" \
     -out "$acceptance_root/bootstrap/server-ca.crt" \
     >/dev/null 2>&1
 sudo chmod 0644 "$acceptance_root/bootstrap/server-ca.crt"
 sudo chmod 0600 "$acceptance_root/bootstrap/server.key"
+certificate_not_after=$(sudo openssl x509 \
+    -in "$acceptance_root/bootstrap/server-ca.crt" \
+    -noout \
+    -enddate)
+printf 'Acceptance certificate %s\n' "$certificate_not_after"
 
 docker network create \
     --subnet 198.18.238.0/24 \

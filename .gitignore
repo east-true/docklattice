@@ -36,3 +36,10 @@ AGENTS.local.md
 /node_modules/
 /playwright-report/
 /test-results/
+
+# Desktop widget dependencies and Rust build output.
+/desktop/node_modules/
+/desktop/playwright-report/
+/desktop/test-results/
+/desktop/src-tauri/gen/
+/desktop/src-tauri/target/

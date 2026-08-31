@@ -1,0 +1,21 @@
+[package]
+name = "docklattice-widget"
+version = "0.1.0"
+description = "DockLattice desktop widget"
+authors = ["DockLattice contributors"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "docklattice_widget_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.145"
+tauri = { version = "2.11.5", features = ["tray-icon"] }
+uuid = { version = "1.26.0", features = ["v4"] }

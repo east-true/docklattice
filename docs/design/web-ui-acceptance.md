@@ -258,6 +258,28 @@ npm run test:ui -- tests/ui/vm-acceptance.spec.mjs \
   --project=desktop-1440 --workers=1
 ```
 
+The setup certificate is valid for 30 days by default and includes the guest
+hostname and discovered IPv4 addresses in its subject alternative names. Set
+`DOCKLATTICE_ACCEPTANCE_CERT_DAYS` to an integer from 1 through 365 when a
+different disposable-lab lifetime is required.
+
+On a persistent libvirt test host, enable VM autostart and keep lifecycle
+evidence outside the terminal session:
+
+```sh
+virsh autostart "$vm_name"
+(crontab -l 2>/dev/null; printf '%s\n' \
+  "@reboot $repository/scripts/monitor-vm-lifecycle.sh") | \
+  awk '!seen[$0]++' | crontab -
+setsid -f "$repository/scripts/monitor-vm-lifecycle.sh"
+```
+
+The monitor records the host boot ID, every domain's initial state, and
+subsequent libvirt events in
+`~/.local/state/docklattice/vm-lifecycle.log`. A log that ends abruptly and
+resumes with a different boot ID identifies a host restart even when libvirt
+could not persist a domain shutdown reason.
+
 The current serial desktop run completed with 12 passed in 1.9 minutes. It
 exercised:
 
