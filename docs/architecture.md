@@ -25,8 +25,10 @@
 DockLattice은 여러 Docker 호스트를 중앙에서 조회·제어하고, Docker Compose 기능을 GUI로 수행하며, 감사 이력·실시간 로그·실시간 메트릭·기본 백업을 제공하는 **경량 내부망용 Docker Control Plane**이다.
 
 ```
-Browser UI
-    |
+Browser UI              Desktop Widget (optional quick controls)
+    |                              |
+    +------------- HTTPS ----------+
+                   |
 DockLattice Server          (Control Plane)
     |
     | Agent-initiated persistent connection
@@ -41,6 +43,13 @@ DockLattice Server          (Control Plane)
 ```
 
 하나의 프로젝트, 하나의 바이너리, 두 실행 모드(`docklattice server` / `docklattice agent`).
+
+Browser UI는 전체 관리 인터페이스로 유지한다. Windows, macOS, Linux용
+Desktop Widget은 원격 Server에 HTTPS로 접속하는 선택적 보조 인터페이스이며,
+Browser UI를 대체하거나 제거하지 않는다. Widget은 빠른 상태 확인과
+`Pull / Up / Down / Start / Stop`만 제공하고 Docker socket이나 Docker CLI에
+직접 접근하지 않는다. 두 UI의 요청은 동일한 Server/Agent 권위와 Operation
+계약을 따른다.
 
 ### 1.1 핵심 철학
 
@@ -1890,6 +1899,19 @@ Compose Project → Overview / Services / Logs / Metrics / Environment
 
 **Secret 취급 (CORE)**: audit payload와 operation record에 파일 내용을 절대 넣지 않는다(sha256과 파일명만). compose 로그 스트림에 secret이 나올 수 있으나 이는 Docker의 동작이므로 DockLattice이 개입하지 않는다(문서에 명시).
 
+### 16.1 Desktop Widget (CORE)
+
+Windows, macOS, Linux용 Desktop Widget은 Browser UI와 함께 유지되는 추가
+인터페이스다. 원격 Server의 HTTPS API에 접속하며 URL과 CA trust material만
+로컬 장치에 저장한다. Docker socket, Docker CLI, shell, Agent transport에는
+직접 접근하지 않는다.
+
+Widget의 mutation 범위는 `compose.pull/up/down/start/stop` 다섯 종류로
+고정한다. Project에는 다섯 동작을 제공하고, Service에는 기존 Container를
+대상으로 하는 Start/Stop만 제공한다. 나머지 상세 조회·진단·편집·감사 기능은
+Browser UI에서 수행한다. 두 UI는 동일한 capability, no-build, project lock,
+Operation recovery 계약을 사용한다.
+
 ---
 
 ## 17. Optional Git CD
@@ -1935,6 +1957,7 @@ Agent bounded disk WAL + Server canonical archive + Coverage Ledger
 실시간 metrics (viewer-scoped, 무저장)
 offline/unknown/interrupted 상태 모델 + 재연결 복구
 Web UI + 단일 바이너리 embed
+Desktop Widget (Windows/macOS/Linux quick controls, Browser UI와 병행)
 disk budget + emergency reserve + DEGRADED_STORAGE
 .env secret 취급 정책
 ```

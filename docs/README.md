@@ -14,6 +14,7 @@ bug.
 |---|---|---|
 | Understand DockLattice | [Concepts](concepts.md) | [Architecture](architecture.md) |
 | Install or operate it | [Operations index](operations/README.md) | [Supported environments](operations/supported-environments.md), [Installation](operations/install.md), [Internal-network trial installation](operations/internal-network-install.md) |
+| Use the desktop widget | [Desktop widget](operations/desktop-widget.md) | [HTTP API](operations/api.md), [Security policy](../SECURITY.md) |
 | Use or integrate the API | [HTTP API](operations/api.md) | [Interface freeze](interface-freeze.md) |
 | Maintain the browser UI | [Product and UI contracts](design/README.md) | [Web UI acceptance](design/web-ui-acceptance.md) |
 | Verify a release claim | [Release evidence](release/README.md) | The individual gate record linked from its table |
@@ -33,7 +34,7 @@ bug.
 
 | Collection | Contents |
 |---|---|
-| [Operations](operations/README.md) | Installation, configuration, API, supported environments, Agent diagnostics, and recovery procedures. |
+| [Operations](operations/README.md) | Installation, configuration, API, desktop widget, supported environments, Agent diagnostics, and recovery procedures. |
 | [Product and UI contracts](design/README.md) | Current UI behavior, responsive acceptance, and live metrics design. |
 | [Release evidence](release/README.md) | Reproducible gates, environment records, known limits, and the historical v1 plan. |
 

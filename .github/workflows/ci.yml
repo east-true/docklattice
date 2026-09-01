@@ -66,6 +66,7 @@ jobs:
       - name: Static release-contract checks
         shell: bash
         run: |
+          set -euo pipefail
           for check in scripts/verify-*.sh; do
             "$check"
           done
@@ -101,3 +102,84 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 30
+
+  desktop-widget:
+    name: Desktop widget (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux
+            os: ubuntu-24.04
+          - platform: macOS
+            os: macos-15
+          - platform: Windows
+            os: windows-2025
+
+    env:
+      RUSTUP_TOOLCHAIN: 1.97.1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Set up Rust
+        shell: bash
+        run: |
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --no-self-update
+          rustup component add rustfmt --toolchain "$RUSTUP_TOOLCHAIN"
+
+      - name: Install Linux desktop dependencies
+        if: ${{ runner.os == 'Linux' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            librsvg2-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            wget
+
+      - name: Install widget dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Check widget formatting
+        working-directory: desktop
+        run: |
+          npm run check:format
+          cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+
+      - name: Test widget domain and native bridge
+        working-directory: desktop
+        run: npm test
+
+      - name: Compile native widget
+        working-directory: desktop
+        run: npm run tauri -- build --debug --no-bundle
+
+      - name: Install Playwright Chromium
+        if: ${{ runner.os == 'Linux' }}
+        working-directory: desktop
+        run: npx playwright install --with-deps chromium
+
+      - name: Test compact widget UI
+        if: ${{ runner.os == 'Linux' }}
+        working-directory: desktop
+        run: npm run test:ui

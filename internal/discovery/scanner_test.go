@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -126,6 +127,111 @@ func TestScanTracksProjectDotEnvButNotStandaloneDotEnv(t *testing.T) {
 	}
 }
 
+func TestScanHonorsConfiguredRootBoundariesAcrossDirectoryLayouts(t *testing.T) {
+	assertScan := func(t *testing.T, roots []string, wantRootByPath map[string]string) {
+		t.Helper()
+
+		result, err := Scan(context.Background(), DefaultConfig(roots...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Truncated || result.StopReason != StopNone {
+			t.Fatalf("scan result = %#v", result)
+		}
+		if len(result.Files) != len(wantRootByPath) {
+			t.Fatalf("discovered files = %v, want %v", paths(result.Files), sortedMapKeys(wantRootByPath))
+		}
+		for _, file := range result.Files {
+			wantRoot, expected := wantRootByPath[file.Path]
+			if !expected {
+				t.Fatalf("discovered out-of-scope file %#v", file)
+			}
+			if file.Root != wantRoot {
+				t.Fatalf("file %q root = %q, want %q", file.Path, file.Root, wantRoot)
+			}
+		}
+	}
+
+	t.Run("varied directories inside one root", func(t *testing.T) {
+		parent := t.TempDir()
+		root := filepath.Join(parent, "projects")
+		mkdir(t, root)
+
+		atRoot := filepath.Join(root, "compose.yaml")
+		deep := filepath.Join(root, "teams", "payments", "api", "docker-compose.yml")
+		withSpaces := filepath.Join(root, "team alpha", "worker service", "compose.yml")
+		hidden := filepath.Join(root, ".operations", "monitoring", "compose.yaml")
+		for _, file := range []string{atRoot, deep, withSpaces, hidden} {
+			touch(t, file)
+		}
+
+		assertScan(t, []string{root}, map[string]string{
+			atRoot:     root,
+			deep:       root,
+			withSpaces: root,
+			hidden:     root,
+		})
+	})
+
+	t.Run("projects only outside the root", func(t *testing.T) {
+		parent := t.TempDir()
+		root := filepath.Join(parent, "projects")
+		mkdir(t, root)
+
+		touch(t, filepath.Join(parent, "compose.yaml"))
+		touch(t, filepath.Join(parent, "outside", "compose.yaml"))
+		touch(t, filepath.Join(parent, "projects-backup", "compose.yaml"))
+
+		assertScan(t, []string{root}, map[string]string{})
+	})
+
+	t.Run("projects both inside and outside the root", func(t *testing.T) {
+		parent := t.TempDir()
+		root := filepath.Join(parent, "projects")
+		mkdir(t, root)
+
+		inside := filepath.Join(root, "inside", "compose.yaml")
+		insideNested := filepath.Join(root, "inside", "nested", "docker-compose.yaml")
+		touch(t, inside)
+		touch(t, insideNested)
+		touch(t, filepath.Join(parent, "outside", "compose.yaml"))
+		touch(t, filepath.Join(parent, "projects-backup", "compose.yaml"))
+
+		assertScan(t, []string{root}, map[string]string{
+			inside:       root,
+			insideNested: root,
+		})
+	})
+
+	t.Run("multiple configured roots exclude their common siblings", func(t *testing.T) {
+		parent := t.TempDir()
+		firstRoot := filepath.Join(parent, "team-a")
+		secondRoot := filepath.Join(parent, "team-b")
+		mkdir(t, firstRoot)
+		mkdir(t, secondRoot)
+
+		first := filepath.Join(firstRoot, "api", "compose.yaml")
+		second := filepath.Join(secondRoot, "worker", "compose.yaml")
+		touch(t, first)
+		touch(t, second)
+		touch(t, filepath.Join(parent, "team-c", "compose.yaml"))
+
+		assertScan(t, []string{secondRoot, firstRoot}, map[string]string{
+			first:  firstRoot,
+			second: secondRoot,
+		})
+	})
+}
+
+func sortedMapKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func TestScanProjectHashesOnlyTheRequestedProjectDirectory(t *testing.T) {
 	root := t.TempDir()
 	requested := filepath.Join(root, "requested")
@@ -147,6 +253,41 @@ func TestScanProjectHashesOnlyTheRequestedProjectDirectory(t *testing.T) {
 	}
 	if _, err := scanner.ScanProject(context.Background(), root, other+"-outside"); err == nil {
 		t.Fatal("outside project refresh succeeded")
+	}
+}
+
+func TestScanProjectRejectsPathsOutsideConfiguredRoot(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "projects")
+	inside := filepath.Join(root, "inside")
+	outside := filepath.Join(parent, "outside")
+	prefixSibling := filepath.Join(parent, "projects-backup")
+	for _, directory := range []string{inside, outside, prefixSibling} {
+		touch(t, filepath.Join(directory, "compose.yaml"))
+	}
+
+	scanner, err := New(DefaultConfig(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name       string
+		root       string
+		workingDir string
+	}{
+		{name: "outside sibling", root: root, workingDir: outside},
+		{name: "same prefix sibling", root: root, workingDir: prefixSibling},
+		{name: "cleaned parent traversal", root: root, workingDir: filepath.Join(root, "..", "outside")},
+		{name: "unconfigured root", root: outside, workingDir: outside},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			files, scanErr := scanner.ScanProject(context.Background(), test.root, test.workingDir)
+			if !HasScanErrorCode(scanErr, CodeUnsafePath) {
+				t.Fatalf("ScanProject() files = %#v, error = %v; want UNSAFE_PATH", files, scanErr)
+			}
+		})
 	}
 }
 
