@@ -91,6 +91,20 @@ test("Pull and Up preserve the no-build availability contract", () => {
 
 test("Service Start and Stop require an observed non-one-off Container", () => {
   const service = { name: "api" };
+  assert.deepEqual(
+    serviceActionAvailability(
+      project,
+      host,
+      service,
+      { unavailable: true },
+      "compose.stop",
+    ),
+    {
+      available: false,
+      reason: "Current Container state is unavailable.",
+    },
+  );
+
   const missing = { services: [{ name: "api", containers: [] }] };
   assert.equal(
     serviceActionAvailability(project, host, service, missing, "compose.stop")

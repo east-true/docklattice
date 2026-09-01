@@ -50,6 +50,7 @@ const elements = {
 
 const state = {
   connection: undefined,
+  connectionRevision: 0,
   dashboard: undefined,
   runtimes: new Map(),
   expandedProjects: new Set(),
@@ -184,7 +185,9 @@ function createServiceRow(project, host, service, runtime) {
   row.className = "service-row";
 
   const observed = serviceRuntime(runtime, service.name);
-  const status = serviceRuntimeLabel(observed);
+  const status = runtime?.unavailable
+    ? "unavailable"
+    : serviceRuntimeLabel(observed);
   const heading = document.createElement("div");
   heading.className = "service-heading";
   const dot = document.createElement("span");
@@ -297,22 +300,31 @@ function renderProjects() {
 
 async function refresh({ quiet = false } = {}) {
   if (!state.connection || state.refreshing) return;
+  const connection = state.connection;
+  const connectionRevision = state.connectionRevision;
   setRefreshing(true);
   if (!state.dashboard) setConnectionState("Connecting", "connecting");
   if (!quiet) showNotice("");
   try {
     const dashboard = await invoke("dashboard", {
-      connection: state.connection,
+      connection,
     });
+    if (connectionRevision !== state.connectionRevision) return;
     state.dashboard = dashboard;
-    setConnectionState(new URL(state.connection.serverUrl).host, "connected");
+    setConnectionState(new URL(connection.serverUrl).host, "connected");
     showNotice("");
     renderProjects();
 
     const expanded = [...state.expandedProjects];
-    await Promise.allSettled(expanded.map(loadRuntime));
+    await Promise.allSettled(
+      expanded.map((projectUid) =>
+        loadRuntime(projectUid, connection, connectionRevision),
+      ),
+    );
+    if (connectionRevision !== state.connectionRevision) return;
     renderProjects();
   } catch (error) {
+    if (connectionRevision !== state.connectionRevision) return;
     setConnectionState("Connection unavailable", "error");
     showNotice(String(error));
     if (!state.dashboard) {
@@ -322,23 +334,41 @@ async function refresh({ quiet = false } = {}) {
       elements.emptyState.hidden = false;
     }
   } finally {
-    setRefreshing(false);
+    if (connectionRevision === state.connectionRevision) {
+      setRefreshing(false);
+    }
   }
 }
 
-async function loadRuntime(projectUid) {
-  const runtime = await invoke("project_runtime", {
-    connection: state.connection,
-    projectUid,
-  });
-  state.runtimes.set(projectUid, runtime);
+async function loadRuntime(
+  projectUid,
+  connection = state.connection,
+  connectionRevision = state.connectionRevision,
+) {
+  try {
+    const runtime = await invoke("project_runtime", {
+      connection,
+      projectUid,
+    });
+    if (connectionRevision === state.connectionRevision) {
+      state.runtimes.set(projectUid, runtime);
+    }
+  } catch (error) {
+    if (connectionRevision === state.connectionRevision) {
+      state.runtimes.set(projectUid, {
+        unavailable: true,
+        error: String(error),
+      });
+    }
+    throw error;
+  }
 }
 
 function operationContext(project, target) {
   return target || project?.name || project?.uid || "Compose project";
 }
 
-function showToast(tone, title, detail = "") {
+function showToast(tone, title, detail = "", { persistent = false } = {}) {
   const toast = document.createElement("div");
   toast.className = `toast ${tone}`;
   const content = document.createElement("div");
@@ -349,8 +379,12 @@ function showToast(tone, title, detail = "") {
   content.append(heading, message);
   toast.append(content);
   elements.toastRegion.append(toast);
-  window.setTimeout(() => toast.remove(), 7_000);
+  if (!persistent) scheduleToastDismissal(toast);
   return { heading, message, toast };
+}
+
+function scheduleToastDismissal(toast) {
+  window.setTimeout(() => toast.remove(), 7_000);
 }
 
 function confirmOperation(kind, context) {
@@ -372,9 +406,11 @@ function delay(milliseconds) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
-async function trackOperation(initial, context) {
+async function trackOperation(initial, context, connection) {
   const label = actionLabel(initial.kind);
-  const toast = showToast("info", `${label} started`, context);
+  const toast = showToast("info", `${label} started`, context, {
+    persistent: true,
+  });
   let operation = initial;
   let trackingFailures = 0;
   const deadline = Date.now() + MAX_POLL_TIME_MS;
@@ -383,7 +419,7 @@ async function trackOperation(initial, context) {
     await delay(POLL_INTERVAL_MS);
     try {
       operation = await invoke("operation", {
-        connection: state.connection,
+        connection,
         agentId: initial.agent_id,
         operationId: initial.operation_id,
       });
@@ -394,6 +430,7 @@ async function trackOperation(initial, context) {
       toast.toast.className = "toast warning";
       toast.heading.textContent = `${label} status unavailable`;
       toast.message.textContent = `${context} · ${String(error)}`;
+      scheduleToastDismissal(toast.toast);
       return;
     }
   }
@@ -408,6 +445,7 @@ async function trackOperation(initial, context) {
     (operation.partial_effects_possible
       ? `${context} · Partial effects may be possible.`
       : context);
+  scheduleToastDismissal(toast.toast);
   await refresh({ quiet: true });
 }
 
@@ -425,15 +463,16 @@ async function runOperation(button) {
   }
 
   button.disabled = true;
+  const connection = state.connection;
   try {
     const operation = await invoke("start_operation", {
-      connection: state.connection,
+      connection,
       agentId: project.agent_id,
       projectUid: project.uid,
       kind,
       target: target || null,
     });
-    await trackOperation(operation, context);
+    await trackOperation(operation, context, connection);
   } catch (error) {
     showToast("error", `${actionLabel(kind)} failed`, String(error));
   } finally {
@@ -449,12 +488,15 @@ async function toggleProject(projectUid) {
   }
   state.expandedProjects.add(projectUid);
   renderProjects();
+  const connectionRevision = state.connectionRevision;
   try {
-    await loadRuntime(projectUid);
+    await loadRuntime(projectUid, state.connection, connectionRevision);
   } catch (error) {
-    showToast("warning", "Container state unavailable", String(error));
+    if (connectionRevision === state.connectionRevision) {
+      showToast("warning", "Container state unavailable", String(error));
+    }
   }
-  renderProjects();
+  if (connectionRevision === state.connectionRevision) renderProjects();
 }
 
 function scheduleRefresh() {
@@ -485,11 +527,17 @@ elements.refreshButton.addEventListener("click", () => refresh());
 elements.refreshInterval.addEventListener("change", scheduleRefresh);
 elements.settingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  state.connectionRevision += 1;
   state.connection = {
     serverUrl: elements.serverUrl.value.trim(),
     caPem: elements.caPem.value.trim(),
   };
+  state.dashboard = undefined;
+  state.runtimes.clear();
+  state.expandedProjects.clear();
+  state.refreshing = false;
   saveConnection(state.connection);
+  renderProjects();
   hideSettings();
   await refresh();
 });

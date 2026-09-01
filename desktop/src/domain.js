@@ -112,6 +112,12 @@ export function serviceActionAvailability(
 ) {
   const mutation = projectMutation(project, host);
   if (!mutation.available) return mutation;
+  if (runtime?.unavailable) {
+    return {
+      available: false,
+      reason: "Current Container state is unavailable.",
+    };
+  }
 
   const observed = serviceRuntime(runtime, service.name);
   const hasContainer = (observed?.containers || []).some(

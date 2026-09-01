@@ -52,13 +52,20 @@ async function installBridge(page, customDashboard = dashboard) {
   await page.addInitScript(
     ({ dashboardValue, runtimeValue }) => {
       window.__operationCalls = [];
+      window.__holdOperation = false;
+      window.__failRuntime = false;
       window.__trayStatusCalls = [];
       window.__windowCalls = [];
       window.__TAURI__ = {
         core: {
           invoke: async (command, payload) => {
             if (command === "dashboard") return dashboardValue;
-            if (command === "project_runtime") return runtimeValue;
+            if (command === "project_runtime") {
+              if (window.__failRuntime) {
+                throw new Error("Agent runtime unavailable");
+              }
+              return runtimeValue;
+            }
             if (command === "set_tray_status") {
               window.__trayStatusCalls.push(payload.status);
               return null;
@@ -75,6 +82,7 @@ async function installBridge(page, customDashboard = dashboard) {
               };
             }
             if (command === "operation") {
+              if (window.__holdOperation) return new Promise(() => {});
               const started = window.__operationCalls.at(-1);
               return {
                 operation_id: "widget-operation-a",
@@ -170,6 +178,24 @@ test("Up asks for confirmation and identifies the Compose project", async ({
   ]);
 });
 
+test("keeps a running operation visible beyond the normal toast timeout", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await installBridge(page);
+  await connect(page);
+  await page.evaluate(() => {
+    window.__holdOperation = true;
+  });
+
+  await page.getByRole("button", { name: "Up" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Up" }).click();
+  await expect(page.locator(".toast")).toContainText("Up started");
+
+  await page.clock.fastForward(8_000);
+  await expect(page.locator(".toast")).toContainText("Up started");
+});
+
 test("offline capability disables every project mutation with its reason", async ({
   page,
 }) => {
@@ -187,6 +213,67 @@ test("offline capability disables every project mutation with its reason", async
     await expect(buttons.nth(index)).toBeDisabled();
     await expect(buttons.nth(index)).toHaveAttribute("title", "Agent offline");
   }
+});
+
+test("runtime refresh failure invalidates Service state and actions", async ({
+  page,
+}) => {
+  await installBridge(page);
+  await connect(page);
+  await page.getByRole("button", { name: /1 service/ }).click();
+
+  const service = page.locator(".service-row").filter({ hasText: "api" });
+  await expect(service).toContainText("running");
+  await page.evaluate(() => {
+    window.__failRuntime = true;
+  });
+  await page.getByRole("button", { name: "Refresh data" }).click();
+
+  await expect(service).toContainText("unavailable");
+  await expect(service.getByRole("button", { name: "Start" })).toBeDisabled();
+  await expect(service.getByRole("button", { name: "Start" })).toHaveAttribute(
+    "title",
+    "Current Container state is unavailable.",
+  );
+});
+
+test("changing Servers removes old project data before the new refresh", async ({
+  page,
+}) => {
+  const replacement = structuredClone(dashboard);
+  replacement.projects[0].uid = "project-b";
+  replacement.projects[0].name = "inventory";
+
+  await page.addInitScript(
+    ({ firstDashboard, secondDashboard }) => {
+      window.__dashboardCalls = 0;
+      window.__TAURI__ = {
+        core: {
+          invoke: async (command) => {
+            if (command === "set_tray_status") return null;
+            if (command !== "dashboard") return null;
+            window.__dashboardCalls += 1;
+            if (window.__dashboardCalls === 1) return firstDashboard;
+            return new Promise((resolve) => {
+              window.__resolveReplacementDashboard = () =>
+                resolve(secondDashboard);
+            });
+          },
+        },
+      };
+    },
+    { firstDashboard: dashboard, secondDashboard: replacement },
+  );
+  await connect(page);
+
+  await page.getByRole("button", { name: "Connection settings" }).click();
+  await page.getByLabel("HTTPS Server URL").fill("https://other.test:8080");
+  await page.getByRole("button", { name: "Save and connect" }).click();
+
+  await expect(page.getByRole("heading", { name: "checkout" })).toHaveCount(0);
+  await expect(page.locator("#loading-state")).toBeVisible();
+  await page.evaluate(() => window.__resolveReplacementDashboard());
+  await expect(page.getByRole("heading", { name: "inventory" })).toBeVisible();
 });
 
 test("uses a light default theme with a visible connection state", async ({
